@@ -20,6 +20,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -276,56 +279,76 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 it.resolveInfo.serviceInfo.name == EnyoCaptureService::class.java.name
         }
     }
-    var start by remember { mutableIntStateOf(0) }
     var openedStack by remember { mutableStateOf<String?>(null) }
-    val firstIndex = start.coerceIn(0, (groups.size - 1).coerceAtLeast(0))
-    val visible = groups.drop(firstIndex).take(tokens.recentVisible)
+    val scroll = rememberLazyListState()
     val bounds = remember { mutableMapOf<ComponentName, Rect>() }
     Column(Modifier.fillMaxSize().padding(tokens.margin)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val density = LocalDensity.current
             val cardWidth = minOf(maxWidth * tokens.recentWidthFraction, maxHeight * tokens.recentHeightFraction)
+            val availableHeight = maxHeight
+            val sidePadding = (maxWidth - cardWidth) / 2
             SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
-            if (visible.isEmpty()) Text(stringResource(R.string.cards_empty), style = tokens.secondary)
-            else {
-                val frontAspect = visible.first().first().entry.aspect ?: tokens.recentDefaultAspect
-                val wide = ((frontAspect - tokens.recentTallAspect) /
-                    (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
-                visible.asReversed().forEachIndexed { index, cluster ->
+            if (groups.isEmpty()) Text(stringResource(R.string.cards_empty), style = tokens.secondary)
+            else LazyRow(
+                modifier = Modifier.fillMaxSize(),
+                state = scroll,
+                contentPadding = PaddingValues(horizontal = sidePadding),
+                horizontalArrangement = Arrangement.spacedBy(tokens.recentCarouselGap),
+                verticalAlignment = Alignment.CenterVertically,
+                flingBehavior = rememberSnapFlingBehavior(scroll)
+            ) {
+                items(groups.size, key = { index ->
+                    groups[index].first().entry.let { it.stack ?: it.component.flattenToString() }
+                }) { index ->
+                    val cluster = groups[index]
                     val card = cluster.first()
                     val entry = card.entry
-                    val distance = visible.lastIndex - index
-                    val direction = if (distance % 2 == 0) -1f else 1f
-                    val rotation = (tokens.recentRotation + wide * tokens.recentRotation) * distance * direction
-                    val fan = cardWidth * (tokens.recentOffset - wide * tokens.recentOffset / 2)
                     val ratio = entry.aspect ?: tokens.recentDefaultAspect
-                    val width = minOf(cardWidth, maxHeight * ratio * tokens.recentHeightUse)
-                    key(entry.component) {
-                        val activate = {
-                            if (cluster.size > 1) openedStack = entry.stack else open(card.app)
+                    val width = minOf(cardWidth, availableHeight * ratio * tokens.recentHeightUse)
+                    val wide = ((ratio - tokens.recentTallAspect) /
+                        (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
+                    val fan = width * (tokens.recentOffset - wide * tokens.recentOffset / 2)
+                    val targets = groups.map { it.first() }.filter { it.entry.component != entry.component }
+                    val groupLabel = stringResource(R.string.cards_stack_with)
+                    val dismissLabel = stringResource(R.string.cards_dismiss)
+                    val accessibleTargets = targets.map { target ->
+                        CustomAccessibilityAction(context.getString(R.string.cards_stack_action, groupLabel, target.app.label)) {
+                            store.group(entry.component, target.entry.component)
+                            true
                         }
-                        val targets = visible.map { it.first() }.filter { it.entry.component != entry.component }
-                        val groupLabel = stringResource(R.string.cards_stack_with)
-                        val dismissLabel = stringResource(R.string.cards_dismiss)
-                        val actions = targets.map { target ->
-                            CustomAccessibilityAction(
-                                context.getString(R.string.cards_stack_action, groupLabel, target.app.label)
-                            ) {
-                                store.group(entry.component, target.entry.component)
-                                true
+                    }
+                    DisposableEffect(entry.component) {
+                        onDispose { bounds.remove(entry.component) }
+                    }
+                    Box(Modifier.width(cardWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        cluster.drop(1).take(tokens.recentVisible - 1).asReversed().forEachIndexed { layer, back ->
+                            val depth = minOf(cluster.size - 1, tokens.recentVisible - 1) - layer
+                            val rearRatio = back.entry.aspect ?: ratio
+                            val rearWidth = minOf(width - fan * depth, availableHeight * rearRatio * tokens.recentHeightUse)
+                            val image by produceState<Bitmap?>(null, back.entry) {
+                                value = withContext(Dispatchers.IO) { store.bitmap(back.entry) }
                             }
-                        } + CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true }
+                            Surface(
+                                modifier = Modifier.offset(x = fan * depth / 2, y = tokens.gap * depth)
+                                    .width(rearWidth).aspectRatio(rearRatio)
+                                    .graphicsLayer { rotationZ = (tokens.recentRotation + wide * tokens.recentRotation) * depth },
+                                shape = RoundedCornerShape(tokens.radius),
+                                color = tokens.surface,
+                                shadowElevation = tokens.elevation[1]
+                            ) {
+                                image?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
+                            }
+                        }
                         CardTile(
                             card,
                             store,
                             cluster.size,
-                            modifier = Modifier
-                                .offset(x = fan * distance * direction, y = tokens.gap * distance)
-                                .width(width).aspectRatio(ratio)
-                                .then(if (distance == 0) Modifier.focusRequester(first) else Modifier),
-                            rotation = rotation,
-                            activate = activate,
-                            actions = actions,
+                            modifier = Modifier.width(width).aspectRatio(ratio)
+                                .then(if (index == 0) Modifier.focusRequester(first) else Modifier),
+                            rotation = 0f,
+                            activate = { if (cluster.size > 1) openedStack = entry.stack else open(card.app) },
+                            actions = accessibleTargets + CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true },
                             bounds = { bounds[entry.component] = it },
                             drop = { point ->
                                 targets.firstOrNull { bounds[it.entry.component]?.contains(point) == true }?.let {
@@ -335,16 +358,6 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                             dismiss = { store.dismiss(entry.component) }
                         )
                     }
-                }
-            }
-        }
-        if (groups.size > tokens.recentVisible) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(enabled = firstIndex > 0, onClick = { start = firstIndex - 1 }) {
-                    Text(stringResource(R.string.older_cards_back), color = tokens.ink)
-                }
-                TextButton(enabled = firstIndex + tokens.recentVisible < groups.size, onClick = { start = firstIndex + 1 }) {
-                    Text(stringResource(R.string.older_cards), color = tokens.ink)
                 }
             }
         }

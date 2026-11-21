@@ -25,6 +25,8 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -153,28 +155,32 @@ internal fun PinnedDock(
     actions: (LauncherActivityInfo) -> Unit
 ) {
     val tokens = LocalTokens.current
-    Surface(
+    if (apps.isEmpty()) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            TextButton(onClick = browse) { Text(stringResource(R.string.dock_empty), style = tokens.secondary) }
+        }
+        return
+    }
+    BoxWithConstraints(
         Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
-        color = tokens.surface.copy(alpha = tokens.dockOpacity),
-        shape = RoundedCornerShape(tokens.radius)
+        contentAlignment = Alignment.Center
     ) {
-        if (apps.isEmpty()) TextButton(onClick = browse) {
-            Text(stringResource(R.string.dock_empty), style = tokens.secondary)
-        } else Row(
-            Modifier.padding(horizontal = tokens.gap),
-            horizontalArrangement = Arrangement.spacedBy(tokens.gap, Alignment.CenterHorizontally)
+        val cell = minOf(tokens.dockCellWidth, (maxWidth - tokens.gap * 2) / apps.size)
+        Surface(
+            color = tokens.surface.copy(alpha = tokens.dockOpacity),
+            border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
+            shadowElevation = tokens.elevation[1],
+            shape = RoundedCornerShape(tokens.sheetRadius)
         ) {
-            apps.forEach { app ->
-                Box(Modifier.weight(1f)) {
-                    Column(
-                        Modifier.fillMaxWidth().heightIn(min = tokens.touch)
+            Row(Modifier.padding(horizontal = tokens.gap, vertical = tokens.gap / 2)) {
+                apps.forEach { app ->
+                    val label = app.label.toString()
+                    Box(
+                        Modifier.width(cell).heightIn(min = tokens.touch)
                             .appPress({ open(app) }, { actions(app) })
-                            .padding(vertical = tokens.gap),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        AppIcon(app, displaySize = tokens.dockIconSize)
-                        Text(app.label.toString(), style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                            .semantics { contentDescription = label },
+                        contentAlignment = Alignment.Center
+                    ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell)) }
                 }
             }
         }
