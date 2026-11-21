@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalDensity
 @Composable
 internal fun QuickGrid(
     ignoreIme: Boolean,
+    hasSeekBar: Boolean,
     held: @Composable (Modifier) -> Unit,
     rows: List<List<@Composable (Modifier) -> Unit>>,
     strip: (@Composable (Modifier) -> Unit)?
@@ -30,7 +31,8 @@ internal fun QuickGrid(
         val stripHeight = if (strip == null) 0 else with(density) { tokens.stripHeight.roundToPx() } + gap
         val lowerRows = rows.size * (standard + gap) + stripHeight
         val heldHeight = with(density) {
-            val minimum = (if (tiny) tokens.mediaTinyHeight else tokens.heldTarget).roundToPx()
+            val defaultHeight = if (tiny) tokens.mediaTinyHeight else tokens.heldTarget
+            val minimum = (if (hasSeekBar) maxOf(defaultHeight, tokens.mediaSeekHeight) else defaultHeight).roundToPx()
             if (compact && !keyboard) (height - lowerRows).coerceAtLeast(minimum) else minimum
         }
         val scroll = tiny || keyboard || heldHeight + lowerRows > height

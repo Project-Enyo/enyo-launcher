@@ -42,12 +42,14 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val heldTarget = dimension(288, 192, 128, 96).dp
     val cover = dimension(176, 160, 184, 80).dp
     val mediaTinyHeight = 136.dp
+    val mediaSeekHeight = 184.dp
     val mediaCompactCover = dimension(96, 80, 72, 52).dp
     val mediaTitle = TextStyle(fontSize = dimension(24, 22, 21, 17).sp, fontWeight = FontWeight.SemiBold, color = ink)
     val touch = 48.dp
     val bottomClearance = 24.dp
     val chevronSize = 12.dp
     val stroke = dimension(4, 4, 3).dp
+    val mediaControlGlyph = 28.dp
     val mediaProgressStroke = 4.dp
     val mediaWaveAmplitude = 2.5.dp
     val mediaWaveLength = 18.dp

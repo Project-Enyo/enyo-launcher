@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.LauncherApps
+import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.SystemClock
@@ -19,6 +20,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -46,6 +51,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,10 +62,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 private enum class BrightnessLevel(val fraction: Float, val label: Int) {
     Low(0.15f, R.string.brightness_low),
@@ -68,6 +75,7 @@ private enum class BrightnessLevel(val fraction: Float, val label: Int) {
     Maximum(1f, R.string.brightness_maximum)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: Boolean, visible: Boolean) {
     val tokens = LocalTokens.current
@@ -205,12 +213,17 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverl
             }
         )
     }
-    QuickGrid(
-        ignoreIme = searchOverlay,
-        held = { modifier -> MediaCard(state, modifier.then(order(5, if (state.hasTorch) 4 else 3, null)), model::transport) },
-        rows = listOf(listOf(door, bluetooth), listOf(volume, brightnessCard)),
-        strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier.then(order(4, 3, 5)), model::toggleTorch) } else null
-    )
+    CompositionLocalProvider(LocalRippleConfiguration provides null) {
+        QuickGrid(
+            ignoreIme = searchOverlay,
+            hasSeekBar = state.media?.canSeek == true,
+            held = { modifier ->
+                MediaCard(state, modifier.then(order(5, if (state.hasTorch) 4 else 3, null)), model::transport, model::seek)
+            },
+            rows = listOf(listOf(door, bluetooth), listOf(volume, brightnessCard)),
+            strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier.then(order(4, 3, 5)), model::toggleTorch) } else null
+        )
+    }
 
     if (brightnessMenu) EnyoSheet(stringResource(R.string.brightness), { brightnessMenu = false }) {
         BrightnessLevel.entries.forEach { option ->
@@ -291,7 +304,10 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
 }
 
 @Composable
-private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long) -> Unit) {
+private fun MediaCard(
+    state: QuickSnapshot, modifier: Modifier,
+    transport: (Long) -> Unit, seek: (MediaSession.Token, Long) -> Unit
+) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val media = state.media
@@ -332,7 +348,9 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                 }
             } else {
                 val hasProgress = media.duration > 0 && (media.playback?.position ?: -1L) >= 0
-                val progressSpace = if (hasProgress) tokens.mediaProgressHeight + tokens.gap * 2 else tokens.gap / 2
+                val seekable = media.canSeek
+                val progressHeight = if (seekable) tokens.touch else tokens.mediaProgressHeight + tokens.gap
+                val progressSpace = if (hasProgress) progressHeight + tokens.gap else tokens.gap / 2
                 val detailsSpace = with(LocalDensity.current) {
                     (tokens.mediaTitle.fontSize.toDp() * 2 + tokens.secondary.fontSize.toDp()) * 1.25f
                 }
@@ -365,7 +383,7 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                         }
                     }
                     if (!inlineControls) MediaControls(media, transport)
-                    if (hasProgress) MediaProgress(media)
+                    if (hasProgress) MediaProgress(media, seekable, seek)
                 }
             }
         }
@@ -448,60 +466,90 @@ private fun MediaButton(
         onClick = { transport(action) },
         colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accentContainer)
     ) {
-        EnyoGlyph(glyph, color = tokens.accent, description = stringResource(label))
+        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.accent, description = stringResource(label))
     } else IconButton(onClick = { transport(action) }) {
-        EnyoGlyph(glyph, description = stringResource(label))
+        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), description = stringResource(label))
     }
 }
 
+private val MediaSnapshot.canSeek: Boolean
+    get() = duration > 0 && (playback?.position ?: -1L) >= 0 &&
+        (playback?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO != 0L
+
 @Composable
-private fun MediaProgress(media: MediaSnapshot) {
+private fun MediaProgress(media: MediaSnapshot, seekable: Boolean, seek: (MediaSession.Token, Long) -> Unit) {
     val tokens = LocalTokens.current
-    val state = media.playback ?: return
-    if (state.position < 0) return
-    val playing = state.state == PlaybackState.STATE_PLAYING
-    val position by produceState(state.position.toDouble(), state) {
-        value = state.position.toDouble()
-        if (playing) while (true) {
-            val elapsed = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
-            value = state.position + elapsed * state.playbackSpeed.toDouble()
-            delay(250)
-        }
-    }
-    val phase = remember(media.packageName) { mutableFloatStateOf(0f) }
-    LaunchedEffect(playing, phase) {
-        if (!playing) return@LaunchedEffect
-        val initial = phase.floatValue
-        val start = withFrameNanos { it }
-        while (true) {
-            withFrameNanos { time ->
-                val cycles = (time - start) / 1_000_000.0 / tokens.mediaWaveCycleMillis
-                phase.floatValue = (initial + cycles % 1.0).toFloat() % 1f
+    val playback = media.playback ?: return
+    val playing = playback.state == PlaybackState.STATE_PLAYING
+    val position by produceState(playback.position.toDouble(), playback) {
+        value = playback.position.toDouble()
+        if (playing && playback.lastPositionUpdateTime > 0 && playback.playbackSpeed != 0f) while (true) {
+            withFrameNanos {
+                val elapsed = (SystemClock.elapsedRealtime() - playback.lastPositionUpdateTime).coerceAtLeast(0L)
+                value = playback.position + elapsed * playback.playbackSpeed.toDouble()
             }
         }
     }
+    var scrub by remember(media.token, media.duration, seekable) { mutableStateOf<Float?>(null) }
+    val sendSeek by rememberUpdatedState(seek)
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val strokeWidth = tokens.mediaProgressStroke
+    fun fraction(x: Float, width: Int, stroke: Float): Float {
+        val fromStart = if (rtl) width - x else x
+        return ((fromStart - stroke / 2) / (width - stroke).coerceAtLeast(1f)).coerceIn(0f, 1f)
+    }
+    fun seekTo(fraction: Float) = sendSeek(media.token, (media.duration * fraction.toDouble()).roundToLong())
+    val gestures = if (!seekable) Modifier else Modifier
+        .pointerInput(media.token, media.duration, rtl, strokeWidth) {
+            detectTapGestures { seekTo(fraction(it.x, size.width, strokeWidth.toPx())) }
+        }
+        .pointerInput(media.token, media.duration, rtl, strokeWidth) {
+            detectHorizontalDragGestures(
+                onDragStart = { scrub = fraction(it.x, size.width, strokeWidth.toPx()) },
+                onDragEnd = {
+                    scrub?.let(::seekTo)
+                    scrub = null
+                },
+                onDragCancel = { scrub = null },
+                onHorizontalDrag = { change, _ ->
+                    change.consume()
+                    scrub = fraction(change.position.x, size.width, strokeWidth.toPx())
+                }
+            )
+        }
+    fun displayedPosition() = scrub?.let { media.duration * it.toDouble() }
+        ?: position.coerceIn(0.0, media.duration.toDouble())
+    val accessibleProgress by remember(media.token, media.duration, playback) {
+        derivedStateOf { ((displayedPosition() / media.duration) * 100).roundToInt() / 100f }
+    }
     val wave = remember { Path() }
-    fun fraction() = (position / media.duration).coerceIn(0.0, 1.0).toFloat()
+    val height = if (seekable) tokens.touch else tokens.mediaProgressHeight + tokens.gap
     Canvas(
-        Modifier.fillMaxWidth()
-            .padding(horizontal = tokens.gap, vertical = tokens.gap / 2)
-            .height(tokens.mediaProgressHeight)
-            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(fraction(), 0f..1f) }
+        Modifier.fillMaxWidth().padding(horizontal = tokens.gap).height(height)
+            .then(gestures)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(accessibleProgress, 0f..1f)
+                if (seekable) setProgress {
+                    seekTo(it.coerceIn(0f, 1f))
+                    true
+                }
+            }
     ) {
-        val stroke = tokens.mediaProgressStroke.toPx()
+        val stroke = strokeWidth.toPx()
         val start = stroke / 2
         val length = (size.width - stroke).coerceAtLeast(0f)
         if (length <= 0f || size.height < stroke) return@Canvas
-        val end = length * fraction()
+        val playtime = displayedPosition()
+        val end = length * (playtime / media.duration).toFloat()
         val middle = size.height / 2
-        fun x(distance: Float) = if (layoutDirection == LayoutDirection.Rtl) size.width - start - distance
-            else start + distance
+        fun x(distance: Float) = if (rtl) size.width - start - distance else start + distance
         if (end < length) drawLine(tokens.accentContainer, Offset(x(end), middle), Offset(x(length), middle), stroke, StrokeCap.Round)
         if (end <= 0f) return@Canvas
         val wavelength = tokens.mediaWaveLength.toPx()
         val amplitude = minOf(tokens.mediaWaveAmplitude.toPx(), (size.height - stroke) / 2)
-        val shift = phase.floatValue
-        fun y(distance: Float): Float = middle + amplitude * sin((distance / wavelength - shift) * 2 * PI).toFloat()
+        val cycle = tokens.mediaWaveCycleMillis
+        val phase = (playtime % cycle) / cycle
+        fun y(distance: Float): Float = middle + amplitude * sin((distance / wavelength - phase) * 2 * PI).toFloat()
         wave.reset()
         wave.moveTo(x(0f), y(0f))
         val sampling = wavelength / 12

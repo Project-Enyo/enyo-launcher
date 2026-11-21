@@ -69,6 +69,7 @@ internal data class MediaSnapshot(
     val playback: PlaybackState?,
     val duration: Long,
     val packageName: String,
+    val token: MediaSession.Token,
     val sessionActivity: PendingIntent?
 )
 
@@ -367,7 +368,7 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
             it.isActivity && it.creatorUserHandle == Process.myUserHandle()
         }
         snapshot.update {
-            it.copy(media = MediaSnapshot(title, artist, artwork, playback, duration, controller.packageName, activity))
+            it.copy(media = MediaSnapshot(title, artist, artwork, playback, duration, controller.packageName, controller.sessionToken, activity))
         }
     }
 
@@ -397,6 +398,15 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
                 PlaybackState.ACTION_SKIP_TO_PREVIOUS -> controller.transportControls.skipToPrevious()
             }
         }
+    }
+
+    fun seek(token: MediaSession.Token, position: Long) {
+        val controller = selected ?: return
+        val current = snapshot.value
+        val media = current.media ?: return
+        if (!current.mediaAllowed || controller.sessionToken != token || media.token != token || media.duration <= 0) return
+        if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO == 0L) return
+        runCatching { controller.transportControls.seekTo(position.coerceIn(0, media.duration)) }
     }
 
     override fun onCleared() = stop()
