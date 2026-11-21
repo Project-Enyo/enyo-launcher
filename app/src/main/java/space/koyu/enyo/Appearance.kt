@@ -138,7 +138,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
     }
     BackHandler(onBack = back)
     LazyColumn(
-        Modifier.fillMaxSize().background(tokens.background).safeDrawingPadding(),
+        Modifier.fillMaxSize().background(tokens.wallpaperGalleryBackground).safeDrawingPadding(),
         state = galleryScroll,
         contentPadding = PaddingValues(tokens.margin),
         verticalArrangement = Arrangement.spacedBy(tokens.gap)
@@ -151,7 +151,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
             val label = stringResource(preview.label)
             Box(
                 Modifier.fillMaxWidth().height(tokens.heldTarget).clip(RoundedCornerShape(tokens.radius))
-                    .background(tokens.surface)
+                    .background(tokens.widgetSurface)
             ) {
                 bitmap?.let { Image(it.asImageBitmap(), label, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             }
@@ -208,7 +208,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                     ) {
                         Box(
                             Modifier.fillMaxWidth().height(tokens.wallpaperThumbnail)
-                                .clip(RoundedCornerShape(tokens.artworkRadius)).background(tokens.surface)
+                                .clip(RoundedCornerShape(tokens.artworkRadius)).background(tokens.widgetSurface)
                         ) {
                             picture?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                         }

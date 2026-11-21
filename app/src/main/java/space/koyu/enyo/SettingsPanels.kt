@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsPanel(title: String?, content: @Composable ColumnScope.() -> Unit) {
     val tokens = LocalTokens.current
@@ -26,9 +29,11 @@ internal fun SettingsPanel(title: String?, content: @Composable ColumnScope.() -
         shape = RoundedCornerShape(tokens.sheetRadius),
         shadowElevation = tokens.elevation[0]
     ) {
-        Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-            title?.let { Text(it, Modifier.semantics { heading() }, style = tokens.state) }
-            content()
+        CompositionLocalProvider(LocalRippleConfiguration provides null) {
+            Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                title?.let { Text(it, Modifier.semantics { heading() }, style = tokens.state) }
+                content()
+            }
         }
     }
 }
@@ -79,7 +84,9 @@ internal fun SettingsToggle(title: String, checked: Boolean, change: (Boolean) -
     )
     Row(
         Modifier.fillMaxWidth().heightIn(min = tokens.touch)
-            .toggleable(checked, role = Role.Switch, onValueChange = change),
+            .toggleable(
+                checked, interactionSource = null, indication = null, role = Role.Switch, onValueChange = change
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(tokens.padding)
     ) {
