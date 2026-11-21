@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
@@ -33,13 +34,28 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 
 class EnyoActivity : ComponentActivity() {
+    private val widgetBoard by lazy { WidgetBoard(this) }
+    private val widgetBinding = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        widgetBoard.bindingResult(it.resultCode == RESULT_OK)
+    }
+
+    internal fun requestWidgetBinding(intent: Intent) = widgetBinding.launch(intent)
+
+    @Deprecated("Required by the Android widget configuration flow")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == widgetConfigureRequest) widgetBoard.configurationResult(resultCode == RESULT_OK)
+    }
+
     override fun onStart() {
         super.onStart()
         launcherVisible.value = true
+        widgetBoard.start()
     }
 
     override fun onStop() {
         launcherVisible.value = false
+        widgetBoard.stop()
         super.onStop()
     }
 
@@ -91,6 +107,7 @@ class EnyoActivity : ComponentActivity() {
                 MaterialTheme(colorScheme = scheme) {
                     CompositionLocalProvider(
                         LocalTokens provides tokens,
+                        LocalWidgetBoard provides widgetBoard,
                         LocalOriginalIcons provides (prefs?.get(originalIcons) == true),
                         LocalBrandIcons provides brandIcons
                     ) {

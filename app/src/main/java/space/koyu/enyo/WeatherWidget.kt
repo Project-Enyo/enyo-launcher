@@ -8,11 +8,18 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.net.ConnectivityManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.IconButton
@@ -45,19 +52,20 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 private const val weatherIntervalMillis = 15 * 60 * 1000L
-private const val locationTimeoutMillis = 7_000L
-private const val weatherTimeoutMillis = 8_000
+private const val gpsTimeoutMillis = 15_000L
+private const val locationTimeoutMillis = 4_000L
+private const val weatherTimeoutMillis = 15_000
 private val weatherPermissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 
-private enum class WeatherAccess { None, Approximate, Precise }
+internal enum class WeatherAccess { None, Approximate, Precise }
 
-private fun Context.weatherAccess() = when {
+internal fun Context.weatherAccess() = when {
     checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED -> WeatherAccess.Precise
     checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED -> WeatherAccess.Approximate
     else -> WeatherAccess.None
 }
 
-private enum class Conditions(val label: Int, val glyph: Glyph) {
+internal enum class Conditions(val label: Int, val glyph: Glyph) {
     Clear(R.string.weather_clear, Glyph.Today),
     Cloudy(R.string.weather_cloudy, Glyph.Cloud),
     Fog(R.string.weather_fog, Glyph.CloudFog),
@@ -67,7 +75,38 @@ private enum class Conditions(val label: Int, val glyph: Glyph) {
     Unknown(R.string.weather_conditions_unknown, Glyph.Cloud)
 }
 
-private data class WeatherReading(val celsius: Int, val conditions: Conditions, val fetchedAt: Long)
+internal data class WeatherReading(
+    val celsius: Int,
+    val conditions: Conditions,
+    val fetchedAt: Long,
+    val estimated: Boolean
+)
+
+@Volatile internal var latestWeather: WeatherReading? = null
+    private set
+@Volatile internal var latestWeatherStatus = R.string.weather_loading
+    private set
+
+class WeatherActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
+                val tokens = Tokens(isSystemInDarkTheme(), resolveCardSize(maxWidth, maxHeight))
+                MaterialTheme {
+                    CompositionLocalProvider(LocalTokens provides tokens) {
+                        Surface(color = tokens.background, modifier = Modifier.fillMaxSize()) {
+                            Column(Modifier.padding(tokens.margin), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                                SettingsHeading(stringResource(R.string.widget_weather), ::finish)
+                                WeatherWidget(foregroundCycle(), visible = true, showPrompt = true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 private class WeatherState : ViewModel() {
     var reading by mutableStateOf<WeatherReading?>(null)
@@ -78,9 +117,17 @@ private class WeatherState : ViewModel() {
     private var lastRefresh = 0L
 
     suspend fun observe(context: Context, permission: WeatherAccess, refreshAt: Long) {
-        if (access != permission) reading = null
-        access = permission
-        if (permission == WeatherAccess.None) return
+        if (access != permission) {
+            reading = latestWeather.takeIf { access == WeatherAccess.None && permission != WeatherAccess.None }
+            access = permission
+        }
+        if (permission == WeatherAccess.None) {
+            if (latestWeather != null) {
+                latestWeather = null
+                publishTodayWidget(context, TodayWidget.Weather)
+            }
+            return
+        }
         val refresh = refreshAt > lastRefresh
         if (refresh) lastRefresh = refreshAt
         val manager = context.getSystemService(LocationManager::class.java)
@@ -90,29 +137,29 @@ private class WeatherState : ViewModel() {
         }
         while (context.weatherAccess() == permission) {
             status = R.string.weather_loading
-            status = if (!manager.isLocationEnabled) R.string.weather_location_disabled else {
-                val fix = currentWeatherLocation(context, manager, permission)
-                if (fix == null) R.string.weather_location_unavailable else {
-                    val result = loadWeather(context, fix, permission)
-                    if (result == null) R.string.weather_unavailable else {
-                        reading = result
-                        R.string.weather_loading
-                    }
-                }
+            val network = context.getSystemService(ConnectivityManager::class.java)
+            if (network.activeNetwork == null) {
+                status = R.string.weather_network_unavailable
+            } else {
+                val fix = if (manager.isLocationEnabled) currentWeatherLocation(context, manager, permission) else null
+                val result = fix?.let { loadWeather(context, it, permission) }
+                    ?: loadWeather(context, null, permission)
+                if (result == null) status = R.string.weather_unavailable else reading = result
             }
-            if (status != R.string.weather_loading) reading = null
+            latestWeather = reading
+            latestWeatherStatus = status
+            publishTodayWidget(context, TodayWidget.Weather)
             delay(weatherIntervalMillis)
         }
     }
 }
 
 @Composable
-internal fun WeatherWidget(foreground: Int, visible: Boolean) {
+internal fun WeatherWidget(foreground: Int, visible: Boolean, render: Boolean = true, showPrompt: Boolean = false) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
     val model = viewModel<WeatherState> { WeatherState() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val locationManager = remember(context) { context.getSystemService(LocationManager::class.java) }
     var locationRevision by remember { mutableIntStateOf(0) }
     if (visible) DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
@@ -125,7 +172,7 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean) {
     }
     var permissionResult by remember { mutableIntStateOf(0) }
     var refreshAt by remember { mutableLongStateOf(0) }
-    var explained by rememberSaveable { mutableStateOf(false) }
+    var explained by rememberSaveable { mutableStateOf(showPrompt && context.weatherAccess() == WeatherAccess.None) }
     var previouslyRequested by rememberSaveable { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionResult++
@@ -137,6 +184,7 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean) {
             model.observe(context.applicationContext, access, refreshAt)
         }
     }
+    if (!render) return
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.widget_weather), Modifier.weight(1f), style = tokens.label, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
@@ -144,8 +192,6 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean) {
         IconButton(onClick = {
             when {
                 !allowed -> explained = true
-                !locationManager.isLocationEnabled ->
-                    context.launchSafely(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                 else -> refreshAt = SystemClock.elapsedRealtime()
             }
         }) {
@@ -159,9 +205,18 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean) {
             EnyoGlyph(reading.conditions.glyph, Modifier.size(tokens.appGlyphSize), color = tokens.accent)
             Text(stringResource(R.string.weather_celsius, reading.celsius), style = tokens.value, maxLines = 1)
         }
-        Text(stringResource(reading.conditions.label), style = tokens.secondary)
+        Text(
+            if (reading.estimated) stringResource(R.string.weather_estimated_conditions) else stringResource(reading.conditions.label),
+            style = tokens.secondary
+        )
     } else {
         Text(stringResource(if (allowed) model.status else R.string.weather_location_prompt), style = tokens.secondary)
+    }
+    if (showPrompt && allowed && model.status == R.string.weather_network_unavailable) {
+        Text(stringResource(R.string.weather_network_help), style = tokens.secondary)
+        TextButton(onClick = {
+            context.launchSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+        }) { Text(stringResource(R.string.app_info)) }
     }
     if (explained) EnyoSheet(stringResource(R.string.widget_weather), { explained = false }) {
         Text(stringResource(R.string.weather_location_explanation), style = tokens.secondary)
@@ -187,7 +242,7 @@ private suspend fun currentWeatherLocation(context: Context, manager: LocationMa
     for (provider in candidates) {
         if (provider !in available) continue
         val fix = try {
-            withTimeoutOrNull(locationTimeoutMillis) {
+            withTimeoutOrNull(if (provider == LocationManager.GPS_PROVIDER) gpsTimeoutMillis else locationTimeoutMillis) {
                 suspendCancellableCoroutine<Location?> { continuation ->
                     val cancellation = CancellationSignal()
                     continuation.invokeOnCancellation { cancellation.cancel() }
@@ -204,20 +259,37 @@ private suspend fun currentWeatherLocation(context: Context, manager: LocationMa
     return null
 }
 
-private suspend fun loadWeather(context: Context, location: Location, permission: WeatherAccess): WeatherReading? =
+private suspend fun loadWeather(context: Context, location: Location?, permission: WeatherAccess): WeatherReading? =
     withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
         if (context.weatherAccess() != permission) return@withContext null
-        val coordinates = String.format(Locale.ROOT, "%.2f,%.2f", location.latitude, location.longitude)
-        val connection = java.net.URL("https://wttr.in/$coordinates?format=j1").openConnection() as HttpURLConnection
+        val coordinates = location?.let { String.format(Locale.ROOT, "%.2f,%.2f", it.latitude, it.longitude) }.orEmpty()
+        val german = context.resources.configuration.locales[0].language == "de"
+        val url = java.net.URL("https://wttr.in/$coordinates?format=j1" + if (german) "&lang=de" else "")
+        val connection = try {
+            url.openConnection() as HttpURLConnection
+        } catch (_: java.io.IOException) {
+            return@withContext null
+        }
         try {
             connection.connectTimeout = weatherTimeoutMillis
             connection.readTimeout = weatherTimeoutMillis
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept", "application/json")
-            val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+            val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val buffer = CharArray(8_192)
+                buildString {
+                    while (true) {
+                        val count = reader.read(buffer)
+                        if (count < 0) break
+                        if (length + count > 512 * 1024) return@withContext null
+                        append(buffer, 0, count)
+                    }
+                }
+            }
             val current = JSONObject(body).getJSONArray("current_condition").getJSONObject(0)
-            WeatherReading(current.getInt("temp_C"), conditions(current.getInt("weatherCode")), SystemClock.elapsedRealtime())
+            WeatherReading(current.getInt("temp_C"), conditions(current.getInt("weatherCode")), SystemClock.elapsedRealtime(), estimated = location == null)
         } catch (error: CancellationException) {
             throw error
         } catch (_: java.io.IOException) {
