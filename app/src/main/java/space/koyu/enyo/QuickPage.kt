@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -336,7 +338,7 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                         horizontalArrangement = Arrangement.spacedBy(tokens.gap),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        MediaCover(media, Modifier.size(cover))
+                        MediaCover(media, Modifier.size(cover), open)
                         Column(Modifier.weight(1f)) {
                             if (!compact) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -378,10 +380,14 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
 }
 
 @Composable
-private fun MediaCover(media: MediaSnapshot?, modifier: Modifier) {
+private fun MediaCover(media: MediaSnapshot?, modifier: Modifier, open: (() -> Unit)? = null) {
     val tokens = LocalTokens.current
+    val openPlayer by rememberUpdatedState(open)
+    val tapArtwork = if (open == null) Modifier else Modifier.pointerInput(Unit) {
+        detectTapGestures { openPlayer?.invoke() }
+    }
     Box(
-        modifier.clip(RoundedCornerShape(tokens.iconRadius)).background(tokens.accentContainer),
+        modifier.clip(RoundedCornerShape(tokens.iconRadius)).background(tokens.accentContainer).then(tapArtwork),
         contentAlignment = Alignment.Center
     ) {
         val artwork = media?.artwork

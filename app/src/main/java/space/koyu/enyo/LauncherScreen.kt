@@ -287,7 +287,7 @@ internal fun LauncherScreen(
                 userScrollEnabled = surface == 0 && searchPullFraction == 0f
             ) { page ->
                 when (page) {
-                    0 -> TodayBoard(foreground)
+                    0 -> TodayBoard(foreground, pager.settledPage == 0 && surface == 0)
                     1 -> AppsGrid(library, onAtTopChanged = { appsAtTop = it }, extra = {
                         AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
                             androidx.compose.material3.Surface(

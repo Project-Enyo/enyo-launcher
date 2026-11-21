@@ -53,6 +53,7 @@ import kotlin.math.abs
 private enum class TodayWidget(val title: Int, val startsWide: Boolean = false) {
     Clock(R.string.widget_clock, true),
     Calendar(R.string.widget_calendar, true),
+    Weather(R.string.widget_weather),
     Battery(R.string.widget_battery),
     Network(R.string.wireless)
 }
@@ -60,7 +61,7 @@ private enum class TodayWidget(val title: Int, val startsWide: Boolean = false) 
 private val widgetWidths = stringPreferencesKey("today_wide")
 
 @Composable
-internal fun TodayBoard(foreground: Int) {
+internal fun TodayBoard(foreground: Int, visible: Boolean) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
     val locale = LocalConfiguration.current.locales[0]
@@ -131,6 +132,7 @@ internal fun TodayBoard(foreground: Int) {
                                 Text(label, style = tokens.label)
                                 Text(event ?: stringResource(R.string.calendar_empty), style = tokens.state, maxLines = 2)
                             }
+                            TodayWidget.Weather -> WeatherWidget(foreground, visible)
                             TodayWidget.Battery -> {
                                 Row(verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(tokens.padding)) {
