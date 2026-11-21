@@ -21,7 +21,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -356,27 +355,20 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
         }
     }
     val expanded = groups.firstOrNull { openedStack != null && it.first().entry.stack == openedStack }
-    if (expanded != null) AlertDialog(
-        onDismissRequest = { openedStack = null },
-        title = { Text(stringResource(R.string.cards_stack)) },
-        text = {
-            LazyColumn {
-                items(expanded, key = { it.entry.component.flattenToString() }) { row ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { openedStack = null; open(row.app) }, modifier = Modifier.weight(1f)) {
-                            Text(row.app.label.toString())
-                        }
-                        TextButton(onClick = { store.detach(row.entry.component) }) {
-                            Text(stringResource(R.string.cards_unstack))
-                        }
+    if (expanded != null) EnyoSheet(stringResource(R.string.cards_stack), { openedStack = null }) {
+        LazyColumn(Modifier.heightIn(max = tokens.folderMaxHeight)) {
+            items(expanded, key = { it.entry.component.flattenToString() }) { row ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { openedStack = null; open(row.app) }, modifier = Modifier.weight(1f)) {
+                        Text(row.app.label.toString())
+                    }
+                    TextButton(onClick = { store.detach(row.entry.component) }) {
+                        Text(stringResource(R.string.cards_unstack))
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { openedStack = null }) { Text(stringResource(R.string.back)) }
         }
-    )
+    }
 }
 
 @Composable

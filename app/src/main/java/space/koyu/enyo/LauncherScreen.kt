@@ -3,6 +3,8 @@ package space.koyu.enyo
 import android.Manifest
 import android.app.Notification
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.net.Uri
 import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
@@ -22,7 +24,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -35,6 +38,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.Lifecycle
@@ -109,6 +114,9 @@ internal fun LauncherScreen(
         }
     }
     var transitPicker by remember { mutableStateOf(false) }
+    var appMenu by remember { mutableStateOf<LauncherActivityInfo?>(null) }
+    val pins by remember(context) { context.pins() }.collectAsState(emptyList())
+    val pinned = remember(apps, pins) { pins.mapNotNull { id -> apps.firstOrNull { it.componentName == id } } }
     val pages = listOf(R.string.today, R.string.apps, R.string.cards, R.string.inbox, R.string.quick)
     val pager = rememberPagerState(initialPage = 2) { pages.size }
     val scope = rememberCoroutineScope()
@@ -166,18 +174,38 @@ internal fun LauncherScreen(
         else recentStore.capture = null
     }
 
-    if (transitPicker && transit.isNotEmpty()) AlertDialog(
-        onDismissRequest = { transitPicker = false },
-        title = { Text(stringResource(R.string.transit)) },
-        text = {
-            LazyColumn {
-                items(transit, key = { it.componentName.flattenToString() }) { app ->
-                    LibraryRow(app) { transitPicker = false; openApp(app) }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { transitPicker = false }) { Text(stringResource(R.string.back)) } }
+    if (transitPicker && transit.isNotEmpty() && appMenu == null) AppFolder(
+        title = stringResource(R.string.transit),
+        items = transit,
+        close = { transitPicker = false },
+        open = { app -> transitPicker = false; openApp(app) },
+        actions = { appMenu = it }
     )
+    appMenu?.let { app ->
+        val component = app.componentName
+        val pinnedApp = component in pins
+        val canUninstall = app.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0
+        EnyoSheet(app.label.toString(), { appMenu = null }) {
+            TextButton(onClick = {
+                appMenu = null
+                runCatching { launcher.startAppDetailsActivity(component, app.user, null, null) }.onFailure {
+                    context.launchSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", component.packageName, null)))
+                }
+            }) { Text(stringResource(R.string.app_info)) }
+            if (canUninstall) TextButton(onClick = {
+                appMenu = null
+                context.launchSafely(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", component.packageName, null)))
+            }) { Text(stringResource(R.string.app_uninstall)) }
+            TextButton(
+                enabled = pinnedApp || pinned.size < dockCapacity,
+                onClick = {
+                    appMenu = null
+                    scope.launch { context.changePin(component, !pinnedApp, apps.map { it.componentName }.toSet()) }
+                }
+            ) { Text(stringResource(if (pinnedApp) R.string.dock_unpin else R.string.dock_pin)) }
+            if (!pinnedApp && pinned.size >= dockCapacity) Text(stringResource(R.string.dock_full), style = tokens.secondary)
+        }
+    }
     SearchOnboarding()
     BackHandler(surface != 0 || pager.currentPage != 2) {
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
@@ -192,36 +220,33 @@ internal fun LauncherScreen(
 
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = tokens.margin), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { query = TextFieldValue(); surface = 1 }, modifier = Modifier.focusRequester(searchFocus)) { Text(stringResource(R.string.search), color = tokens.ink) }
-                TextButton(
+                val searchLabel = stringResource(R.string.search)
+                val preferencesLabel = stringResource(R.string.preferences)
+                IconButton(
+                    onClick = { query = TextFieldValue(); surface = 1 },
+                    modifier = Modifier.focusRequester(searchFocus).semantics { contentDescription = searchLabel }
+                ) { EnyoGlyph(Glyph.Search) }
+                IconButton(
                     onClick = { surface = 2 },
-                    modifier = Modifier.focusProperties {
-                        if (pager.currentPage == 4) next = quickFocus
-                    }
-                ) {
-                    EnyoGlyph(Glyph.Settings)
-                    Spacer(Modifier.width(tokens.gap))
-                    Text(stringResource(R.string.preferences), color = tokens.ink)
-                }
+                    modifier = Modifier.focusProperties { if (pager.currentPage == 4) next = quickFocus }
+                        .semantics { contentDescription = preferencesLabel }
+                ) { EnyoGlyph(Glyph.Settings) }
             }
             HorizontalPager(pager, Modifier.weight(1f)) { page ->
                 when (page) {
                     0 -> TodayPage(foreground)
-                    1 -> LazyVerticalGrid(
-                        columns = GridCells.Adaptive(tokens.appCellWidth),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(tokens.margin),
-                        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                        verticalArrangement = Arrangement.spacedBy(tokens.gap)
-                    ) {
-                        items(library, key = { it.componentName.flattenToString() }, contentType = { "App" }) { app ->
-                            val consolidated = app.componentName.packageName == transitPackage
-                            LibraryTile(app, label = if (consolidated) stringResource(R.string.transit) else app.label.toString()) {
-                                if (consolidated) transitPicker = true else openApp(app)
-                            }
-                        }
+                    1 -> AppsGrid(library) { app ->
+                        val consolidated = app.componentName.packageName == transitPackage
+                        AppTile(
+                            label = if (consolidated) stringResource(R.string.transit) else app.label.toString(),
+                            open = { if (consolidated) transitPicker = true else openApp(app) },
+                            actions = if (consolidated) null else ({ appMenu = app })
+                        ) { AppIcon(app) }
                     }
-                    2 -> CardsPage(apps, ::openApp, cardsFocus)
+                    2 -> Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus) }
+                        PinnedDock(pinned, { scope.launch { pager.animateScrollToPage(1) } }, ::openApp) { appMenu = it }
+                    }
                     3 -> InboxPage()
                     4 -> QuickPage(openPanel, quickFocus)
                 }
@@ -252,30 +277,10 @@ internal fun LauncherScreen(
 private val pageGlyphs = listOf(Glyph.Today, Glyph.Apps, Glyph.Cards, Glyph.Inbox, Glyph.Quick)
 
 @Composable
-internal fun LibraryTile(app: LauncherActivityInfo, label: String, onClick: () -> Unit) {
-    val tokens = LocalTokens.current
-    Column(
-        Modifier.fillMaxWidth().heightIn(min = tokens.appCellHeight).clickable(onClick = onClick)
-            .padding(vertical = tokens.gap),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(tokens.gap)
-    ) {
-        AppIcon(app)
-        Text(
-            label,
-            style = tokens.secondary.copy(color = tokens.ink),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            maxLines = 2,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
 internal fun LibraryRow(app: LauncherActivityInfo, label: String = app.label.toString(), onClick: () -> Unit) {
     val tokens = LocalTokens.current
     Row(
-        Modifier.fillMaxWidth().heightIn(min = tokens.touch).clickable(onClick = onClick)
+        Modifier.fillMaxWidth().heightIn(min = tokens.touch).appPress(onClick)
             .padding(horizontal = tokens.padding, vertical = tokens.gap),
         horizontalArrangement = Arrangement.spacedBy(tokens.padding),
         verticalAlignment = Alignment.CenterVertically

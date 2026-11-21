@@ -53,6 +53,13 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val wallpaperEdgeAlpha = if (dark) 0.84f else 0.87f
     val wallpaperCenterAlpha = if (dark) 0.40f else 0.36f
     val cardOpacity = if (dark) 0.91f else 0.93f
+    val eagerAppLimit = 120
+    val folderMaxHeight = 300.dp
+    val dockIconSize = 42.dp
+    val dockOpacity = 0.93f
+    val sheetScrim = 0.62f
+    val brandInk = Color.White
+    val brandSurface = if (dark) accentContainer else accent
     val appCellWidth = dimension(94, 86, 78, 68).dp
     val appCellHeight = dimension(100, 96, 88, 80).dp
     val iconSize = 56.dp

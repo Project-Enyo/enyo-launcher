@@ -17,6 +17,9 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -24,15 +27,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -111,22 +119,14 @@ internal fun SearchOnboarding() {
     val loaded by remember(store) { store.data.map { it[setupSeen] != true } }.collectAsState(false)
     if (loaded) {
         fun dismiss() { scope.launch { store.edit { it[setupSeen] = true } } }
-        AlertDialog(
-            onDismissRequest = { dismiss() },
-            title = { Text(stringResource(R.string.contacts_permission)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(LocalTokens.current.gap)) {
-                    Text(stringResource(R.string.contacts_reason))
-                    Text(stringResource(R.string.battery_discovery))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) {
-                    Text(stringResource(R.string.contacts_permission))
-                }
-            },
-            dismissButton = { TextButton(onClick = { dismiss() }) { Text(stringResource(R.string.skip_setup)) } }
-        )
+        EnyoSheet(stringResource(R.string.contacts_permission), { dismiss() }) {
+            Text(stringResource(R.string.contacts_reason), style = LocalTokens.current.secondary)
+            Text(stringResource(R.string.battery_discovery), style = LocalTokens.current.secondary)
+            TextButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) {
+                Text(stringResource(R.string.contacts_permission))
+            }
+            TextButton(onClick = { dismiss() }) { Text(stringResource(R.string.skip_setup)) }
+        }
     }
 }
 
@@ -227,80 +227,104 @@ internal fun SearchScreen(
             else Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.number, null))
         )
     }
-    Scaffold(
-        modifier = Modifier.safeDrawingPadding(),
-        containerColor = tokens.background
-    ) { inset ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(inset),
-            contentPadding = PaddingValues(
-                start = tokens.margin, end = tokens.margin, top = tokens.margin, bottom = tokens.bottomClearance
-            )
+    Column(
+        Modifier.fillMaxSize().background(tokens.background).safeDrawingPadding().imePadding()
+            .padding(horizontal = tokens.margin),
+        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+    ) {
+        val backLabel = stringResource(R.string.back)
+        val preferencesLabel = stringResource(R.string.preferences)
+        val clearLabel = stringResource(R.string.clear_search)
+        val searchLabel = stringResource(R.string.search)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                    SearchButton(R.string.back, back)
-                    SearchButton(R.string.preferences, preferences)
-                }
-                OutlinedTextField(
+            IconButton(onClick = back, modifier = Modifier.semantics { contentDescription = backLabel }) {
+                EnyoGlyph(Glyph.Back)
+            }
+            Surface(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(tokens.radius),
+                color = tokens.surface
+            ) {
+                BasicTextField(
                     value = query,
                     onValueChange = onQuery,
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                    label = { Text(stringResource(R.string.search), color = tokens.ink) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = tokens.ink,
-                        unfocusedTextColor = tokens.ink,
-                        focusedBorderColor = tokens.accent
-                    )
+                    textStyle = tokens.state,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    cursorBrush = SolidColor(tokens.accent),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                        .semantics { contentDescription = searchLabel },
+                    decorationBox = { field ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = tokens.touch).padding(start = tokens.padding),
+                            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            EnyoGlyph(Glyph.Search, color = tokens.quiet)
+                            Box(Modifier.weight(1f)) {
+                                if (query.text.isEmpty()) Text(searchLabel, style = tokens.secondary)
+                                field()
+                            }
+                            if (query.text.isNotEmpty()) IconButton(
+                                onClick = { onQuery(TextFieldValue()) },
+                                modifier = Modifier.semantics { contentDescription = clearLabel }
+                            ) { EnyoGlyph(Glyph.Close, color = tokens.quiet) }
+                            else Spacer(Modifier.width(tokens.padding))
+                        }
+                    }
                 )
             }
-            if (input.isBlank() && history.isNotBlank()) {
-                items(history.lines()) { previous ->
-                    TextButton(onClick = { onQuery(TextFieldValue(previous, TextRange(previous.length))) }) { Text(previous, color = tokens.ink) }
-                }
+            IconButton(onClick = preferences, modifier = Modifier.semantics { contentDescription = preferencesLabel }) {
+                EnyoGlyph(Glyph.Settings)
             }
-            if (installed.isNotEmpty()) item {
-                SearchButton(R.string.assistant_search) {
-                    if (selected == null) selected = (matchesPreferred ?: installed.first()).assistant
-                    else choosing = true
-                }
-                if (active != null && installed.size > 1) {
-                    SearchButton(R.string.change_assistant) { choosing = true }
-                }
-                active?.let {
-                    val label = stringResource(it.assistant.label)
-                    Text(stringResource(R.string.assistant_copy_explanation, label), style = tokens.secondary)
-                    if (input.isNotBlank()) SearchButton(R.string.assistant_copy_open) {
-                        val manager = context.getSystemService(ClipboardManager::class.java)
-                        manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
-                        record(input)
-                        open(it.launch)
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(bottom = tokens.bottomClearance),
+            verticalArrangement = Arrangement.spacedBy(tokens.gap)
+        ) {
+            if (status != 0) item { Text(stringResource(status), style = tokens.secondary) }
+            if (input.isBlank() && history.isNotBlank()) {
+                item { SearchSection(R.string.search_history_recent) }
+                items(history.lines()) { previous ->
+                    TextButton(onClick = { onQuery(TextFieldValue(previous, TextRange(previous.length))) }) {
+                        Text(previous, color = tokens.ink)
                     }
                 }
             }
-            if (status != 0) item { Text(stringResource(status), style = tokens.secondary) }
             if (input.isNotBlank()) {
-                items(appResults) { app ->
+                if (appResults.isNotEmpty()) item { SearchSection(R.string.apps) }
+                items(appResults, key = { it.componentName.flattenToString() }) { app ->
                     val consolidated = app.componentName.packageName == transitPackage
-                    LibraryRow(app, label = if (consolidated) transitLabel else app.label.toString()) {
-                        record(input)
-                        if (consolidated) openTransit() else openApp(app)
+                    Surface(shape = RoundedCornerShape(tokens.radius), color = tokens.surface) {
+                        LibraryRow(app, label = if (consolidated) transitLabel else app.label.toString()) {
+                            record(input)
+                            if (consolidated) openTransit() else openApp(app)
+                        }
                     }
                 }
                 if (command?.first in listOf(null, Command.Settings)) {
-                    settingsDestinations.filter {
+                    val results = settingsDestinations.filter {
                         context.getString(it.label).contains(term, ignoreCase = true)
-                    }.forEach { destination ->
+                    }
+                    if (results.isNotEmpty()) item { SearchSection(R.string.android_settings) }
+                    results.forEach { destination ->
                         item { SearchButton(destination.label) { open(Intent(destination.action)) } }
                     }
                 }
+                if (contacts.isNotEmpty()) item { SearchSection(R.string.contacts_results) }
                 items(contacts) { contact ->
-                    Column {
-                        Text(stringResource(R.string.contact_result, contact.name, contact.number), style = tokens.state)
-                        Row {
-                            if (command?.first != Command.Message) SearchButton(R.string.call) { confirmContact(contact, false) }
-                            if (command?.first != Command.Call) SearchButton(R.string.message) { confirmContact(contact, true) }
+                    Surface(shape = RoundedCornerShape(tokens.radius), color = tokens.surface) {
+                        Column(Modifier.fillMaxWidth().padding(tokens.padding)) {
+                            Text(stringResource(R.string.contact_result, contact.name, contact.number), style = tokens.state)
+                            Row {
+                                if (command?.first != Command.Message) SearchButton(R.string.call) { confirmContact(contact, false) }
+                                if (command?.first != Command.Call) SearchButton(R.string.message) { confirmContact(contact, true) }
+                            }
                         }
                     }
                 }
@@ -318,34 +342,46 @@ internal fun SearchScreen(
                     }
                 }
             }
+            if (installed.isNotEmpty()) item {
+                SearchButton(R.string.assistant_search) {
+                    if (selected == null) selected = (matchesPreferred ?: installed.first()).assistant
+                    else choosing = true
+                }
+                active?.let {
+                    if (installed.size > 1) SearchButton(R.string.change_assistant) { choosing = true }
+                    val name = stringResource(it.assistant.label)
+                    Text(stringResource(R.string.assistant_copy_explanation, name), style = tokens.secondary)
+                    if (input.isNotBlank()) SearchButton(R.string.assistant_copy_open) {
+                        val manager = context.getSystemService(ClipboardManager::class.java)
+                        manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
+                        record(input)
+                        open(it.launch)
+                    }
+                }
+            }
         }
     }
     if (choosing && installed.isNotEmpty()) {
         val ordered = installed.sortedByDescending { it.assistant.appId == preferred }
-        AlertDialog(
-            onDismissRequest = { choosing = false },
-            title = { Text(stringResource(R.string.assistant_search)) },
-            text = {
-                Column {
-                    ordered.forEach { option ->
-                        AssistantButton(option) { selected = option.assistant; choosing = false }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { choosing = false }) { Text(stringResource(R.string.cancel)) } }
-        )
+        EnyoSheet(stringResource(R.string.assistant_search), { choosing = false }) {
+            ordered.forEach { option -> AssistantButton(option) { selected = option.assistant; choosing = false } }
+        }
     }
     confirmation?.let { action ->
-        AlertDialog(
-            onDismissRequest = { confirmation = null },
-            title = { Text(stringResource(R.string.confirm_action)) },
-            text = { Text(action.title) },
-            confirmButton = {
-                TextButton(onClick = { confirmation = null; open(action.intent) }) { Text(stringResource(R.string.continue_action)) }
-            },
-            dismissButton = { TextButton(onClick = { confirmation = null }) { Text(stringResource(R.string.cancel)) } }
-        )
+        EnyoSheet(stringResource(R.string.confirm_action), { confirmation = null }) {
+            Text(action.title, style = tokens.secondary)
+            Row {
+                SearchButton(R.string.cancel) { confirmation = null }
+                SearchButton(R.string.continue_action) { confirmation = null; open(action.intent) }
+            }
+        }
     }
+}
+
+@Composable
+private fun SearchSection(label: Int) {
+    val tokens = LocalTokens.current
+    Text(stringResource(label), style = tokens.label, modifier = Modifier.padding(top = tokens.gap))
 }
 
 @Composable

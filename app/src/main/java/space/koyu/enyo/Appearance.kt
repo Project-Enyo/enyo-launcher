@@ -188,24 +188,17 @@ internal fun AppearanceScreen(back: () -> Unit) {
             if (notice != 0) Text(stringResource(notice), style = tokens.secondary)
         }
     }
-    if (targets) AlertDialog(
-        onDismissRequest = { targets = false },
-        title = { Text(stringResource(R.string.wallpaper_apply_android)) },
-        text = {
-            Column {
-                TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_SYSTEM) }) {
-                    Text(stringResource(R.string.wallpaper_home))
-                }
-                TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_LOCK) }) {
-                    Text(stringResource(R.string.wallpaper_lock))
-                }
-                TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) }) {
-                    Text(stringResource(R.string.wallpaper_both))
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { targets = false }) { Text(stringResource(R.string.cancel)) } }
-    )
+    if (targets) EnyoSheet(stringResource(R.string.wallpaper_apply_android), { targets = false }) {
+        TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_SYSTEM) }) {
+            Text(stringResource(R.string.wallpaper_home))
+        }
+        TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_LOCK) }) {
+            Text(stringResource(R.string.wallpaper_lock))
+        }
+        TextButton(onClick = { applyWallpaper(WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) }) {
+            Text(stringResource(R.string.wallpaper_both))
+        }
+    }
 }
 
 private fun Context.saveWallpaper(uri: Uri): Boolean = runCatching {

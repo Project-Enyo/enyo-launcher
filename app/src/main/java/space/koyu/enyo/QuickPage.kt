@@ -192,29 +192,20 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
         strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier.then(order(4, 3, 5)), model::toggleTorch) } else null
     )
 
-    if (brightnessMenu) {
-        AlertDialog(
-            onDismissRequest = { brightnessMenu = false },
-            title = { Text(stringResource(R.string.brightness)) },
-            text = {
-                Column {
-                    BrightnessLevel.entries.forEach { option ->
-                        TextButton(onClick = { brightnessMenu = false; brightness(option) }) {
-                            Text(stringResource(option.label))
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = state.automatic, onCheckedChange = {
-                            if (model.automatic(it)) overrideWindow(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
-                            else { brightnessMenu = false; grantExplanation = true }
-                        })
-                        Spacer(Modifier.width(tokens.gap))
-                        Text(stringResource(R.string.automatic_brightness))
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { brightnessMenu = false }) { Text(stringResource(R.string.back)) } }
-        )
+    if (brightnessMenu) EnyoSheet(stringResource(R.string.brightness), { brightnessMenu = false }) {
+        BrightnessLevel.entries.forEach { option ->
+            TextButton(onClick = { brightnessMenu = false; brightness(option) }) {
+                Text(stringResource(option.label))
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = state.automatic, onCheckedChange = {
+                if (model.automatic(it)) overrideWindow(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
+                else { brightnessMenu = false; grantExplanation = true }
+            })
+            Spacer(Modifier.width(tokens.gap))
+            Text(stringResource(R.string.automatic_brightness))
+        }
     }
     if (grantExplanation) {
         QuickGrantDialog(
@@ -238,15 +229,13 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
 
 @Composable
 private fun QuickGrantDialog(title: Int, reason: Int, dismiss: () -> Unit, open: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = dismiss,
-        title = { Text(stringResource(title)) },
-        text = { Text(stringResource(reason)) },
-        confirmButton = {
+    EnyoSheet(stringResource(title), dismiss) {
+        Text(stringResource(reason), style = LocalTokens.current.secondary)
+        Row {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) }
             TextButton(onClick = { dismiss(); open() }) { Text(stringResource(R.string.android_settings)) }
-        },
-        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } }
-    )
+        }
+    }
 }
 
 @Composable

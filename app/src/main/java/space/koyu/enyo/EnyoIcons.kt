@@ -20,11 +20,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +34,9 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
+internal val LocalBrandIcons = staticCompositionLocalOf { emptyMap<String, android.graphics.drawable.Icon>() }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit }
+internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit, Back, Close }
 
 private data class IconKey(
     val component: android.content.ComponentName,
@@ -41,11 +44,8 @@ private data class IconKey(
     val pixelSize: Int,
     val density: Int,
     val original: Boolean,
-    val color: Int
-)
-
-private val fullColorBrands = setOf(
-    "de.mcdonalds.mcdonaldsinfoapp", "com.zhiliaoapp.musically", "com.zhiliaoapp.musically.go"
+    val color: Int,
+    val notificationSource: Int
 )
 
 private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
@@ -55,15 +55,18 @@ private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
 private val iconDispatcher = Dispatchers.Default.limitedParallelism(2)
 
 @Composable
-internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
+internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, displaySize: androidx.compose.ui.unit.Dp = LocalTokens.current.iconSize) {
     val tokens = LocalTokens.current
+    val context = LocalContext.current
     val density = LocalDensity.current
     val originals = LocalOriginalIcons.current
     val component = app.componentName
-    val size = with(density) { tokens.iconSize.roundToPx() }
+    val size = with(density) { displaySize.roundToPx() }
     val originalSize = (160 * density.density).roundToInt()
     val arches = component.packageName == "de.mcdonalds.mcdonaldsinfoapp"
-    val brand = component.packageName in fullColorBrands
+    val brand = component.packageName in brandedNotificationApps
+    val mark = if (!originals && brand) LocalBrandIcons.current[component.packageName] else null
+    val noteSource = if (mark?.type == android.graphics.drawable.Icon.TYPE_RESOURCE) mark.resId else mark?.hashCode() ?: 0
     val dedicated = when (component.packageName) {
         "com.android.settings" -> Glyph.Settings
         "com.android.calculator2" -> Glyph.Calculator
@@ -73,14 +76,15 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
         transitPackage -> Glyph.Transit
         else -> null
     }
-    val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb())
+    val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb(), noteSource)
     val icon by produceState(iconCache.get(key), key) {
         value = if (!originals && (dedicated != null || arches)) null else withContext(iconDispatcher) {
             iconCache.get(key) ?: runCatching {
                 val source = app.getIcon(originalSize).mutate()
-                val monochrome = if (!originals && !brand && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
-                    source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
-                } else null
+                val monochrome = mark?.loadDrawable(context)?.mutate() ?:
+                    if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
+                        source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
+                    } else null
                 val foreground = if (!originals && source is AdaptiveIconDrawable) source.foreground?.mutate() else null
                 val drawable = monochrome ?: foreground ?: source
                 val padding = when {
@@ -104,17 +108,22 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
     }
     val shape = RoundedCornerShape(tokens.iconRadius)
     Box(
-        modifier.size(tokens.iconSize)
-            .then(if (originals) Modifier else Modifier.clip(shape).background(tokens.accentContainer)),
+        modifier.size(displaySize)
+            .then(if (originals) Modifier else Modifier.clip(shape)
+                .background(if (brand || arches) tokens.brandSurface else tokens.accentContainer)),
         contentAlignment = Alignment.Center
     ) {
         val bitmap = icon
         when {
             !originals && arches -> Image(
-                painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(tokens.appGlyphSize)
+                painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(tokens.appGlyphSize),
+                colorFilter = ColorFilter.tint(tokens.brandInk)
             )
             !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(tokens.appGlyphSize))
-            bitmap != null -> Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize())
+            bitmap != null -> Image(
+                bitmap.asImageBitmap(), null, Modifier.fillMaxSize(),
+                colorFilter = if (!originals && brand) ColorFilter.tint(tokens.brandInk) else null
+            )
             else -> {
                 val label = app.label.toString().trim()
                 val letter = label.codePoints().findFirst().orElse('?'.code)
@@ -218,6 +227,8 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 line(.16f, .52f, .84f, .52f); circle(.66f, .52f, .105f, true)
                 line(.16f, .76f, .84f, .76f); circle(.36f, .76f, .105f, true)
             }
+            Glyph.Back -> { line(.18f, .50f, .82f, .50f); line(.18f, .50f, .45f, .23f); line(.18f, .50f, .45f, .77f) }
+            Glyph.Close -> { line(.25f, .25f, .75f, .75f); line(.25f, .75f, .75f, .25f) }
             Glyph.Search -> { circle(.43f, .43f, .25f); line(.62f, .62f, .82f, .82f) }
             Glyph.Settings -> {
                 val gear = Path().apply {

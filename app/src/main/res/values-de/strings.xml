@@ -114,4 +114,13 @@
     <string name="wallpaper_both">Startbildschirm und Sperrbildschirm</string>
     <string name="icon_originals">Originale App Symbole verwenden</string>
     <string name="transit">Öffi</string>
+    <string name="app_info">App Info</string>
+    <string name="app_uninstall">Deinstallieren</string>
+    <string name="dock_pin">Im Dock anheften</string>
+    <string name="dock_unpin">Vom Dock lösen</string>
+    <string name="dock_full">Im Dock ist Platz für fünf Apps.</string>
+    <string name="dock_empty">Apps im Dock anheften</string>
+    <string name="clear_search">Suche leeren</string>
+    <string name="search_history_recent">Letzte Suchen</string>
+    <string name="contacts_results">Kontakte</string>
 </resources>

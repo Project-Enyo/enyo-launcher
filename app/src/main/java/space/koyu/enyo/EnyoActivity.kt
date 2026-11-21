@@ -59,6 +59,7 @@ class EnyoActivity : ComponentActivity() {
                 val tokens = remember(dark, size) { Tokens(dark, size) }
                 val appearance = remember { appearancePreferences.data }
                 val prefs by appearance.collectAsState(null)
+                val brandIcons by EnyoNotificationService.brandIcons.collectAsState()
                 val scheme = remember(tokens) {
                     val base = if (dark) darkColorScheme() else lightColorScheme()
                     base.copy(
@@ -80,7 +81,8 @@ class EnyoActivity : ComponentActivity() {
                 MaterialTheme(colorScheme = scheme) {
                     CompositionLocalProvider(
                         LocalTokens provides tokens,
-                        LocalOriginalIcons provides (prefs?.get(originalIcons) == true)
+                        LocalOriginalIcons provides (prefs?.get(originalIcons) == true),
+                        LocalBrandIcons provides brandIcons
                     ) {
                         LauncherScreen(::openInternetPanel, homeSequence) { launcherKeys = it }
                     }

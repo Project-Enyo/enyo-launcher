@@ -114,4 +114,13 @@
     <string name="wallpaper_both">Home and lock screens</string>
     <string name="icon_originals">Use original app icons</string>
     <string name="transit">Öffi</string>
+    <string name="app_info">App info</string>
+    <string name="app_uninstall">Uninstall</string>
+    <string name="dock_pin">Pin to dock</string>
+    <string name="dock_unpin">Unpin from dock</string>
+    <string name="dock_full">The dock holds five apps.</string>
+    <string name="dock_empty">Pin apps to your dock</string>
+    <string name="clear_search">Clear search</string>
+    <string name="search_history_recent">Recent searches</string>
+    <string name="contacts_results">Contacts</string>
 </resources>
