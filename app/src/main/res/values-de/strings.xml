@@ -1,10 +1,13 @@
 <resources>
     <string name="app_name">Enyo</string>
-    <string name="wireless">Funkverbindungen</string>
+    <string name="wireless">WLAN</string>
     <string name="network_state">Interneteinstellungen</string>
     <string name="network_detail">Android Netzwerkeinstellungen öffnen</string>
     <string name="panel_unavailable">Netzwerkeinstellungen sind nicht verfügbar</string>
     <string name="volume">Lautstärkevorschau</string>
     <string name="now_playing">Aktuelle Wiedergabe</string>
     <string name="no_media">Keine Medienwiedergabe</string>
+    <string name="brightness">Helligkeit</string>
+    <string name="bluetooth">Bluetooth</string>
+    <string name="torch">Taschenlampe</string>
 </resources>

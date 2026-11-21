@@ -10,23 +10,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -39,8 +34,12 @@ class EnyoActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val dark = isSystemInDarkTheme()
-            CompositionLocalProvider(LocalTokens provides remember(dark) { Tokens(dark) }) {
-                PreviewCards(::openInternetPanel)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val size = resolveCardSize(maxWidth, maxHeight)
+                val tokens = remember(dark, size) { Tokens(dark, size) }
+                CompositionLocalProvider(LocalTokens provides tokens) {
+                    PreviewGrid(::openInternetPanel)
+                }
             }
         }
     }
@@ -55,30 +54,6 @@ class EnyoActivity : ComponentActivity() {
             }
         }
         Toast.makeText(this, R.string.panel_unavailable, Toast.LENGTH_SHORT).show()
-    }
-}
-
-@Composable
-private fun PreviewCards(openPanel: () -> Unit) {
-    val tokens = LocalTokens.current
-    var level by rememberSaveable { mutableFloatStateOf(0.45f) }
-    Column(
-        Modifier.fillMaxSize()
-            .background(tokens.background)
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = tokens.margin)
-            .padding(top = tokens.margin, bottom = tokens.bottomClearance),
-        verticalArrangement = Arrangement.spacedBy(tokens.gap)
-    ) {
-        DoorCard(stringResource(R.string.network_state), stringResource(R.string.network_detail), openPanel)
-        ControlCard(stringResource(R.string.volume), level, onValue = { level = it })
-        ContentCard {
-            Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                Text(stringResource(R.string.now_playing), style = tokens.state)
-                Text(stringResource(R.string.no_media), style = tokens.secondary)
-            }
-        }
     }
 }
 
@@ -99,7 +74,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
         ) {
             Column(Modifier.weight(1f)) {
                 Text(state, style = tokens.state, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (detail != null) {
+                if (detail != null && tokens.size != CardSize.CompactHeight && tokens.size != CardSize.Tiny) {
                     Text(detail, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -138,8 +113,8 @@ internal fun ControlCard(label: String, value: Float, onValue: (Float) -> Unit, 
             )
         }
     ) {
-        Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-            Text(label, style = tokens.secondary)
+        Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.Center) {
+            Text(label, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val locale = LocalConfiguration.current.locales[0]
             val format = remember(locale) { NumberFormat.getPercentInstance(locale) }
             Text(format.format(value.toDouble()), style = tokens.value)
