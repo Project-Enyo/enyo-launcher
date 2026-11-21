@@ -79,4 +79,7 @@
     <string name="next_track">Weiter</string>
     <string name="play">Abspielen</string>
     <string name="pause">Pause</string>
+    <string name="cards_capture_permission">Kartenvorschau einrichten</string>
+    <string name="cards_capture_service">Enyo Kartenvorschau</string>
+    <string name="cards_capture_description">Erlaubt Enyo, beim Öffnen einer App über Enyo ein lokales Vorschaubild zu speichern. Geschützte Fenster können nicht erfasst werden.</string>
 </resources>

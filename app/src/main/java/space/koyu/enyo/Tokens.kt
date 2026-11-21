@@ -47,6 +47,15 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val chevronStroke = 2.dp
     val stroke = dimension(4, 4, 3).dp
     val progress = 2.dp
+    val recentVisible = 3
+    val recentWidthFraction = 0.66f
+    val recentHeightFraction = 0.38f
+    val recentHeightUse = 0.85f
+    val recentDefaultAspect = 0.66f
+    val recentTallAspect = 0.45f
+    val recentSquareAspect = 0.9f
+    val recentRotation = 3f
+    val recentOffset = 0.16f
     val elevation = listOf(1.dp, dimension(3, 2, 2).dp, dimension(8, 6, 5).dp)
 
     val state = TextStyle(fontSize = dimension(18, 17, 16).sp, fontWeight = FontWeight.SemiBold, color = ink)

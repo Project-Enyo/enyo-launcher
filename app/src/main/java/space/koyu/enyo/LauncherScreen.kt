@@ -112,8 +112,17 @@ internal fun LauncherScreen(
         } else null)
         onDispose { setTyping(null) }
     }
+    val recentStore = remember(context) { RecentStore.get(context) }
     fun openApp(app: LauncherActivityInfo) {
-        runCatching { launcher.startMainActivity(app.componentName, app.user, null, null) }
+        if (app.user != Process.myUserHandle()) return
+        recentStore.prepare(app.componentName)
+        val launched = runCatching { launcher.startMainActivity(app.componentName, app.user, null, null) }.isSuccess ||
+            context.launchSafely(Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setComponent(app.componentName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        if (launched) recentStore.launched(app.componentName)
+        else recentStore.capture = null
     }
 
     SearchOnboarding()
@@ -141,7 +150,7 @@ internal fun LauncherScreen(
                             TextButton(onClick = { openApp(app) }) { Text(app.label.toString(), color = tokens.ink) }
                         }
                     }
-                    2 -> PageMessage(R.string.cards_empty)
+                    2 -> CardsPage(apps, ::openApp)
                     3 -> InboxPage()
                     4 -> QuickPage(openPanel)
                 }
