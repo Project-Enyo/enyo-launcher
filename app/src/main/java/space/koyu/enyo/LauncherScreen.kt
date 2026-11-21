@@ -143,7 +143,7 @@ internal fun LauncherScreen(
                     }
                     2 -> PageMessage(R.string.cards_empty)
                     3 -> InboxPage()
-                    4 -> PreviewGrid(openPanel, embedded = true)
+                    4 -> QuickPage(openPanel)
                 }
             }
             Canvas(Modifier.fillMaxWidth().height(tokens.progress)) {

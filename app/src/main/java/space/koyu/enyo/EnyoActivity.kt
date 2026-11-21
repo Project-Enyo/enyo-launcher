@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -74,7 +75,7 @@ class EnyoActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier: Modifier = Modifier) {
+internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier: Modifier = Modifier, label: String? = null) {
     val tokens = LocalTokens.current
     Surface(
         onClick = open,
@@ -89,8 +90,9 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
+                if (label != null) Text(label, style = tokens.label, maxLines = 1)
                 Text(state, style = tokens.state, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (detail != null && tokens.size != CardSize.CompactHeight && tokens.size != CardSize.Tiny) {
+                if (detail != null && (label == null || tokens.size != CardSize.Tiny)) {
                     Text(detail, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -106,12 +108,25 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
 }
 
 @Composable
-internal fun ControlCard(label: String, value: Float, onValue: (Float) -> Unit, modifier: Modifier = Modifier) {
+internal fun ControlCard(
+    label: String,
+    value: Float,
+    onValue: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    onTap: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+    valueLabel: String? = null,
+    onDragSettled: (() -> Unit)? = null
+) {
     val tokens = LocalTokens.current
     val currentValue by rememberUpdatedState(value)
     val change by rememberUpdatedState(onValue)
+    val settled by rememberUpdatedState(onDragSettled)
+    val click = if (onTap != null || onLongPress != null) {
+        Modifier.combinedClickable(onClick = onTap ?: {}, onLongClick = onLongPress)
+    } else Modifier
     ContentCard(
-        modifier.semantics {
+        modifier.then(click).semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
             setProgress {
                 change(it.coerceIn(0f, 1f))
@@ -121,6 +136,7 @@ internal fun ControlCard(label: String, value: Float, onValue: (Float) -> Unit, 
             var position = 0f
             detectHorizontalDragGestures(
                 onDragStart = { position = currentValue },
+                onDragEnd = { settled?.invoke() },
                 onHorizontalDrag = { event, amount ->
                     event.consume()
                     position = (position + amount / size.width).coerceIn(0f, 1f)
@@ -133,7 +149,7 @@ internal fun ControlCard(label: String, value: Float, onValue: (Float) -> Unit, 
             Text(label, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val locale = LocalConfiguration.current.locales[0]
             val format = remember(locale) { NumberFormat.getPercentInstance(locale) }
-            Text(format.format(value.toDouble()), style = tokens.value)
+            Text(valueLabel ?: format.format(value.toDouble()), style = tokens.value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Canvas(Modifier.fillMaxWidth().height(tokens.stroke)) {
                 val center = size.height / 2
                 drawLine(tokens.accentContainer, Offset(0f, center), Offset(size.width, center), size.height)
