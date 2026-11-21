@@ -51,9 +51,13 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val stroke = dimension(4, 4, 3).dp
     val mediaControlGlyph = 28.dp
     val mediaProgressStroke = 4.dp
-    val mediaWaveAmplitude = 2.5.dp
-    val mediaWaveLength = 18.dp
-    val mediaWaveCycleMillis = 900L
+    val mediaWaveAmplitude = 1.5.dp
+    val mediaWaveLength = 20.dp
+    val mediaWaveCycleMillis = 2_500L
+    val mediaWaveTransitionPeriods = 1.5f
+    val mediaSeekThumbHeight = 12.dp
+    val mediaSeekThumbGap = 4.dp
+    val mediaTrackOpacity = 0.30f
     val mediaProgressHeight = mediaProgressStroke + mediaWaveAmplitude * 2
     val navigationDotSize = 4.dp
     val navigationDotSpace = 8.dp

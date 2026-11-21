@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -540,25 +541,73 @@ private fun MediaProgress(media: MediaSnapshot, seekable: Boolean, seek: (MediaS
         val length = (size.width - stroke).coerceAtLeast(0f)
         if (length <= 0f || size.height < stroke) return@Canvas
         val playtime = displayedPosition()
-        val end = length * (playtime / media.duration).toFloat()
+        val progress = (playtime / media.duration).toFloat()
+        val end = length * progress
         val middle = size.height / 2
         fun x(distance: Float) = if (rtl) size.width - start - distance else start + distance
-        if (end < length) drawLine(tokens.accentContainer, Offset(x(end), middle), Offset(x(length), middle), stroke, StrokeCap.Round)
-        if (end <= 0f) return@Canvas
+        val track = tokens.accent.copy(alpha = tokens.mediaTrackOpacity)
         val wavelength = tokens.mediaWaveLength.toPx()
-        val amplitude = minOf(tokens.mediaWaveAmplitude.toPx(), (size.height - stroke) / 2)
-        val cycle = tokens.mediaWaveCycleMillis
-        val phase = (playtime % cycle) / cycle
-        fun y(distance: Float): Float = middle + amplitude * sin((distance / wavelength - phase) * 2 * PI).toFloat()
-        wave.reset()
-        wave.moveTo(x(0f), y(0f))
-        val sampling = wavelength / 12
-        var distance = sampling
-        while (distance < end) {
-            wave.lineTo(x(distance), y(distance))
-            distance += sampling
+        val undulating = playing && scrub == null
+        val amplitude = if (undulating) {
+            minOf(tokens.mediaWaveAmplitude.toPx(), (size.height - stroke) / 2)
+        } else 0f
+        val phase = (playtime % tokens.mediaWaveCycleMillis) / tokens.mediaWaveCycleMillis
+        val cap = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        if (seekable) {
+            val thumbGap = tokens.mediaSeekThumbGap.toPx() + stroke / 2
+            val playedUntil = (end - thumbGap).coerceAtLeast(0f)
+            val remainingFrom = (end + thumbGap).coerceAtMost(length)
+            if (remainingFrom < length) {
+                drawLine(track, Offset(x(remainingFrom), middle), Offset(x(length), middle), stroke, StrokeCap.Round)
+            }
+            if (playedUntil > 0f) {
+                if (amplitude == 0f) {
+                    drawLine(tokens.accent, Offset(x(0f), middle), Offset(x(playedUntil), middle), stroke, StrokeCap.Round)
+                } else {
+                    wave.reset()
+                    fun y(distance: Float) = middle + amplitude * sin((distance / wavelength + phase) * 2 * PI).toFloat()
+                    wave.moveTo(x(0f), y(0f))
+                    val step = wavelength / 12
+                    var distance = step
+                    while (distance < playedUntil) {
+                        wave.lineTo(x(distance), y(distance))
+                        distance += step
+                    }
+                    wave.lineTo(x(playedUntil), y(playedUntil))
+                    drawPath(wave, tokens.accent, style = cap)
+                }
+            }
+            val thumb = (tokens.mediaSeekThumbHeight.toPx().coerceAtMost(size.height) - stroke) / 2
+            drawLine(tokens.accent, Offset(x(end), middle - thumb), Offset(x(end), middle + thumb), stroke, StrokeCap.Round)
+        } else {
+            val transition = tokens.mediaWaveTransitionPeriods * wavelength
+            val fadeCenter = length * if (progress < 0.6f) (0.2f + progress * (2f / 3f)) else progress
+            val fadeEnd = fadeCenter + transition / 2
+            fun y(distance: Float): Float {
+                val envelope = ((fadeEnd - distance) / transition).coerceIn(0f, 1f)
+                return middle + amplitude * envelope * sin((distance / wavelength + phase) * 2 * PI).toFloat()
+            }
+            wave.reset()
+            wave.moveTo(x(0f), y(0f))
+            if (amplitude > 0f) {
+                val step = wavelength / 12
+                var distance = step
+                while (distance < minOf(fadeEnd, length)) {
+                    wave.lineTo(x(distance), y(distance))
+                    distance += step
+                }
+                val lastWavePoint = minOf(fadeEnd, length)
+                wave.lineTo(x(lastWavePoint), y(lastWavePoint))
+            }
+            wave.lineTo(x(length), y(length))
+            val split = x(end)
+            if (end > 0f) clipRect(left = if (rtl) split else 0f, right = if (rtl) size.width else split) {
+                drawPath(wave, tokens.accent, style = cap)
+            }
+            if (end < length) clipRect(left = if (rtl) 0f else split, right = if (rtl) split else size.width) {
+                drawPath(wave, track, style = cap)
+            }
         }
-        wave.lineTo(x(end), y(end))
-        drawPath(wave, tokens.accent, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
