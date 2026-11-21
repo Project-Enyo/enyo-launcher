@@ -121,7 +121,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
         onClick = open,
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)).cardInput(activate = open),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface.copy(alpha = tokens.cardOpacity),
+        color = tokens.surface,
         shadowElevation = tokens.elevation[1]
     ) {
         Row(
@@ -201,7 +201,7 @@ internal fun ContentCard(modifier: Modifier = Modifier, content: @Composable () 
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface.copy(alpha = tokens.cardOpacity),
+        color = tokens.surface,
         shadowElevation = tokens.elevation[1],
         content = content
     )

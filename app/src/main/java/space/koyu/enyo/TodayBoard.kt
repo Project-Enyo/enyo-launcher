@@ -117,7 +117,7 @@ internal fun TodayBoard(foreground: Int) {
                 val label = stringResource(widget.title)
                 Surface(
                     modifier = Modifier.fillMaxWidth().heightIn(min = tokens.cardHeight).animateContentSize(),
-                    color = tokens.surface.copy(alpha = tokens.cardOpacity),
+                    color = tokens.surface,
                     shape = RoundedCornerShape(tokens.radius),
                     shadowElevation = tokens.elevation[1]
                 ) {

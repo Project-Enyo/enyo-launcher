@@ -254,7 +254,7 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
                 customActions = listOf(CustomAccessibilityAction(toggleLabel) { toggle(); true })
             },
         shape = RoundedCornerShape(tokens.radius),
-        color = if (on) tokens.accentContainer else tokens.surface.copy(alpha = tokens.cardOpacity),
+        color = if (on) tokens.accentContainer else tokens.surface,
         shadowElevation = tokens.elevation[if (on) 2 else 1]
     ) {
         Row(

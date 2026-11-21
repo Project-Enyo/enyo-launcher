@@ -53,7 +53,6 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val hoverOpacity = 0.45f
     val wallpaperEdgeAlpha = if (dark) 0.84f else 0.87f
     val wallpaperCenterAlpha = if (dark) 0.40f else 0.36f
-    val cardOpacity = if (dark) 0.91f else 0.93f
     val appEdgeFade = 18.dp
     val toggleWidth = 48.dp
     val toggleHeight = 26.dp
