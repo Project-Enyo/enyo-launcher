@@ -6,6 +6,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.os.Build
+import android.util.LruCache
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -31,7 +32,21 @@ import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio }
+internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, McDonalds, Dhl, Transit }
+
+private data class IconKey(
+    val component: android.content.ComponentName,
+    val source: String,
+    val pixelSize: Int,
+    val density: Int,
+    val original: Boolean,
+    val color: Int
+)
+
+private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
+    override fun sizeOf(key: IconKey, value: Bitmap): Int = value.byteCount
+}
+private val iconDispatcher = Dispatchers.Default.limitedParallelism(2)
 
 @Composable
 internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
@@ -46,11 +61,15 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
         "com.android.calculator2" -> Glyph.Calculator
         "com.android.documentsui", "com.google.android.documentsui" -> Glyph.Folder
         "app.grapheneos.camera" -> Glyph.Camera
+        "de.mcdonalds.mcdonaldsinfoapp" -> Glyph.McDonalds
+        "de.dhl.paket" -> Glyph.Dhl
+        transitPackage -> Glyph.Transit
         else -> null
     }
-    val icon by produceState<Bitmap?>(null, component, size, originals, tokens.ink) {
-        value = if (!originals && dedicated != null) null else withContext(Dispatchers.Default) {
-            runCatching {
+    val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb())
+    val icon by produceState(iconCache.get(key), key) {
+        value = if (!originals && dedicated != null) null else withContext(iconDispatcher) {
+            iconCache.get(key) ?: runCatching {
                 val source = app.getIcon(originalSize).mutate()
                 val monochrome = if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
                     source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
@@ -71,6 +90,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
                     if (!originals && source !is AdaptiveIconDrawable) {
                         extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
                     }
+                    iconCache.put(key, it)
                 }
             }.getOrNull()
         }
@@ -101,10 +121,10 @@ private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int
     val pixels = IntArray(width * bitmap.height)
     bitmap.getPixels(pixels, 0, width, 0, 0, width, bitmap.height)
     val seed = pixels[padding * width + padding]
+    fun delta(value: Int, shift: Int) = kotlin.math.abs((value ushr shift and 255) - (seed ushr shift and 255))
     fun near(value: Int): Boolean =
-        value ushr 24 >= 245 && listOf(0, 8, 16).all { shift ->
-            kotlin.math.abs((value ushr shift and 255) - (seed ushr shift and 255)) <= tolerance
-        }
+        value ushr 24 >= 245 && delta(value, 0) <= tolerance &&
+            delta(value, 8) <= tolerance && delta(value, 16) <= tolerance
     val corners = listOf(padding to padding, edge to padding, padding to edge, edge to edge)
     if (!corners.all { (x, y) -> near(pixels[y * width + x]) }) return
     val visited = BooleanArray(pixels.size)
@@ -218,6 +238,32 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 drawPath(path, color, style = Stroke(stroke))
             }
             Glyph.Camera -> { box(.12f, .32f, .88f, .79f); circle(.50f, .55f, .15f); line(.32f, .22f, .62f, .22f) }
+            Glyph.McDonalds -> {
+                val arches = Path().apply {
+                    val left = point(.15f, .80f)
+                    moveTo(left.x, left.y)
+                    quadraticTo(point(.23f, .18f).x, point(.23f, .18f).y, point(.34f, .24f).x, point(.34f, .24f).y)
+                    quadraticTo(point(.44f, .30f).x, point(.44f, .30f).y, point(.50f, .66f).x, point(.50f, .66f).y)
+                    quadraticTo(point(.56f, .30f).x, point(.56f, .30f).y, point(.66f, .24f).x, point(.66f, .24f).y)
+                    quadraticTo(point(.77f, .18f).x, point(.77f, .18f).y, point(.85f, .80f).x, point(.85f, .80f).y)
+                }
+                drawPath(arches, color, style = Stroke(stroke * 1.5f, cap = StrokeCap.Round))
+            }
+            Glyph.Dhl -> {
+                box(.36f, .24f, .89f, .76f)
+                line(.61f, .25f, .61f, .48f)
+                line(.13f, .39f, .29f, .39f)
+                line(.07f, .52f, .30f, .52f)
+                line(.15f, .65f, .29f, .65f)
+            }
+            Glyph.Transit -> {
+                box(.24f, .17f, .76f, .73f)
+                line(.25f, .48f, .75f, .48f)
+                line(.37f, .74f, .28f, .87f)
+                line(.63f, .74f, .72f, .87f)
+                circle(.37f, .61f, .05f, true)
+                circle(.63f, .61f, .05f, true)
+            }
             Glyph.Audio -> { line(.43f, .23f, .43f, .71f); line(.43f, .23f, .78f, .18f); circle(.30f, .72f, .13f, true) }
         }
     }

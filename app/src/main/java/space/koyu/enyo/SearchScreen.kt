@@ -138,7 +138,9 @@ internal fun SearchScreen(
     openApp: (LauncherActivityInfo) -> Unit,
     back: () -> Unit,
     preferences: () -> Unit,
-    packageCycle: Int
+    packageCycle: Int,
+    transit: List<LauncherActivityInfo>,
+    openTransit: () -> Unit
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
@@ -176,9 +178,15 @@ internal fun SearchScreen(
     val input = query.text.trim()
     val command = commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
     val term = if (command == null) input else input.drop(command.second.length).trim()
+    val transitLabel = stringResource(R.string.transit)
     val appResults by produceState(emptyList<LauncherActivityInfo>(), apps, input, command) {
         value = if (input.isBlank() || command != null) emptyList() else withContext(Dispatchers.Default) {
-            apps.filter { ensureActive(); it.label.contains(input, ignoreCase = true) }
+            apps.filter { app ->
+                ensureActive()
+                if (app.componentName.packageName == transitPackage) {
+                    transitLabel.contains(input, ignoreCase = true) || transit.any { it.label.contains(input, ignoreCase = true) }
+                } else app.label.contains(input, ignoreCase = true)
+            }
         }
     }
     val foreground = foregroundCycle()
@@ -274,7 +282,11 @@ internal fun SearchScreen(
             if (status != 0) item { Text(stringResource(status), style = tokens.secondary) }
             if (input.isNotBlank()) {
                 items(appResults) { app ->
-                    LibraryRow(app) { record(input); openApp(app) }
+                    val consolidated = app.componentName.packageName == transitPackage
+                    LibraryRow(app, label = if (consolidated) transitLabel else app.label.toString()) {
+                        record(input)
+                        if (consolidated) openTransit() else openApp(app)
+                    }
                 }
                 if (command?.first in listOf(null, Command.Settings)) {
                     settingsDestinations.filter {

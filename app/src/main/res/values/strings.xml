@@ -113,4 +113,5 @@
     <string name="wallpaper_lock">Lock screen</string>
     <string name="wallpaper_both">Home and lock screens</string>
     <string name="icon_originals">Use original app icons</string>
+    <string name="transit">Öffi</string>
 </resources>

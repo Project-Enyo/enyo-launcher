@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -101,6 +102,13 @@ internal fun LauncherScreen(
             }.getOrDefault(emptyList())
         }
     }
+    val transit = remember(apps) { apps.filter { it.componentName.packageName == transitPackage } }
+    val library = remember(apps) {
+        apps.distinctBy {
+            if (it.componentName.packageName == transitPackage) transitPackage else it.componentName.flattenToString()
+        }
+    }
+    var transitPicker by remember { mutableStateOf(false) }
     val pages = listOf(R.string.today, R.string.apps, R.string.cards, R.string.inbox, R.string.quick)
     val pager = rememberPagerState(initialPage = 2) { pages.size }
     val scope = rememberCoroutineScope()
@@ -158,12 +166,24 @@ internal fun LauncherScreen(
         else recentStore.capture = null
     }
 
+    if (transitPicker && transit.isNotEmpty()) AlertDialog(
+        onDismissRequest = { transitPicker = false },
+        title = { Text(stringResource(R.string.transit)) },
+        text = {
+            LazyColumn {
+                items(transit, key = { it.componentName.flattenToString() }) { app ->
+                    LibraryRow(app) { transitPicker = false; openApp(app) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { transitPicker = false }) { Text(stringResource(R.string.back)) } }
+    )
     SearchOnboarding()
     BackHandler(surface != 0 || pager.currentPage != 2) {
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
     when (surface) {
-        1 -> SearchScreen(query, { query = it }, apps, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle)
+        1 -> SearchScreen(query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle, transit) { transitPicker = true }
         2 -> PreferencesScreen({ surface = 0 }, packageCycle) { surface = 3 }
         3 -> AppearanceScreen { surface = 2 }
         else -> WallpaperBackdrop { Column(
@@ -190,8 +210,11 @@ internal fun LauncherScreen(
                         horizontalArrangement = Arrangement.spacedBy(tokens.gap),
                         verticalArrangement = Arrangement.spacedBy(tokens.gap)
                     ) {
-                        items(apps, key = { it.componentName.flattenToString() }) { app ->
-                            LibraryTile(app, onClick = { openApp(app) })
+                        items(library, key = { it.componentName.flattenToString() }, contentType = { "App" }) { app ->
+                            val consolidated = app.componentName.packageName == transitPackage
+                            LibraryTile(app, label = if (consolidated) stringResource(R.string.transit) else app.label.toString()) {
+                                if (consolidated) transitPicker = true else openApp(app)
+                            }
                         }
                     }
                     2 -> CardsPage(apps, ::openApp, cardsFocus)
@@ -225,7 +248,7 @@ internal fun LauncherScreen(
 private val pageGlyphs = listOf(Glyph.Today, Glyph.Apps, Glyph.Cards, Glyph.Inbox, Glyph.Quick)
 
 @Composable
-internal fun LibraryTile(app: LauncherActivityInfo, onClick: () -> Unit) {
+internal fun LibraryTile(app: LauncherActivityInfo, label: String, onClick: () -> Unit) {
     val tokens = LocalTokens.current
     Column(
         Modifier.fillMaxWidth().heightIn(min = tokens.appCellHeight).clickable(onClick = onClick)
@@ -235,7 +258,7 @@ internal fun LibraryTile(app: LauncherActivityInfo, onClick: () -> Unit) {
     ) {
         AppIcon(app)
         Text(
-            app.label.toString(),
+            label,
             style = tokens.secondary.copy(color = tokens.ink),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             maxLines = 2,
@@ -245,7 +268,7 @@ internal fun LibraryTile(app: LauncherActivityInfo, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun LibraryRow(app: LauncherActivityInfo, onClick: () -> Unit) {
+internal fun LibraryRow(app: LauncherActivityInfo, label: String = app.label.toString(), onClick: () -> Unit) {
     val tokens = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = tokens.touch).clickable(onClick = onClick)
@@ -254,7 +277,7 @@ internal fun LibraryRow(app: LauncherActivityInfo, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         AppIcon(app)
-        Text(app.label.toString(), style = tokens.state, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Text(label, style = tokens.state, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -320,3 +343,5 @@ private fun InboxPage() {
         }
     }
 }
+
+internal const val transitPackage = "de.schildbach.oeffi"
