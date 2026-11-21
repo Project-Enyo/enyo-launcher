@@ -78,9 +78,10 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val iconBackgroundTolerance = 20
     val recentVisible = 3
     val recentCarouselGap = 20.dp
-    val stackSpread = 48.dp
+    val stackSpread = 116.dp
     val stackLift = 10.dp
-    val stackSpreadFraction = 0.30f
+    val stackSpreadFraction = 0.46f
+    val stackExpandedWidth = 0.82f
     val recentWidthFraction = 0.66f
     val recentHeightFraction = 0.38f
     val recentHeightUse = 0.85f

@@ -331,9 +331,18 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                     (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
                                 val fanDepth = minOf(depth, tokens.recentVisible - 1)
                                 val fan = cardWidth * (tokens.recentOffset - wide * tokens.recentOffset / 2)
-                                val width = minOf(cardWidth - fan * fanDepth, availableHeight * ratio * tokens.recentHeightUse)
-                                val step = minOf(tokens.stackSpread, availableHeight * tokens.stackSpreadFraction / cluster.size)
-                                val offsetX by animateDpAsState(fan * fanDepth / 2, label = "stack x")
+                                val step = minOf(tokens.stackSpread, availableHeight * tokens.stackSpreadFraction / cluster.lastIndex.coerceAtLeast(1))
+                                val collapsedWidth = minOf(cardWidth - fan * fanDepth, availableHeight * ratio * tokens.recentHeightUse)
+                                val spreadHeight = availableHeight - step * cluster.lastIndex - tokens.stackLift * 2
+                                val expandedWidth = minOf(cardWidth * tokens.stackExpandedWidth, spreadHeight * ratio)
+                                val width by animateDpAsState(
+                                    if (expanded) expandedWidth.coerceAtLeast(tokens.touch) else collapsedWidth,
+                                    label = "stack width"
+                                )
+                                val offsetX by animateDpAsState(
+                                    if (expanded) fan * (depth % 2 - 0.5f) else fan * fanDepth / 2,
+                                    label = "stack x"
+                                )
                                 val offsetY by animateDpAsState(
                                     if (expanded) step * (depth - cluster.lastIndex / 2f) -
                                         (if (selected == entry.component) tokens.stackLift else androidx.compose.ui.unit.Dp(0f))
