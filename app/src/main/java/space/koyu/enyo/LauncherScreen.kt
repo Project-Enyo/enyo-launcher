@@ -198,7 +198,11 @@ internal fun LauncherScreen(
                     modifier = Modifier.focusProperties {
                         if (pager.currentPage == 4) next = quickFocus
                     }
-                ) { Text(stringResource(R.string.preferences), color = tokens.ink) }
+                ) {
+                    EnyoGlyph(Glyph.Settings)
+                    Spacer(Modifier.width(tokens.gap))
+                    Text(stringResource(R.string.preferences), color = tokens.ink)
+                }
             }
             HorizontalPager(pager, Modifier.weight(1f)) { page ->
                 when (page) {

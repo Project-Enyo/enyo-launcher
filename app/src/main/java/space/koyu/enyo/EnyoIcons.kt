@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -61,6 +62,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
     val component = app.componentName
     val size = with(density) { tokens.iconSize.roundToPx() }
     val originalSize = (160 * density.density).roundToInt()
+    val arches = component.packageName == "de.mcdonalds.mcdonaldsinfoapp"
     val brand = component.packageName in fullColorBrands
     val dedicated = when (component.packageName) {
         "com.android.settings" -> Glyph.Settings
@@ -73,7 +75,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
     }
     val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb())
     val icon by produceState(iconCache.get(key), key) {
-        value = if (!originals && dedicated != null) null else withContext(iconDispatcher) {
+        value = if (!originals && (dedicated != null || arches)) null else withContext(iconDispatcher) {
             iconCache.get(key) ?: runCatching {
                 val source = app.getIcon(originalSize).mutate()
                 val monochrome = if (!originals && !brand && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
@@ -108,6 +110,9 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
     ) {
         val bitmap = icon
         when {
+            !originals && arches -> Image(
+                painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(tokens.appGlyphSize)
+            )
             !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(tokens.appGlyphSize))
             bitmap != null -> Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize())
             else -> {
@@ -215,9 +220,21 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
             }
             Glyph.Search -> { circle(.43f, .43f, .25f); line(.62f, .62f, .82f, .82f) }
             Glyph.Settings -> {
-                circle(.50f, .50f, .27f); circle(.50f, .50f, .10f)
-                line(.50f, .11f, .50f, .23f); line(.50f, .77f, .50f, .89f)
-                line(.11f, .50f, .23f, .50f); line(.77f, .50f, .89f, .50f)
+                val gear = Path().apply {
+                    val radii = listOf(.31f, .31f, .43f, .43f, .31f, .31f)
+                    for (tooth in 0 until 8) {
+                        radii.forEachIndexed { index, radius ->
+                            val angle = (tooth + index / radii.size.toDouble()) * Math.PI / 4
+                            val x = .50f + radius * kotlin.math.cos(angle).toFloat()
+                            val y = .50f + radius * kotlin.math.sin(angle).toFloat()
+                            val p = point(x, y)
+                            if (tooth == 0 && index == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
+                        }
+                    }
+                    close()
+                }
+                drawPath(gear, color, style = Stroke(stroke))
+                circle(.50f, .50f, .15f)
             }
             Glyph.Messages -> {
                 box(.14f, .20f, .86f, .70f)
