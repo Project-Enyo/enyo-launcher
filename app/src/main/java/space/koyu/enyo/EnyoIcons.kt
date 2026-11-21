@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, McDonalds, Dhl, Transit }
+internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, McDonalds, Dhl, Transit, TikTok }
 
 private data class IconKey(
     val component: android.content.ComponentName,
@@ -46,6 +46,7 @@ private data class IconKey(
 private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
     override fun sizeOf(key: IconKey, value: Bitmap): Int = value.byteCount
 }
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 private val iconDispatcher = Dispatchers.Default.limitedParallelism(2)
 
 @Composable
@@ -63,6 +64,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
         "app.grapheneos.camera" -> Glyph.Camera
         "de.mcdonalds.mcdonaldsinfoapp" -> Glyph.McDonalds
         "de.dhl.paket" -> Glyph.Dhl
+        "com.zhiliaoapp.musically", "com.zhiliaoapp.musically.go" -> Glyph.TikTok
         transitPackage -> Glyph.Transit
         else -> null
     }
@@ -263,6 +265,17 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 line(.63f, .74f, .72f, .87f)
                 circle(.37f, .61f, .05f, true)
                 circle(.63f, .61f, .05f, true)
+            }
+            Glyph.TikTok -> {
+                val stem = Path().apply {
+                    val top = point(.54f, .20f)
+                    moveTo(top.x, top.y)
+                    lineTo(point(.54f, .68f).x, point(.54f, .68f).y)
+                    moveTo(top.x, top.y)
+                    quadraticTo(point(.60f, .43f).x, point(.60f, .43f).y, point(.84f, .43f).x, point(.84f, .43f).y)
+                }
+                drawPath(stem, color, style = Stroke(stroke * 1.7f, cap = StrokeCap.Round))
+                circle(.39f, .70f, .15f, true)
             }
             Glyph.Audio -> { line(.43f, .23f, .43f, .71f); line(.43f, .23f, .78f, .18f); circle(.30f, .72f, .13f, true) }
         }
