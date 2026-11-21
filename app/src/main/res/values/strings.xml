@@ -134,4 +134,10 @@
     <string name="setup_enabled">Enabled</string>
     <string name="setup_configure">Set up</string>
     <string name="setup_finish">Continue to Enyo</string>
+    <string name="messages">Messages</string>
+    <string name="messages_no_providers">No supported messaging apps are installed.</string>
+    <string name="message_reply">Reply</string>
+    <string name="message_send">Send reply</string>
+    <string name="message_open">Open</string>
+    <string name="notice_dismiss">Dismiss</string>
 </resources>

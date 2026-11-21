@@ -118,7 +118,8 @@ internal fun SearchScreen(
     preferences: () -> Unit,
     packageCycle: Int,
     transit: List<LauncherActivityInfo>,
-    openTransit: () -> Unit
+    openTransit: () -> Unit,
+    openMessages: () -> Unit
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
@@ -157,6 +158,7 @@ internal fun SearchScreen(
     val command = commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
     val term = if (command == null) input else input.drop(command.second.length).trim()
     val transitLabel = stringResource(R.string.transit)
+    val messagesLabel = stringResource(R.string.messages)
     val appResults by produceState(emptyList<LauncherActivityInfo>(), apps, input, command) {
         value = if (input.isBlank() || command != null) emptyList() else withContext(Dispatchers.Default) {
             apps.filter { app ->
@@ -275,7 +277,9 @@ internal fun SearchScreen(
                 }
             }
             if (input.isNotBlank()) {
-                if (appResults.isNotEmpty()) item { SearchSection(R.string.apps) }
+                val showMessages = command == null && messagesLabel.contains(input, ignoreCase = true)
+                if (appResults.isNotEmpty() || showMessages) item { SearchSection(R.string.apps) }
+                if (showMessages) item { SearchButton(R.string.messages, openMessages) }
                 items(appResults, key = { it.componentName.flattenToString() }) { app ->
                     val consolidated = app.componentName.packageName == transitPackage
                     Surface(shape = RoundedCornerShape(tokens.radius), color = tokens.surface) {

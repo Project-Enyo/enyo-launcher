@@ -7,14 +7,19 @@ import android.service.notification.StatusBarNotification
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class EnyoNotificationService : NotificationListenerService() {
-    override fun onListenerConnected() = refresh()
+    override fun onListenerConnected() {
+        connected = this
+        refresh()
+    }
     override fun onNotificationPosted(sbn: StatusBarNotification) = refresh()
     override fun onNotificationRemoved(sbn: StatusBarNotification) = refresh()
     override fun onListenerDisconnected() {
+        if (connected === this) connected = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
     }
     override fun onDestroy() {
+        if (connected === this) connected = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
         super.onDestroy()
@@ -32,6 +37,14 @@ class EnyoNotificationService : NotificationListenerService() {
     }
 
     companion object {
+        private var connected: EnyoNotificationService? = null
+
+        internal fun dismiss(key: String): Boolean {
+            val listener = connected ?: return false
+            if (entries.value.none { it.key == key && it.isClearable }) return false
+            return runCatching { listener.cancelNotification(key); true }.getOrDefault(false)
+        }
+
         internal val brandIcons = MutableStateFlow<Map<String, android.graphics.drawable.Icon>>(emptyMap())
         internal val entries = MutableStateFlow<List<StatusBarNotification>>(emptyList())
     }

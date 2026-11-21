@@ -110,8 +110,12 @@ internal fun LauncherScreen(
         }
     }
     val transit = remember(apps) { apps.filter { it.componentName.packageName == transitPackage } }
+    val providers = remember(apps) {
+        apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
+    }
+    var messagesPicker by remember { mutableStateOf(false) }
     val library = remember(apps) {
-        apps.distinctBy {
+        apps.filterNot { it.componentName.packageName in messagingPackages }.distinctBy {
             if (it.componentName.packageName == transitPackage) transitPackage else it.componentName.flattenToString()
         }
     }
@@ -193,6 +197,14 @@ internal fun LauncherScreen(
         open = { app -> transitPicker = false; openApp(app) },
         actions = { appMenu = it }
     )
+    if (messagesPicker && appMenu == null) AppFolder(
+        title = stringResource(R.string.messages),
+        items = providers,
+        close = { messagesPicker = false },
+        open = { app -> messagesPicker = false; openApp(app) },
+        actions = { appMenu = it },
+        footer = if (providers.isEmpty()) {{ Text(stringResource(R.string.messages_no_providers), style = tokens.secondary) }} else null
+    )
     appMenu?.let { app ->
         val component = app.componentName
         val pinnedApp = component in pins
@@ -222,7 +234,7 @@ internal fun LauncherScreen(
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
     when (if (setupComplete == false) 4 else surface) {
-        1 -> SearchScreen(query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle, transit) { transitPicker = true }
+        1 -> SearchScreen(query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle, transit, { transitPicker = true }, { messagesPicker = true })
         2 -> PreferencesScreen({ surface = 0 }, packageCycle, { surface = 3 }, { surface = 4 })
         3 -> AppearanceScreen { surface = 2 }
         4 -> {
@@ -250,7 +262,17 @@ internal fun LauncherScreen(
             HorizontalPager(pager, Modifier.weight(1f)) { page ->
                 when (page) {
                     0 -> TodayPage(foreground)
-                    1 -> AppsGrid(library) { app ->
+                    1 -> AppsGrid(library, extra = {
+                        AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
+                            androidx.compose.material3.Surface(
+                                modifier = Modifier.size(tokens.iconSize),
+                                color = tokens.accentContainer,
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(tokens.iconRadius)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.appGlyphSize)) }
+                            }
+                        }
+                    }) { app ->
                         val consolidated = app.componentName.packageName == transitPackage
                         AppTile(
                             label = if (consolidated) stringResource(R.string.transit) else app.label.toString(),
@@ -262,7 +284,7 @@ internal fun LauncherScreen(
                         Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus) }
                         PinnedDock(pinned, { scope.launch { pager.animateScrollToPage(1) } }, ::openApp) { appMenu = it }
                     }
-                    3 -> InboxPage()
+                    3 -> InboxPage(apps, ::openApp)
                     4 -> QuickPage(openPanel, quickFocus)
                 }
             }
@@ -329,42 +351,6 @@ private fun TodayPage(foreground: Int) {
         item { Text(DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(now), style = tokens.value) }
         item { Text(DateFormat.getDateInstance(DateFormat.FULL, locale).format(now), style = tokens.state) }
         if (calendarAllowed) item { Text(event ?: stringResource(R.string.calendar_empty), style = tokens.secondary) }
-    }
-}
-
-@Composable
-private fun InboxPage() {
-    val context = LocalContext.current
-    val tokens = LocalTokens.current
-    val entries by EnyoNotificationService.entries.collectAsState()
-    if (entries.isEmpty()) {
-        Column(Modifier.fillMaxSize().padding(tokens.margin)) {
-            Text(stringResource(R.string.inbox_empty), style = tokens.secondary)
-            TextButton(onClick = { context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) {
-                Text(stringResource(R.string.notification_access), color = tokens.ink)
-            }
-        }
-    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
-        entries.groupBy { it.packageName }.forEach { (source, notifications) ->
-            item {
-                val label = runCatching { context.packageManager.getApplicationInfo(source, 0).loadLabel(context.packageManager) }
-                    .getOrDefault(source)
-                Text(label.toString(), style = tokens.state)
-            }
-            items(notifications, key = { it.key }) { entry ->
-                val notification = entry.notification
-                Column(Modifier.padding(vertical = tokens.gap)) {
-                    val extras = notification.extras
-                    Text(extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(), style = tokens.state)
-                    Text(extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(), style = tokens.secondary)
-                    notification.actions.orEmpty().firstOrNull { it.remoteInputs.isNullOrEmpty() }?.let { action ->
-                        TextButton(onClick = { runCatching { action.actionIntent.send() } }) {
-                            Text(action.title.toString(), color = tokens.ink)
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
