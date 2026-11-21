@@ -29,16 +29,22 @@ internal fun StatusBarNotification.isMessagingNotice() =
     packageName in messagingPackages && notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
 
 @Composable
-internal fun InboxPage(apps: List<LauncherActivityInfo>, openApp: (LauncherActivityInfo) -> Unit) {
+internal fun InboxPage(
+    apps: List<LauncherActivityInfo>,
+    openApp: (LauncherActivityInfo) -> Unit,
+    group: NoticeGroup? = null
+) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
     val entries by EnyoNotificationService.entries.collectAsState()
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(group) { mutableStateOf(group?.messaging == true) }
     var draftEntry by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
     val labels = remember(apps) { apps.associate { it.componentName.packageName to it.label.toString() } }
-    val entriesVisible = if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) emptyList() else entries
+    val entriesVisible = if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) emptyList()
+    else if (group != null) entries.filter { it.noticeGroup() == group }
+    else entries
     val messages = entriesVisible.filter { it.isMessagingNotice() }
     val others = entriesVisible.filterNot { it.isMessagingNotice() || it.packageName in messagingPackages }
     fun open(entry: StatusBarNotification) {
@@ -50,7 +56,7 @@ internal fun InboxPage(apps: List<LauncherActivityInfo>, openApp: (LauncherActiv
         if (entriesVisible.isEmpty()) item { Text(stringResource(R.string.inbox_empty), style = tokens.secondary) }
         if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
         if (messages.isNotEmpty()) {
-            item {
+            if (group == null) item {
                 TextButton(onClick = { expanded = !expanded }) {
                     EnyoGlyph(Glyph.Messages)
                     Spacer(Modifier.width(tokens.gap))
@@ -135,6 +141,6 @@ private fun NoticeRow(
 private fun Notification.replyAction(): Notification.Action? =
     actions.orEmpty().firstOrNull { it.actionIntent != null && it.remoteInputs.orEmpty().any(RemoteInput::getAllowFreeFormInput) }
 
-private fun sourceLabel(context: Context, packageName: String): String =
+internal fun sourceLabel(context: Context, packageName: String): String =
     runCatching { context.packageManager.getApplicationInfo(packageName, 0).loadLabel(context.packageManager).toString() }
         .getOrDefault(packageName)

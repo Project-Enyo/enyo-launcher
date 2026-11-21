@@ -312,6 +312,7 @@ internal fun LauncherScreen(
                     4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4)
                 }
             }
+            if (surface == 0) NotificationBanners(apps, ::openApp)
             Row(Modifier.fillMaxWidth()) {
                 pages.forEachIndexed { index, label ->
                     val labelText = stringResource(label)

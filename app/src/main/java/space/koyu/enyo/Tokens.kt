@@ -61,6 +61,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val toggleHeight = 26.dp
     val toggleInset = 4.dp
     val wallpaperThumbnail = 82.dp
+    val notificationTrayHeight = dimension(240, 210, 180, 148).dp
     val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
     val folderMaxHeight = 300.dp
     val dockIconSize = 46.dp

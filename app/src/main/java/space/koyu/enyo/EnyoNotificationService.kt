@@ -1,9 +1,11 @@
 package space.koyu.enyo
 
 import android.app.Notification
+import android.app.KeyguardManager
 import android.os.Process
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class EnyoNotificationService : NotificationListenerService() {
@@ -11,7 +13,14 @@ class EnyoNotificationService : NotificationListenerService() {
         connected = this
         refresh()
     }
-    override fun onNotificationPosted(sbn: StatusBarNotification) = refresh()
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        val previous = entries.value.firstOrNull { it.key == sbn.key }
+        refresh()
+        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
+        val current = entries.value.firstOrNull { it.key == sbn.key } ?: return
+        if (current.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (previous == null || previous.noticePayload() != current.noticePayload()) arrivals.tryEmit(current)
+    }
     override fun onNotificationRemoved(sbn: StatusBarNotification) = refresh()
     override fun onListenerDisconnected() {
         if (connected === this) connected = null
@@ -46,6 +55,7 @@ class EnyoNotificationService : NotificationListenerService() {
         }
 
         internal val brandIcons = MutableStateFlow<Map<String, android.graphics.drawable.Icon>>(emptyMap())
+        internal val arrivals = MutableSharedFlow<StatusBarNotification>(extraBufferCapacity = 8)
         internal val entries = MutableStateFlow<List<StatusBarNotification>>(emptyList())
     }
 }
