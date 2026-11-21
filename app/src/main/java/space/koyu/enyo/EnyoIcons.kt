@@ -52,7 +52,7 @@ private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
     override fun sizeOf(key: IconKey, value: Bitmap): Int = value.byteCount
 }
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-private val iconDispatcher = Dispatchers.Default.limitedParallelism(2)
+private val iconDispatcher = Dispatchers.Default.limitedParallelism(1)
 
 @Composable
 internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, displaySize: androidx.compose.ui.unit.Dp = LocalTokens.current.iconSize, label: String? = null) {
@@ -99,7 +99,15 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
                 }
                 Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
                     drawable.setBounds(padding, padding, size - padding, size - padding)
-                    drawable.draw(android.graphics.Canvas(it))
+                    val canvas = android.graphics.Canvas(it)
+                    if (!originals) {
+                        val radius = size * tokens.iconRasterCorner
+                        val outline = android.graphics.Path().apply {
+                            addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), radius, radius, android.graphics.Path.Direction.CW)
+                        }
+                        canvas.clipPath(outline)
+                    }
+                    drawable.draw(canvas)
                     if (!originals && source !is AdaptiveIconDrawable) {
                         extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
                     }
@@ -111,11 +119,11 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
     val shape = RoundedCornerShape(tokens.iconRadius)
     Box(
         modifier.size(displaySize)
-            .then(if (originals) Modifier else Modifier.clip(shape)
-                .background(if (brand || arches) tokens.brandSurface else tokens.accentContainer)),
+            .then(if (originals) Modifier else Modifier
+                .background(if (brand || arches) tokens.brandSurface else tokens.accentContainer, shape)),
         contentAlignment = Alignment.Center
     ) {
-        val bitmap = icon
+        val bitmap = remember(icon) { icon?.asImageBitmap() }
         when {
             !originals && arches -> Image(
                 painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)),
@@ -123,7 +131,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
             )
             !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)))
             bitmap != null -> Image(
-                bitmap.asImageBitmap(), null, Modifier.fillMaxSize(),
+                bitmap, null, Modifier.fillMaxSize(),
                 colorFilter = if (!originals && brand) ColorFilter.tint(tokens.brandInk) else null
             )
             else -> {

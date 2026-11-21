@@ -152,4 +152,12 @@
     <string name="wallpaper_bastei">Bastei</string>
     <string name="wallpaper_moselle">Moselle bend</string>
     <string name="wallpaper_forest">Black Forest</string>
+    <string name="widget_clock">Clock</string>
+    <string name="widget_calendar">Next event</string>
+    <string name="widget_battery">Battery</string>
+    <string name="widget_charging">Charging</string>
+    <string name="widget_expand">Make wider</string>
+    <string name="widget_shrink">Make narrower</string>
+    <string name="widget_edit">Resize widgets</string>
+    <string name="widget_done">Done</string>
 </resources>

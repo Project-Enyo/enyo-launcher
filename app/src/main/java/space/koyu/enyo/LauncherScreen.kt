@@ -285,7 +285,7 @@ internal fun LauncherScreen(
                 userScrollEnabled = surface == 0 && searchPullFraction == 0f
             ) { page ->
                 when (page) {
-                    0 -> TodayPage(foreground)
+                    0 -> TodayBoard(foreground)
                     1 -> AppsGrid(library, onAtTopChanged = { appsAtTop = it }, extra = {
                         AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
                             androidx.compose.material3.Surface(
@@ -359,33 +359,6 @@ internal fun LibraryRow(app: LauncherActivityInfo, label: String = app.label.toS
     ) {
         AppIcon(app)
         Text(label, style = tokens.state, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun TodayPage(foreground: Int) {
-    val context = LocalContext.current
-    val tokens = LocalTokens.current
-    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    var now by remember { mutableStateOf(Date()) }
-    LaunchedEffect(Unit) { while (true) { now = Date(); delay(1000) } }
-    val calendarAllowed = remember(foreground) {
-        context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-    }
-    val event by produceState<String?>(null, foreground, calendarAllowed, now.time / 60000) {
-        value = if (!calendarAllowed) null else withContext(Dispatchers.IO) {
-            runCatching {
-                CalendarContract.Instances.query(
-                    context.contentResolver, arrayOf(CalendarContract.Instances.TITLE),
-                    now.time, now.time + 30L * 24 * 60 * 60 * 1000
-                )?.use { if (it.moveToFirst()) it.getString(0) else null }
-            }.getOrNull()
-        }
-    }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
-        item { Text(DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(now), style = tokens.value) }
-        item { Text(DateFormat.getDateInstance(DateFormat.FULL, locale).format(now), style = tokens.state) }
-        if (calendarAllowed) item { Text(event ?: stringResource(R.string.calendar_empty), style = tokens.secondary) }
     }
 }
 

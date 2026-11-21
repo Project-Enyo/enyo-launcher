@@ -98,48 +98,19 @@ private fun GridContent(
 ) {
     val tokens = LocalTokens.current
     val reportTop by rememberUpdatedState(onAtTopChanged)
-    if (apps.size > tokens.eagerAppLimit) {
-        val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.5f, behindFraction = 0.5f) }
-        val state = rememberLazyGridState(cacheWindow = cache)
-        LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(tokens.appCellWidth),
-            modifier = Modifier.fillMaxSize(),
-            state = state,
-            contentPadding = PaddingValues(tokens.margin),
-            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-            verticalArrangement = Arrangement.spacedBy(tokens.gap)
-        ) {
-            if (extra != null) item(key = "feature") { extra() }
-            items(apps, key = { it.componentName.flattenToString() }, contentType = { "app" }) { tile(it) }
-        }
-    } else BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = tokens.margin)) {
-        val count = ((maxWidth + tokens.gap) / (tokens.appCellWidth + tokens.gap)).toInt().coerceAtLeast(1)
-        val cells = remember(apps, count, extra != null) {
-            buildList<LauncherActivityInfo?> {
-                if (extra != null) add(null)
-                addAll(apps)
-            }.chunked(count)
-        }
-        val state = rememberScrollState()
-        LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(state).padding(vertical = tokens.margin),
-            verticalArrangement = Arrangement.spacedBy(tokens.gap)
-        ) {
-            cells.forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                    row.forEach { app ->
-                        key(app?.componentName) {
-                            Box(Modifier.weight(1f)) {
-                                if (app == null) extra?.invoke() else tile(app)
-                            }
-                        }
-                    }
-                    repeat(count - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
+    val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.20f, behindFraction = 0.18f) }
+    val state = rememberLazyGridState(cacheWindow = cache)
+    LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(tokens.appCellWidth),
+        modifier = Modifier.fillMaxSize(),
+        state = state,
+        contentPadding = PaddingValues(tokens.margin),
+        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+    ) {
+        if (extra != null) item(key = "feature", contentType = "app") { extra() }
+        items(apps, key = { it.componentName.flattenToString() }, contentType = { "app" }) { tile(it) }
     }
 }
 

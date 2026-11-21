@@ -152,4 +152,12 @@
     <string name="wallpaper_bastei">Bastei</string>
     <string name="wallpaper_moselle">Moselschleife</string>
     <string name="wallpaper_forest">Schwarzwald</string>
+    <string name="widget_clock">Uhr</string>
+    <string name="widget_calendar">Nächster Termin</string>
+    <string name="widget_battery">Akku</string>
+    <string name="widget_charging">Wird geladen</string>
+    <string name="widget_expand">Verbreitern</string>
+    <string name="widget_shrink">Verkleinern</string>
+    <string name="widget_edit">Widgets anpassen</string>
+    <string name="widget_done">Fertig</string>
 </resources>

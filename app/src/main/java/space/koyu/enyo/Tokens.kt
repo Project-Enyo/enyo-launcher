@@ -55,12 +55,14 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val wallpaperEdgeAlpha = if (dark) 0.84f else 0.87f
     val wallpaperCenterAlpha = if (dark) 0.40f else 0.36f
     val cardOpacity = if (dark) 0.91f else 0.93f
-    val eagerAppLimit = 120
     val appEdgeFade = 18.dp
     val toggleWidth = 48.dp
     val toggleHeight = 26.dp
     val toggleInset = 4.dp
     val wallpaperThumbnail = 82.dp
+    val widgetBatteryWidth = dimension(114, 104, 92, 82).dp
+    val widgetBatteryHeight = dimension(58, 52, 46, 40).dp
+    val widgetResizeDistance = 48.dp
     val notificationTrayHeight = dimension(240, 210, 180, 148).dp
     val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
     val folderMaxHeight = 300.dp
@@ -89,6 +91,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val glyphSize = dimension(22, 21, 20, 16).dp
     val glyphStroke = 1.7.dp
     val iconPadding = 0.14f
+    val iconRasterCorner = 0.32f
     val iconMonoPadding = 0.04f
     val iconSaturation = 0.64f
     val iconBackgroundTolerance = 20
