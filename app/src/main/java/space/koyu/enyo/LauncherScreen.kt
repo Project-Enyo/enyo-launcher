@@ -91,8 +91,12 @@ internal fun LauncherScreen(
         value = withContext(Dispatchers.IO) {
             val collator = Collator.getInstance()
             runCatching {
+                val hiddenPackages = setOf(
+                    context.packageName, "com.android.stk", "com.android.stk2",
+                    "app.attestation.auditor", "app.grapheneos.info"
+                )
                 launcher.getActivityList(null, Process.myUserHandle())
-                    .filterNot { it.componentName.packageName in setOf(context.packageName, "com.android.stk", "com.android.stk2") }
+                    .filterNot { it.componentName.packageName in hiddenPackages }
                     .sortedWith(compareBy(collator) { it.label.toString() })
             }.getOrDefault(emptyList())
         }

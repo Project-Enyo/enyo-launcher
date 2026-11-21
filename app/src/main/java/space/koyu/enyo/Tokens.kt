@@ -63,6 +63,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val iconPadding = 0.14f
     val iconMonoPadding = 0.04f
     val iconSaturation = 0.64f
+    val iconBackgroundTolerance = 20
     val recentVisible = 3
     val recentWidthFraction = 0.66f
     val recentHeightFraction = 0.38f

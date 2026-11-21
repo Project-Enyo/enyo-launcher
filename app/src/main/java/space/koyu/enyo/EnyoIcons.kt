@@ -52,22 +52,25 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
         value = if (!originals && dedicated != null) null else withContext(Dispatchers.Default) {
             runCatching {
                 val source = app.getIcon(originalSize).mutate()
-                val original = source
-                val symbol = if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
+                val monochrome = if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
                     source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
                 } else null
-                val drawable = symbol ?: original
+                val foreground = if (!originals && source is AdaptiveIconDrawable) source.foreground?.mutate() else null
+                val drawable = monochrome ?: foreground ?: source
                 val padding = when {
                     originals -> 0
-                    symbol != null -> (size * tokens.iconMonoPadding).roundToInt()
+                    monochrome != null || foreground != null -> (size * tokens.iconMonoPadding).roundToInt()
                     else -> (size * tokens.iconPadding).roundToInt()
                 }
-                if (!originals && symbol == null) {
+                if (!originals && monochrome == null) {
                     drawable.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(tokens.iconSaturation) })
                 }
                 Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
                     drawable.setBounds(padding, padding, size - padding, size - padding)
                     drawable.draw(android.graphics.Canvas(it))
+                    if (!originals && source !is AdaptiveIconDrawable) {
+                        extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
+                    }
                 }
             }.getOrNull()
         }
@@ -89,6 +92,52 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int) {
+    val edge = bitmap.width - padding - 1
+    if (edge <= padding) return
+    val width = bitmap.width
+    val pixels = IntArray(width * bitmap.height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, bitmap.height)
+    val seed = pixels[padding * width + padding]
+    fun near(value: Int): Boolean =
+        value ushr 24 >= 245 && listOf(0, 8, 16).all { shift ->
+            kotlin.math.abs((value ushr shift and 255) - (seed ushr shift and 255)) <= tolerance
+        }
+    val corners = listOf(padding to padding, edge to padding, padding to edge, edge to edge)
+    if (!corners.all { (x, y) -> near(pixels[y * width + x]) }) return
+    val visited = BooleanArray(pixels.size)
+    val pending = ArrayDeque<Int>()
+    fun add(x: Int, y: Int) {
+        if (x !in padding..edge || y !in padding..edge) return
+        val i = y * width + x
+        if (!visited[i] && near(pixels[i])) {
+            visited[i] = true
+            pending.add(i)
+        }
+    }
+    for (i in padding..edge) {
+        add(i, padding)
+        add(i, edge)
+        add(padding, i)
+        add(edge, i)
+    }
+    var removed = 0
+    while (pending.isNotEmpty()) {
+        val i = pending.removeFirst()
+        val x = i % width
+        val y = i / width
+        removed++
+        add(x - 1, y)
+        add(x + 1, y)
+        add(x, y - 1)
+        add(x, y + 1)
+    }
+    val area = (edge - padding + 1) * (edge - padding + 1)
+    if (removed < area / 8 || removed > area * 19 / 20) return
+    for (i in pixels.indices) if (visited[i]) pixels[i] = 0
+    bitmap.setPixels(pixels, 0, width, 0, 0, width, bitmap.height)
 }
 
 @Composable
