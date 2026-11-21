@@ -12,6 +12,9 @@ import android.os.SystemClock
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -20,6 +23,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -275,48 +280,97 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
 private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long) -> Unit) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
-    val media = state.media?.takeIf {
-        it.title != null || it.artist != null || it.artwork != null || (it.playback?.actions ?: 0L) != 0L
+    val media = state.media
+    val packageName = media?.packageName
+    val launchIntent = remember(context, packageName) {
+        packageName?.let { runCatching { context.packageManager.getLaunchIntentForPackage(it) }.getOrNull() }
     }
-    val active = media?.playback?.let {
-        if (it.state == PlaybackState.STATE_PLAYING) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
+    val open = when {
+        !state.mediaAllowed -> {
+            { context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); Unit }
+        }
+        media?.sessionActivity != null || launchIntent != null -> {
+            {
+                val sent = media?.sessionActivity?.let { runCatching { it.send() }.isSuccess } == true
+                if (!sent && (launchIntent == null || !context.launchSafely(launchIntent))) {
+                    Toast.makeText(context, R.string.action_unavailable, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        else -> null
     }
-    val activate: () -> Unit = {
-        if (!state.mediaAllowed) context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-        else if (active != null) transport(active)
-    }
-    ContentCard(modifier.fillMaxWidth().cardInput(ownFocusTarget = true, activate = activate)) {
-        Box(Modifier.padding(tokens.padding), contentAlignment = Alignment.Center) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(tokens.gap)
-            ) {
-                if (!state.mediaAllowed) {
-                    Text(stringResource(R.string.now_playing), style = tokens.state)
-                    Text(stringResource(R.string.media_needs_access), style = tokens.secondary)
-                    TextButton(onClick = { context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) {
-                        Text(stringResource(R.string.notification_access), color = tokens.ink)
+    val actionLabel = stringResource(if (state.mediaAllowed) R.string.media_open_player else R.string.notification_access)
+    val interaction = if (open == null) Modifier.cardInput() else Modifier.cardInput(activate = open)
+        .clickable(interactionSource = null, indication = null, role = Role.Button, onClickLabel = actionLabel, onClick = open)
+    ContentCard(modifier.then(interaction)) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().padding(tokens.padding),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!state.mediaAllowed || media == null) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MediaCover(null, Modifier.size(tokens.touch))
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.now_playing), style = tokens.state)
+                        Text(
+                            stringResource(if (state.mediaAllowed) R.string.no_media else R.string.media_needs_access),
+                            style = tokens.secondary
+                        )
                     }
-                } else if (media == null) {
-                    Text(stringResource(R.string.now_playing), style = tokens.state)
-                    Text(stringResource(R.string.no_media), style = tokens.secondary)
-                } else {
-                    media.artwork?.let {
-                        Image(it.asImageBitmap(), null, modifier = Modifier.size(tokens.cover))
+                    if (open != null) EnyoGlyph(Glyph.Forward, color = tokens.quiet)
+                }
+            } else {
+                val compact = maxHeight < tokens.cover + tokens.touch + tokens.gap * 2
+                val cover = minOf(if (compact) tokens.mediaCompactCover else tokens.cover, maxWidth / 3)
+                val inlineControls = compact && maxWidth - cover - tokens.gap >= tokens.touch * 3
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(tokens.gap)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MediaCover(media, Modifier.size(cover))
+                        Column(Modifier.weight(1f)) {
+                            if (!compact) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        stringResource(R.string.now_playing), Modifier.weight(1f),
+                                        style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (open != null) {
+                                        Text(actionLabel, style = tokens.secondary, maxLines = 1)
+                                        EnyoGlyph(Glyph.Forward, Modifier.size(tokens.chevronSize), color = tokens.quiet)
+                                    }
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    media.title ?: stringResource(R.string.now_playing), Modifier.weight(1f),
+                                    style = tokens.mediaTitle, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis
+                                )
+                                if (compact && open != null) {
+                                    EnyoGlyph(Glyph.Forward, Modifier.size(tokens.chevronSize), color = tokens.quiet)
+                                }
+                            }
+                            media.artist?.let {
+                                Text(it, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (inlineControls) MediaControls(media, transport)
+                        }
                     }
-                    Text(media.title ?: stringResource(R.string.now_playing), style = tokens.state,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    media.artist?.let { Text(it, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    val actions = media.playback?.actions ?: 0L
-                    val playing = media.playback?.state == PlaybackState.STATE_PLAYING
-                    val primary = if (playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
-                    Row {
-                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_PREVIOUS, R.string.previous_track, Glyph.PreviousTrack, transport)
-                        MediaButton(actions, primary, if (playing) R.string.pause else R.string.play,
-                            if (playing) Glyph.Pause else Glyph.Play, transport)
-                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_NEXT, R.string.next_track, Glyph.NextTrack, transport)
+                    if (!inlineControls) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            MediaControls(media, transport)
+                        }
                     }
-                    if (media.duration > 0 && media.playback != null) MediaProgress(media)
+                    if (media.duration > 0) MediaProgress(media)
                 }
             }
         }
@@ -324,8 +378,48 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
 }
 
 @Composable
-private fun MediaButton(actions: Long, action: Long, label: Int, glyph: Glyph, transport: (Long) -> Unit) {
-    if (actions and action != 0L) IconButton(onClick = { transport(action) }) {
+private fun MediaCover(media: MediaSnapshot?, modifier: Modifier) {
+    val tokens = LocalTokens.current
+    Box(
+        modifier.clip(RoundedCornerShape(tokens.iconRadius)).background(tokens.accentContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        val artwork = media?.artwork
+        if (artwork == null) EnyoGlyph(Glyph.Music, Modifier.size(tokens.appGlyphSize), color = tokens.accent)
+        else Image(
+            bitmap = remember(artwork) { artwork.asImageBitmap() },
+            contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop
+        )
+    }
+}
+
+@Composable
+private fun MediaControls(media: MediaSnapshot, transport: (Long) -> Unit) {
+    val actions = media.playback?.actions ?: return
+    val playing = media.playback.state == PlaybackState.STATE_PLAYING
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_PREVIOUS, R.string.previous_track, Glyph.PreviousTrack, transport)
+        MediaButton(
+            actions, if (playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY,
+            if (playing) R.string.pause else R.string.play, if (playing) Glyph.Pause else Glyph.Play,
+            transport, primary = true
+        )
+        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_NEXT, R.string.next_track, Glyph.NextTrack, transport)
+    }
+}
+
+@Composable
+private fun MediaButton(
+    actions: Long, action: Long, label: Int, glyph: Glyph, transport: (Long) -> Unit, primary: Boolean = false
+) {
+    if (actions and action == 0L) return
+    val tokens = LocalTokens.current
+    if (primary) FilledTonalIconButton(
+        onClick = { transport(action) },
+        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accentContainer)
+    ) {
+        EnyoGlyph(glyph, color = tokens.accent, description = stringResource(label))
+    } else IconButton(onClick = { transport(action) }) {
         EnyoGlyph(glyph, description = stringResource(label))
     }
 }

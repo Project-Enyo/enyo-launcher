@@ -50,6 +50,7 @@ internal enum class Glyph(val drawable: Int) {
     Forward(R.drawable.tabler_chevron_right),
     Close(R.drawable.tabler_x),
     Battery(R.drawable.tabler_battery),
+    Music(R.drawable.tabler_music),
     Play(R.drawable.tabler_player_play),
     Pause(R.drawable.tabler_player_pause),
     PreviousTrack(R.drawable.tabler_player_skip_back),

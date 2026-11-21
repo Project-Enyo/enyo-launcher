@@ -3,6 +3,7 @@ package space.koyu.enyo
 import android.Manifest
 import android.app.Application
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
@@ -27,6 +28,7 @@ import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.lifecycle.AndroidViewModel
@@ -65,7 +67,9 @@ internal data class MediaSnapshot(
     val artist: String?,
     val artwork: Bitmap?,
     val playback: PlaybackState?,
-    val duration: Long
+    val duration: Long,
+    val packageName: String,
+    val sessionActivity: PendingIntent?
 )
 
 internal class QuickState(application: Application) : AndroidViewModel(application) {
@@ -359,7 +363,12 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
                 }
             }
         }
-        snapshot.update { it.copy(media = MediaSnapshot(title, artist, artwork, playback, duration)) }
+        val activity = controller.sessionActivity?.takeIf {
+            it.isActivity && it.creatorUserHandle == Process.myUserHandle()
+        }
+        snapshot.update {
+            it.copy(media = MediaSnapshot(title, artist, artwork, playback, duration, controller.packageName, activity))
+        }
     }
 
     private fun recoverPausedConnection(token: MediaSession.Token) {

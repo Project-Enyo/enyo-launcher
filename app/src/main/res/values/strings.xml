@@ -6,6 +6,7 @@
     <string name="panel_unavailable">Network controls are unavailable</string>
     <string name="volume">Volume preview</string>
     <string name="now_playing">Now playing</string>
+    <string name="media_open_player">Open player</string>
     <string name="no_media">No media playing</string>
     <string name="brightness">Brightness</string>
     <string name="bluetooth">Bluetooth</string>

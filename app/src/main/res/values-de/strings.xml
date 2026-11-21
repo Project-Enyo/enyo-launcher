@@ -6,6 +6,7 @@
     <string name="panel_unavailable">Netzwerkeinstellungen sind nicht verfügbar</string>
     <string name="volume">Lautstärkevorschau</string>
     <string name="now_playing">Aktuelle Wiedergabe</string>
+    <string name="media_open_player">Player öffnen</string>
     <string name="no_media">Keine Medienwiedergabe</string>
     <string name="brightness">Helligkeit</string>
     <string name="bluetooth">Bluetooth</string>

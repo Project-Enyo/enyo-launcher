@@ -30,7 +30,7 @@ internal fun QuickGrid(
         val stripHeight = if (strip == null) 0 else with(density) { tokens.stripHeight.roundToPx() } + gap
         val lowerRows = rows.size * (standard + gap) + stripHeight
         val heldHeight = with(density) {
-            val minimum = tokens.heldTarget.roundToPx()
+            val minimum = (if (tiny) tokens.mediaTinyHeight else tokens.heldTarget).roundToPx()
             if (compact && !keyboard) (height - lowerRows).coerceAtLeast(minimum) else minimum
         }
         val scroll = tiny || keyboard || heldHeight + lowerRows > height
