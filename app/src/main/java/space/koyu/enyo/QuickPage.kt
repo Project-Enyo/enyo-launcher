@@ -50,7 +50,7 @@ private enum class BrightnessLevel(val fraction: Float, val label: Int) {
 }
 
 @Composable
-internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: Boolean) {
+internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: Boolean, visible: Boolean) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -63,7 +63,7 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverl
             if (next != null) this.next = focus[next]
         }
     val target = with(LocalDensity.current) { tokens.cover.roundToPx() }
-    DisposableEffect(lifecycle, model, target, context) {
+    if (visible) DisposableEffect(lifecycle, model, target, context) {
         val power = context.getSystemService(PowerManager::class.java)
         val keyguard = context.getSystemService(KeyguardManager::class.java)
         fun ready() = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&

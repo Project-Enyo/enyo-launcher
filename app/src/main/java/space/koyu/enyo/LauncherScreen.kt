@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.Lifecycle
@@ -97,7 +98,7 @@ internal fun LauncherScreen(
         launcher.registerCallback(callback)
         onDispose { launcher.unregisterCallback(callback) }
     }
-    val apps by produceState(emptyList<LauncherActivityInfo>(), foreground, packageCycle) {
+    val catalog by produceState(emptyList<Pair<LauncherActivityInfo, String>>(), foreground, packageCycle) {
         value = withContext(Dispatchers.IO) {
             val collator = Collator.getInstance()
             runCatching {
@@ -107,10 +108,13 @@ internal fun LauncherScreen(
                 )
                 launcher.getActivityList(null, Process.myUserHandle())
                     .filterNot { it.componentName.packageName in hiddenPackages }
-                    .sortedWith(compareBy(collator) { it.label.toString() })
+                    .map { app -> app to app.label.toString() }
+                    .sortedWith(compareBy(collator) { it.second })
             }.getOrDefault(emptyList())
         }
     }
+    val apps = remember(catalog) { catalog.map { it.first } }
+    val labels = remember(catalog) { catalog.associate { it.first.componentName to it.second } }
     val transit = remember(apps) { apps.filter { it.componentName.packageName == transitPackage } }
     val providers = remember(apps) {
         apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
@@ -131,6 +135,7 @@ internal fun LauncherScreen(
     var surface by rememberSaveable { mutableIntStateOf(0) }
     var query by remember { mutableStateOf(TextFieldValue()) }
     var searchPullFraction by remember { mutableFloatStateOf(0f) }
+    var appsAtTop by remember { mutableStateOf(true) }
     val searchVisible = surface == 1 && !transitPicker && !messagesPicker && appMenu == null
     val searchReveal by animateFloatAsState(
         if (searchVisible) 1f else searchPullFraction,
@@ -255,7 +260,10 @@ internal fun LauncherScreen(
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                 .padding(bottom = tokens.bottomClearance)
-                .searchPull(surface == 0, { searchPullFraction = it }) { query = TextFieldValue(); surface = 1 }
+                .searchPull(
+                    enabled = surface == 0, appGrid = { pager.currentPage == 1 },
+                    appGridAtTop = { appsAtTop }, update = { searchPullFraction = it }
+                ) { query = TextFieldValue(); surface = 1 }
 
         ) {
             if (surface == 1 || searchReveal > 0f) Spacer(Modifier.height(tokens.touch))
@@ -272,10 +280,13 @@ internal fun LauncherScreen(
                         .semantics { contentDescription = preferencesLabel }
                 ) { EnyoGlyph(Glyph.Settings) }
             }
-            HorizontalPager(pager, Modifier.weight(1f)) { page ->
+            HorizontalPager(
+                pager, Modifier.weight(1f),
+                userScrollEnabled = surface == 0 && searchPullFraction == 0f
+            ) { page ->
                 when (page) {
                     0 -> TodayPage(foreground)
-                    1 -> AppsGrid(library, extra = {
+                    1 -> AppsGrid(library, onAtTopChanged = { appsAtTop = it }, extra = {
                         AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
                             androidx.compose.material3.Surface(
                                 modifier = Modifier.size(tokens.iconSize),
@@ -288,37 +299,38 @@ internal fun LauncherScreen(
                     }) { app ->
                         val consolidated = app.componentName.packageName == transitPackage
                         AppTile(
-                            label = if (consolidated) stringResource(R.string.transit) else app.label.toString(),
+                            label = if (consolidated) stringResource(R.string.transit) else labels[app.componentName].orEmpty(),
                             open = { if (consolidated) transitPicker = true else openApp(app) },
                             actions = if (consolidated) null else ({ appMenu = app })
-                        ) { AppIcon(app) }
+                        ) { AppIcon(app, label = labels[app.componentName]) }
                     }
                     2 -> Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus) }
+                        Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus, surface == 0 && searchPullFraction == 0f) }
                         PinnedDock(pinned, { scope.launch { pager.animateScrollToPage(1) } }, ::openApp) { appMenu = it }
                     }
                     3 -> InboxPage(apps, ::openApp)
-                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1)
+                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4)
                 }
-            }
-            Canvas(Modifier.fillMaxWidth().height(tokens.progress)) {
-                val step = size.width / pages.size
-                val x = (pager.currentPage + pager.currentPageOffsetFraction + 0.5f) * step
-                drawCircle(tokens.accent, radius = size.height / 2f, center = Offset(x, size.height / 2f))
             }
             Row(Modifier.fillMaxWidth()) {
                 pages.forEachIndexed { index, label ->
-                    TextButton(
-                        onClick = { scope.launch { pager.animateScrollToPage(index) } },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues()
+                    val labelText = stringResource(label)
+                    Column(
+                        modifier = Modifier.weight(1f).heightIn(min = tokens.touch)
+                            .appPress({ scope.launch { pager.animateScrollToPage(index) } })
+                            .semantics { if (pager.currentPage == index) selected = true },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            EnyoGlyph(pageGlyphs[index])
-                            Text(stringResource(label), style = tokens.label.copy(color = tokens.ink), maxLines = 1)
-                        }
+                        EnyoGlyph(pageGlyphs[index])
+                        Text(labelText, style = tokens.label.copy(color = tokens.ink), maxLines = 1)
                     }
                 }
+            }
+            Canvas(Modifier.fillMaxWidth().height(tokens.navigationDotSpace)) {
+                val step = size.width / pages.size
+                val x = (pager.currentPage + pager.currentPageOffsetFraction + 0.5f) * step
+                drawCircle(tokens.accent, radius = tokens.navigationDotSize.toPx() / 2f, center = Offset(x, size.height / 2f))
             }
         }
         if (searchVisible || (surface == 0 && searchReveal > 0f)) {

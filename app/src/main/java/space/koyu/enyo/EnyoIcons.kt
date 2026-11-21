@@ -36,7 +36,7 @@ import kotlin.math.roundToInt
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
 internal val LocalBrandIcons = staticCompositionLocalOf { emptyMap<String, android.graphics.drawable.Icon>() }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit, Back, Close }
+internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit, Back, Forward, Close }
 
 private data class IconKey(
     val component: android.content.ComponentName,
@@ -55,13 +55,13 @@ private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
 private val iconDispatcher = Dispatchers.Default.limitedParallelism(2)
 
 @Composable
-internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, displaySize: androidx.compose.ui.unit.Dp = LocalTokens.current.iconSize) {
+internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, displaySize: androidx.compose.ui.unit.Dp = LocalTokens.current.iconSize, label: String? = null) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val density = LocalDensity.current
     val originals = LocalOriginalIcons.current
     val component = app.componentName
-    val size = with(density) { displaySize.roundToPx() }
+    val size = with(density) { tokens.iconSize.roundToPx() }
     val originalSize = (160 * density.density).roundToInt()
     val arches = component.packageName == "de.mcdonalds.mcdonaldsinfoapp"
     val brand = component.packageName in brandedNotificationApps
@@ -77,8 +77,10 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
         else -> null
     }
     val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb(), noteSource)
-    val icon by produceState(iconCache.get(key), key) {
-        value = if (!originals && (dedicated != null || arches)) null else withContext(iconDispatcher) {
+    val cached = remember(key) { iconCache.get(key) }
+    val icon = if (cached != null || (!originals && (dedicated != null || arches))) cached
+    else produceState<Bitmap?>(null, key) {
+        value = withContext(iconDispatcher) {
             iconCache.get(key) ?: runCatching {
                 val source = app.getIcon(originalSize).mutate()
                 val monochrome = mark?.loadDrawable(context)?.mutate() ?:
@@ -105,7 +107,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
                 }
             }.getOrNull()
         }
-    }
+    }.value
     val shape = RoundedCornerShape(tokens.iconRadius)
     Box(
         modifier.size(displaySize)
@@ -116,17 +118,17 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
         val bitmap = icon
         when {
             !originals && arches -> Image(
-                painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(tokens.appGlyphSize),
+                painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)),
                 colorFilter = ColorFilter.tint(tokens.brandInk)
             )
-            !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(tokens.appGlyphSize))
+            !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)))
             bitmap != null -> Image(
                 bitmap.asImageBitmap(), null, Modifier.fillMaxSize(),
                 colorFilter = if (!originals && brand) ColorFilter.tint(tokens.brandInk) else null
             )
             else -> {
-                val label = app.label.toString().trim()
-                val letter = label.codePoints().findFirst().orElse('?'.code)
+                val fallback = (label ?: app.label.toString()).trim()
+                val letter = fallback.codePoints().findFirst().orElse('?'.code)
                 Text(String(Character.toChars(letter)).uppercase(), style = tokens.state)
             }
         }
@@ -228,6 +230,7 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 line(.16f, .76f, .84f, .76f); circle(.36f, .76f, .105f, true)
             }
             Glyph.Back -> { line(.18f, .50f, .82f, .50f); line(.18f, .50f, .45f, .23f); line(.18f, .50f, .45f, .77f) }
+            Glyph.Forward -> { line(.37f, .26f, .64f, .50f); line(.64f, .50f, .37f, .74f) }
             Glyph.Close -> { line(.25f, .25f, .75f, .75f); line(.25f, .75f, .75f, .25f) }
             Glyph.Search -> { circle(.43f, .43f, .25f); line(.62f, .62f, .82f, .82f) }
             Glyph.Settings -> {

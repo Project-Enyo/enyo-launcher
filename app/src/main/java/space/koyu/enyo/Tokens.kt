@@ -47,6 +47,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val chevronStroke = 2.dp
     val stroke = dimension(4, 4, 3).dp
     val progress = 2.dp
+    val navigationDotSize = 4.dp
+    val navigationDotSpace = 8.dp
     val focusStroke = 2.dp
     val focusOffset = 2.dp
     val hoverOpacity = 0.45f
@@ -54,9 +56,17 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val wallpaperCenterAlpha = if (dark) 0.40f else 0.36f
     val cardOpacity = if (dark) 0.91f else 0.93f
     val eagerAppLimit = 120
+    val appEdgeFade = 18.dp
+    val toggleWidth = 48.dp
+    val toggleHeight = 26.dp
+    val toggleInset = 4.dp
+    val wallpaperThumbnail = 82.dp
+    val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
     val folderMaxHeight = 300.dp
     val dockIconSize = 46.dp
-    val dockBottomSpace = 14.dp
+    val dockBottomSpace = 20.dp
+    val dockInnerHorizontal = 12.dp
+    val dockInnerVertical = 7.dp
     val dockOpacity = 0.93f
     val sheetScrim = 0.36f
     val searchScrim = 0.78f
@@ -66,6 +76,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val sheetMaxWidth = 480.dp
     val sheetRadius = dimension(30, 26, 24).dp
     val dockCellWidth = dimension(68, 62, 58, 48).dp
+    val emptySurface = if (dark) surface else ink
+    val emptyInk = if (dark) ink else background
     val brandInk = Color.White
     val brandSurface = if (dark) accentContainer else accent
     val appCellWidth = dimension(94, 86, 78, 68).dp

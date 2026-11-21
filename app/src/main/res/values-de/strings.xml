@@ -15,7 +15,7 @@
     <string name="cards">Karten</string>
     <string name="inbox">Postfach</string>
     <string name="quick">Schnell</string>
-    <string name="cards_empty">Hier erscheinen zuletzt genutzte Karten</string>
+    <string name="cards_empty">Hier erscheinen zuletzt genutzte Apps</string>
     <string name="inbox_empty">Keine Benachrichtigungen verfügbar</string>
     <string name="calendar_empty">Keine bevorstehenden Termine</string>
     <string name="notification_access">Benachrichtigungszugriff</string>
@@ -140,4 +140,16 @@
     <string name="message_send">Antwort senden</string>
     <string name="message_open">Öffnen</string>
     <string name="notice_dismiss">Verwerfen</string>
+    <string name="appearance_title">Darstellung</string>
+    <string name="wallpaper_settings_summary">Wähle eine Landschaft, ein eigenes Bild oder den Android Hintergrund.</string>
+    <string name="setup_settings_summary">Prüfe den Zugriff für optionale Enyo Funktionen.</string>
+    <string name="setup_welcome">Enyo einrichten</string>
+    <string name="wallpaper_gallery">Landschaftsgalerie</string>
+    <string name="wallpaper_dunes">Nordseedünen</string>
+    <string name="wallpaper_tidal_flats">Wattenmeer</string>
+    <string name="wallpaper_harbor">Nordseehafen</string>
+    <string name="wallpaper_castle">Schloss Neuschwanstein</string>
+    <string name="wallpaper_bastei">Bastei</string>
+    <string name="wallpaper_moselle">Moselschleife</string>
+    <string name="wallpaper_forest">Schwarzwald</string>
 </resources>

@@ -7,6 +7,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,6 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -57,15 +64,48 @@ internal const val dockCapacity = 5
 internal fun AppsGrid(
     apps: List<LauncherActivityInfo>,
     extra: (@Composable () -> Unit)? = null,
+    onAtTopChanged: (Boolean) -> Unit,
     tile: @Composable (LauncherActivityInfo) -> Unit
 ) {
     val tokens = LocalTokens.current
+    Box(
+        Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithCache {
+                val edge = (tokens.appEdgeFade.toPx() / size.height.coerceAtLeast(1f)).coerceIn(0f, 0.45f)
+                val mask = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    edge to Color.Black,
+                    (1f - edge) to Color.Black,
+                    1f to Color.Transparent
+                )
+                onDrawWithContent {
+                    drawContent()
+                    drawRect(mask, blendMode = BlendMode.DstIn)
+                }
+            }
+    ) {
+        GridContent(apps, extra, onAtTopChanged, tile)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GridContent(
+    apps: List<LauncherActivityInfo>,
+    extra: (@Composable () -> Unit)?,
+    onAtTopChanged: (Boolean) -> Unit,
+    tile: @Composable (LauncherActivityInfo) -> Unit
+) {
+    val tokens = LocalTokens.current
+    val reportTop by rememberUpdatedState(onAtTopChanged)
     if (apps.size > tokens.eagerAppLimit) {
         val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.5f, behindFraction = 0.5f) }
+        val state = rememberLazyGridState(cacheWindow = cache)
+        LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(tokens.appCellWidth),
             modifier = Modifier.fillMaxSize(),
-            state = rememberLazyGridState(cacheWindow = cache),
+            state = state,
             contentPadding = PaddingValues(tokens.margin),
             horizontalArrangement = Arrangement.spacedBy(tokens.gap),
             verticalArrangement = Arrangement.spacedBy(tokens.gap)
@@ -81,8 +121,10 @@ internal fun AppsGrid(
                 addAll(apps)
             }.chunked(count)
         }
+        val state = rememberScrollState()
+        LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = tokens.margin),
+            Modifier.fillMaxSize().verticalScroll(state).padding(vertical = tokens.margin),
             verticalArrangement = Arrangement.spacedBy(tokens.gap)
         ) {
             cells.forEach { row ->
@@ -166,14 +208,19 @@ internal fun PinnedDock(
             .padding(top = tokens.gap, bottom = tokens.dockBottomSpace),
         contentAlignment = Alignment.Center
     ) {
-        val cell = minOf(tokens.dockCellWidth, (maxWidth - tokens.gap * 2) / apps.size)
+        val available = maxWidth - tokens.dockInnerHorizontal * 2
+        val cell = minOf(tokens.dockCellWidth, available / apps.size).coerceAtLeast(tokens.touch)
+        val scroll = available < cell * apps.size
         Surface(
             color = tokens.surface.copy(alpha = tokens.dockOpacity),
             border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
             shadowElevation = tokens.elevation.last(),
             shape = RoundedCornerShape(tokens.sheetRadius)
         ) {
-            Row(Modifier.padding(horizontal = tokens.gap, vertical = tokens.gap / 2)) {
+            Row(
+                Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                    .padding(horizontal = tokens.dockInnerHorizontal, vertical = tokens.dockInnerVertical)
+            ) {
                 apps.forEach { app ->
                     val label = app.label.toString()
                     Box(

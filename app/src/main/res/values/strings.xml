@@ -15,7 +15,7 @@
     <string name="cards">Cards</string>
     <string name="inbox">Inbox</string>
     <string name="quick">Quick</string>
-    <string name="cards_empty">Recent cards will appear here</string>
+    <string name="cards_empty">Recently used apps will appear here</string>
     <string name="inbox_empty">No notifications available</string>
     <string name="calendar_empty">No upcoming events</string>
     <string name="notification_access">Notification access</string>
@@ -140,4 +140,16 @@
     <string name="message_send">Send reply</string>
     <string name="message_open">Open</string>
     <string name="notice_dismiss">Dismiss</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="wallpaper_settings_summary">Choose a landscape, your own image, or the Android wallpaper.</string>
+    <string name="setup_settings_summary">Review the access Enyo uses for optional features.</string>
+    <string name="setup_welcome">Set up Enyo</string>
+    <string name="wallpaper_gallery">Landscape gallery</string>
+    <string name="wallpaper_dunes">North Sea dunes</string>
+    <string name="wallpaper_tidal_flats">Wadden Sea</string>
+    <string name="wallpaper_harbor">North Sea harbor</string>
+    <string name="wallpaper_castle">Neuschwanstein Castle</string>
+    <string name="wallpaper_bastei">Bastei</string>
+    <string name="wallpaper_moselle">Moselle bend</string>
+    <string name="wallpaper_forest">Black Forest</string>
 </resources>

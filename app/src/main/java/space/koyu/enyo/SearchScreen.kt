@@ -17,7 +17,9 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,6 +41,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -117,10 +120,16 @@ private data class Confirmation(val title: String, val intent: Intent)
 @Composable
 internal fun SearchOverlay(reveal: Float, active: Boolean, close: () -> Unit, content: @Composable () -> Unit) {
     val tokens = LocalTokens.current
-    Box(Modifier.fillMaxSize()) {
+    val dismiss by rememberUpdatedState(close)
+    val blankTap = if (active) Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = true)
+            if (waitForUpOrCancellation() != null) dismiss()
+        }
+    } else Modifier
+    Box(Modifier.fillMaxSize().then(blankTap)) {
         Box(Modifier.matchParentSize()
-            .drawBehind { drawRect(tokens.background.copy(alpha = tokens.searchScrim * reveal)) }
-            .then(if (active) Modifier.clickable(interactionSource = null, indication = null, onClick = close) else Modifier))
+            .drawBehind { drawRect(tokens.background.copy(alpha = tokens.searchScrim * reveal)) })
         Box(
             Modifier.fillMaxSize()
                 .then(if (active) Modifier else Modifier.clearAndSetSemantics {})
@@ -283,7 +292,7 @@ internal fun SearchScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             EnyoGlyph(Glyph.Search, color = tokens.quiet)
-                            Box(Modifier.weight(1f)) {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                                 if (query.text.isEmpty()) Text(searchLabel, style = tokens.secondary)
                                 field()
                             }
@@ -301,7 +310,7 @@ internal fun SearchScreen(
             }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             contentPadding = PaddingValues(bottom = tokens.bottomClearance),
             verticalArrangement = Arrangement.spacedBy(tokens.gap)
         ) {
@@ -430,47 +439,48 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
-    LazyColumn(
-        Modifier.fillMaxSize().background(tokens.background).safeDrawingPadding(),
-        contentPadding = PaddingValues(tokens.margin)
-    ) {
-        item {
-            SearchButton(R.string.back, back)
-            Text(stringResource(R.string.preferences), style = tokens.state)
-            SearchButton(R.string.wallpaper, wallpaper)
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = tokens.touch).toggleable(
-                    value = originals, role = Role.Switch,
-                    onValueChange = { enabled -> scope.launch { appearance.edit { it[originalIcons] = enabled } } }
-                ),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Switch(checked = originals, onCheckedChange = null)
-                Spacer(Modifier.width(tokens.gap))
-                Text(stringResource(R.string.icon_originals), style = tokens.state)
-            }
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Switch(checked = historyOn, onCheckedChange = { enabled ->
-                    scope.launch {
-                        store.edit {
-                            it[searchHistoryEnabled] = enabled
-                            if (!enabled) it.remove(searchHistory)
-                        }
+    WallpaperBackdrop {
+        LazyColumn(
+            Modifier.fillMaxSize().safeDrawingPadding(),
+            contentPadding = PaddingValues(tokens.margin),
+            verticalArrangement = Arrangement.spacedBy(tokens.gap)
+        ) {
+            item { SettingsHeading(stringResource(R.string.preferences), back) }
+            item {
+                SettingsPanel(stringResource(R.string.appearance_title)) {
+                    SettingsLink(stringResource(R.string.wallpaper), stringResource(R.string.wallpaper_settings_summary),
+                        Glyph.Today, wallpaper)
+                    SettingsToggle(stringResource(R.string.icon_originals), originals) { enabled ->
+                        scope.launch { appearance.edit { it[originalIcons] = enabled } }
                     }
-                })
-                Spacer(Modifier.width(tokens.gap))
-                Text(stringResource(R.string.search_history), style = tokens.state)
-            }
-            SearchButton(R.string.setup_title, setup)
-            if (installed.isNotEmpty()) {
-                Text(stringResource(R.string.default_assistant), style = tokens.state)
-                installed.find { it.assistant.appId == preferred }?.let {
-                    Text(stringResource(R.string.current_assistant, stringResource(it.assistant.label)), style = tokens.secondary)
                 }
             }
-        }
-        items(installed) { option ->
-            AssistantButton(option) { scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } } }
+            item {
+                SettingsPanel(stringResource(R.string.search)) {
+                    SettingsToggle(stringResource(R.string.search_history), historyOn) { enabled ->
+                        scope.launch {
+                            store.edit {
+                                it[searchHistoryEnabled] = enabled
+                                if (!enabled) it.remove(searchHistory)
+                            }
+                        }
+                    }
+                    if (installed.isNotEmpty()) {
+                        Text(stringResource(R.string.default_assistant), style = tokens.label)
+                        installed.forEach { option ->
+                            val isSelected = preferred == option.assistant.appId
+                            AssistantButton(option) { scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } } }
+                            if (isSelected) Text(stringResource(R.string.setup_enabled), style = tokens.label)
+                        }
+                    }
+                }
+            }
+            item {
+                SettingsPanel(null) {
+                    SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
+                        Glyph.Settings, setup)
+                }
+            }
         }
     }
 }

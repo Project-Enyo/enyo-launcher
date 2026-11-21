@@ -266,7 +266,7 @@ internal class RecentStore private constructor(context: Context) {
 private data class BoardCard(val entry: RecentEntry, val app: LauncherActivityInfo)
 
 @Composable
-internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit, first: FocusRequester) {
+internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit, first: FocusRequester, canScroll: Boolean) {
     val context = LocalContext.current
     val store = remember(context) { RecentStore.get(context) }
     val entries by store.entries.collectAsState()
@@ -306,10 +306,21 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
             val availableHeight = maxHeight
             val sidePadding = (maxWidth - cardWidth) / 2
             SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
-            if (groups.isEmpty()) Text(stringResource(R.string.cards_empty), style = tokens.secondary)
-            else LazyRow(
+            if (groups.isEmpty()) Surface(
+                color = tokens.emptySurface.copy(alpha = tokens.dockOpacity),
+                shape = RoundedCornerShape(tokens.radius),
+                shadowElevation = tokens.elevation[0]
+            ) {
+                Text(
+                    stringResource(R.string.cards_empty),
+                    Modifier.padding(horizontal = tokens.padding, vertical = tokens.gap),
+                    style = tokens.state.copy(color = tokens.emptyInk),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            } else LazyRow(
                 modifier = Modifier.fillMaxSize(),
                 state = scroll,
+                userScrollEnabled = canScroll,
                 contentPadding = PaddingValues(horizontal = sidePadding),
                 horizontalArrangement = Arrangement.spacedBy(tokens.recentCarouselGap),
                 verticalAlignment = Alignment.CenterVertically,
