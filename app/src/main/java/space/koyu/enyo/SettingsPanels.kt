@@ -21,7 +21,8 @@ internal fun SettingsPanel(title: String?, content: @Composable ColumnScope.() -
     val tokens = LocalTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = tokens.surface,
+        color = tokens.widgetSurface,
+        contentColor = tokens.onAccentContainer,
         shape = RoundedCornerShape(tokens.sheetRadius),
         shadowElevation = tokens.elevation[0]
     ) {

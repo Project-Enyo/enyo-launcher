@@ -307,14 +307,14 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
             val sidePadding = (maxWidth - cardWidth) / 2
             SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
             if (groups.isEmpty()) Surface(
-                color = tokens.emptySurface.copy(alpha = tokens.dockOpacity),
+                color = tokens.widgetSurface,
                 shape = RoundedCornerShape(tokens.radius),
                 shadowElevation = tokens.elevation[0]
             ) {
                 Text(
                     stringResource(R.string.cards_empty),
                     Modifier.padding(horizontal = tokens.padding, vertical = tokens.gap),
-                    style = tokens.state.copy(color = tokens.emptyInk),
+                    style = tokens.state.copy(color = tokens.onAccentContainer),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             } else LazyRow(
