@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -30,16 +31,25 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -47,7 +57,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.sin
 
 private enum class BrightnessLevel(val fraction: Float, val label: Int) {
     Low(0.15f, R.string.brightness_low),
@@ -305,60 +317,71 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
             contentAlignment = Alignment.Center
         ) {
             if (!state.mediaAllowed || media == null) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = tokens.gap),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(tokens.gap / 2)
                 ) {
                     MediaCover(null, Modifier.size(tokens.touch))
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.now_playing), style = tokens.state)
-                        Text(
-                            stringResource(if (state.mediaAllowed) R.string.no_media else R.string.media_needs_access),
-                            style = tokens.secondary
-                        )
-                    }
-                    if (open != null) EnyoGlyph(Glyph.Forward, color = tokens.quiet)
+                    Text(stringResource(R.string.now_playing), style = tokens.state, textAlign = TextAlign.Center)
+                    Text(
+                        stringResource(if (state.mediaAllowed) R.string.no_media else R.string.media_needs_access),
+                        style = tokens.secondary, textAlign = TextAlign.Center, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             } else {
-                val compact = maxHeight < tokens.cover + tokens.touch + tokens.gap * 2
-                val cover = minOf(if (compact) tokens.mediaCompactCover else tokens.cover, maxWidth / 3)
-                val inlineControls = compact && maxWidth - cover - tokens.gap >= tokens.touch * 3
+                val hasProgress = media.duration > 0 && (media.playback?.position ?: -1L) >= 0
+                val progressSpace = if (hasProgress) tokens.mediaProgressHeight + tokens.gap * 2 else tokens.gap / 2
+                val detailsSpace = with(LocalDensity.current) {
+                    (tokens.mediaTitle.fontSize.toDp() * 2 + tokens.secondary.fontSize.toDp()) * 1.25f
+                }
+                val coverHeight = maxHeight - detailsSpace - tokens.touch - tokens.gap * 2 - progressSpace
+                val heroCover = minOf(tokens.cover, maxWidth * 0.7f, coverHeight)
+                val stacked = heroCover >= tokens.mediaCompactCover
+                val cover = if (stacked) heroCover else minOf(tokens.mediaCompactCover, maxWidth / 3)
+                val inlineControls = !stacked && maxWidth - cover - tokens.gap >= tokens.touch * 3
                 Column(
                     Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(tokens.gap)
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    if (stacked) {
                         MediaCover(media, Modifier.size(cover), open, actionLabel)
-                        Column(Modifier.weight(1f)) {
-                            if (!compact) Text(
-                                stringResource(R.string.now_playing), style = tokens.label,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                media.title ?: stringResource(R.string.now_playing),
-                                style = tokens.mediaTitle, maxLines = if (compact) 1 else 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            media.artist?.let {
-                                Text(it, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            MediaDetails(media, centered = true)
+                        }
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            MediaCover(media, Modifier.size(cover), open, actionLabel)
+                            Column(Modifier.weight(1f)) {
+                                MediaDetails(media, centered = false)
+                                if (inlineControls) MediaControls(media, transport)
                             }
-                            if (inlineControls) MediaControls(media, transport)
                         }
                     }
-                    if (!inlineControls) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            MediaControls(media, transport)
-                        }
-                    }
-                    if (media.duration > 0) MediaProgress(media)
+                    if (!inlineControls) MediaControls(media, transport)
+                    if (hasProgress) MediaProgress(media)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MediaDetails(media: MediaSnapshot, centered: Boolean) {
+    val tokens = LocalTokens.current
+    val align = if (centered) TextAlign.Center else TextAlign.Start
+    Text(
+        media.title ?: stringResource(R.string.now_playing), textAlign = align,
+        style = tokens.mediaTitle, maxLines = if (centered) 2 else 1, overflow = TextOverflow.Ellipsis
+    )
+    media.artist?.let {
+        Text(it, style = tokens.secondary, textAlign = align, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -445,9 +468,49 @@ private fun MediaProgress(media: MediaSnapshot) {
             delay(250)
         }
     }
-    LinearProgressIndicator(
-        progress = { (position / media.duration).coerceIn(0.0, 1.0).toFloat() },
-        modifier = Modifier.fillMaxWidth().height(tokens.progress),
-        color = tokens.accent, trackColor = tokens.accentContainer
-    )
+    val phase = remember(media.packageName) { mutableFloatStateOf(0f) }
+    LaunchedEffect(playing, phase) {
+        if (!playing) return@LaunchedEffect
+        val initial = phase.floatValue
+        val start = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { time ->
+                val cycles = (time - start) / 1_000_000.0 / tokens.mediaWaveCycleMillis
+                phase.floatValue = (initial + cycles % 1.0).toFloat() % 1f
+            }
+        }
+    }
+    val wave = remember { Path() }
+    fun fraction() = (position / media.duration).coerceIn(0.0, 1.0).toFloat()
+    Canvas(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = tokens.gap, vertical = tokens.gap / 2)
+            .height(tokens.mediaProgressHeight)
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(fraction(), 0f..1f) }
+    ) {
+        val stroke = tokens.mediaProgressStroke.toPx()
+        val start = stroke / 2
+        val length = (size.width - stroke).coerceAtLeast(0f)
+        if (length <= 0f || size.height < stroke) return@Canvas
+        val end = length * fraction()
+        val middle = size.height / 2
+        fun x(distance: Float) = if (layoutDirection == LayoutDirection.Rtl) size.width - start - distance
+            else start + distance
+        if (end < length) drawLine(tokens.accentContainer, Offset(x(end), middle), Offset(x(length), middle), stroke, StrokeCap.Round)
+        if (end <= 0f) return@Canvas
+        val wavelength = tokens.mediaWaveLength.toPx()
+        val amplitude = minOf(tokens.mediaWaveAmplitude.toPx(), (size.height - stroke) / 2)
+        val shift = phase.floatValue
+        fun y(distance: Float): Float = middle + amplitude * sin((distance / wavelength - shift) * 2 * PI).toFloat()
+        wave.reset()
+        wave.moveTo(x(0f), y(0f))
+        val sampling = wavelength / 12
+        var distance = sampling
+        while (distance < end) {
+            wave.lineTo(x(distance), y(distance))
+            distance += sampling
+        }
+        wave.lineTo(x(end), y(end))
+        drawPath(wave, tokens.accent, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
 }

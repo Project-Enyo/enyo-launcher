@@ -40,7 +40,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val cardHeight = dimension(144, 96, 84, 96).dp
     val stripHeight = dimension(88, 72, 64, 96).dp
     val heldTarget = dimension(288, 192, 128, 96).dp
-    val cover = dimension(128, 96, 112, 64).dp
+    val cover = dimension(176, 160, 184, 80).dp
     val mediaTinyHeight = 136.dp
     val mediaCompactCover = dimension(96, 80, 72, 52).dp
     val mediaTitle = TextStyle(fontSize = dimension(24, 22, 21, 17).sp, fontWeight = FontWeight.SemiBold, color = ink)
@@ -48,7 +48,11 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val bottomClearance = 24.dp
     val chevronSize = 12.dp
     val stroke = dimension(4, 4, 3).dp
-    val progress = 2.dp
+    val mediaProgressStroke = 4.dp
+    val mediaWaveAmplitude = 2.5.dp
+    val mediaWaveLength = 18.dp
+    val mediaWaveCycleMillis = 900L
+    val mediaProgressHeight = mediaProgressStroke + mediaWaveAmplitude * 2
     val navigationDotSize = 4.dp
     val navigationDotSpace = 8.dp
     val focusStroke = 2.dp
