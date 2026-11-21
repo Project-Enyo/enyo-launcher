@@ -307,8 +307,8 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
         val metadata = if (readMetadata) controller.metadata else null
         val old = snapshot.value.media
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: old?.duration ?: 0L
-        val title = if (metadata == null) old?.title else metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
-        val artist = if (metadata == null) old?.artist else metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
+        val title = if (metadata == null) old?.title else metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.takeIf(String::isNotBlank)
+        val artist = if (metadata == null) old?.artist else metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.takeIf(String::isNotBlank)
         if (metadata != null) {
             val cover = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)

@@ -30,13 +30,13 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 
 class EnyoActivity : ComponentActivity() {
-    private var launcherTyping: ((Int) -> Boolean)? = null
+    private var launcherKeys: ((android.view.KeyEvent) -> Boolean)? = null
     private var homeSequence by mutableIntStateOf(0)
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.action == android.view.KeyEvent.ACTION_DOWN && !event.isCtrlPressed &&
             !event.isAltPressed && !event.isMetaPressed &&
-            launcherTyping?.invoke(event.unicodeChar) == true
+            launcherKeys?.invoke(event) == true
         ) return true
         return super.dispatchKeyEvent(event)
     }
@@ -55,7 +55,7 @@ class EnyoActivity : ComponentActivity() {
                 val size = resolveCardSize(maxWidth, maxHeight)
                 val tokens = remember(dark, size) { Tokens(dark, size) }
                 CompositionLocalProvider(LocalTokens provides tokens) {
-                    LauncherScreen(::openInternetPanel, homeSequence) { launcherTyping = it }
+                    LauncherScreen(::openInternetPanel, homeSequence) { launcherKeys = it }
                 }
             }
         }
@@ -79,7 +79,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
     val tokens = LocalTokens.current
     Surface(
         onClick = open,
-        modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)),
+        modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)).cardInput(activate = open),
         shape = RoundedCornerShape(tokens.radius),
         color = tokens.surface,
         shadowElevation = tokens.elevation[1]
@@ -126,7 +126,9 @@ internal fun ControlCard(
         Modifier.combinedClickable(onClick = onTap ?: {}, onLongClick = onLongPress)
     } else Modifier
     ContentCard(
-        modifier.then(click).semantics {
+        modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch))
+            .cardInput(ownFocusTarget = onTap == null && onLongPress == null, activate = onTap ?: onLongPress)
+            .then(click).semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
             setProgress {
                 change(it.coerceIn(0f, 1f))

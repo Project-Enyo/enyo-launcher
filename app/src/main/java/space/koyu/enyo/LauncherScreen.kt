@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Process
 import android.provider.CalendarContract
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -24,6 +25,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -61,7 +65,7 @@ internal fun foregroundCycle(): Int {
 internal fun LauncherScreen(
     openPanel: () -> Unit,
     homeSequence: Int,
-    setTyping: (((Int) -> Boolean)?) -> Unit
+    setTyping: (((KeyEvent) -> Boolean)?) -> Unit
 ) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
@@ -100,16 +104,37 @@ internal fun LauncherScreen(
             pager.scrollToPage(2)
         }
     }
+    val searchFocus = remember { FocusRequester() }
+    val quickFocus = remember { FocusRequester() }
+    val cardsFocus = remember { FocusRequester() }
     DisposableEffect(surface) {
-        setTyping(if (surface == 0) { code ->
-            val letter = code > 0 && Character.isLetter(code)
-            if (letter) {
-                val letterText = String(Character.toChars(code))
-                query = TextFieldValue(letterText, TextRange(letterText.length))
-                surface = 1
+        setTyping { event ->
+            val code = event.unicodeChar
+            when {
+                event.keyCode == KeyEvent.KEYCODE_ESCAPE -> {
+                    surface = 0
+                    scope.launch { pager.scrollToPage(2) }
+                    true
+                }
+                surface != 0 -> false
+                code in '1'.code..'5'.code -> {
+                    scope.launch {
+                        val page = code - '1'.code
+                        pager.animateScrollToPage(page)
+                        if (page == 4) quickFocus.requestFocus()
+                        if (page == 2) runCatching { cardsFocus.requestFocus() }
+                    }
+                    true
+                }
+                code > 0 && Character.isLetter(code) -> {
+                    val letterText = String(Character.toChars(code))
+                    query = TextFieldValue(letterText, TextRange(letterText.length))
+                    surface = 1
+                    true
+                }
+                else -> false
             }
-            letter
-        } else null)
+        }
         onDispose { setTyping(null) }
     }
     val recentStore = remember(context) { RecentStore.get(context) }
@@ -139,8 +164,13 @@ internal fun LauncherScreen(
 
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = tokens.margin), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { query = TextFieldValue(); surface = 1 }) { Text(stringResource(R.string.search), color = tokens.ink) }
-                TextButton(onClick = { surface = 2 }) { Text(stringResource(R.string.preferences), color = tokens.ink) }
+                TextButton(onClick = { query = TextFieldValue(); surface = 1 }, modifier = Modifier.focusRequester(searchFocus)) { Text(stringResource(R.string.search), color = tokens.ink) }
+                TextButton(
+                    onClick = { surface = 2 },
+                    modifier = Modifier.focusProperties {
+                        if (pager.currentPage == 4) next = quickFocus
+                    }
+                ) { Text(stringResource(R.string.preferences), color = tokens.ink) }
             }
             HorizontalPager(pager, Modifier.weight(1f)) { page ->
                 when (page) {
@@ -150,9 +180,9 @@ internal fun LauncherScreen(
                             TextButton(onClick = { openApp(app) }) { Text(app.label.toString(), color = tokens.ink) }
                         }
                     }
-                    2 -> CardsPage(apps, ::openApp)
+                    2 -> CardsPage(apps, ::openApp, cardsFocus)
                     3 -> InboxPage()
-                    4 -> QuickPage(openPanel)
+                    4 -> QuickPage(openPanel, quickFocus)
                 }
             }
             Canvas(Modifier.fillMaxWidth().height(tokens.progress)) {

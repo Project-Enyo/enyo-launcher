@@ -47,6 +47,9 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val chevronStroke = 2.dp
     val stroke = dimension(4, 4, 3).dp
     val progress = 2.dp
+    val focusStroke = 2.dp
+    val focusOffset = 2.dp
+    val hoverOpacity = 0.45f
     val recentVisible = 3
     val recentWidthFraction = 0.66f
     val recentHeightFraction = 0.38f

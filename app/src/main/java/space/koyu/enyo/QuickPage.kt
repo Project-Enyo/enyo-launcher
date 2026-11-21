@@ -15,6 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -41,12 +44,18 @@ private enum class BrightnessLevel(val fraction: Float, val label: Int) {
 }
 
 @Composable
-internal fun QuickPage(openPanel: () -> Unit) {
+internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val model = viewModel<QuickState>()
     val state by model.snapshot.collectAsStateWithLifecycle()
+    val focus = remember(first) { listOf(first) + List(5) { FocusRequester() } }
+    fun order(index: Int, previous: Int?, next: Int?): Modifier =
+        Modifier.focusRequester(focus[index]).focusProperties {
+            if (previous != null) this.previous = focus[previous]
+            if (next != null) this.next = focus[next]
+        }
     val target = with(LocalDensity.current) { tokens.cover.roundToPx() }
     DisposableEffect(lifecycle, model, target) {
         val observer = LifecycleEventObserver { _, event ->
@@ -98,7 +107,7 @@ internal fun QuickPage(openPanel: () -> Unit) {
                 else -> null
             },
             open = openPanel,
-            modifier = modifier,
+            modifier = modifier.then(order(0, null, 1)),
             label = stringResource(R.string.wireless)
         )
     }
@@ -118,12 +127,12 @@ internal fun QuickPage(openPanel: () -> Unit) {
                     else -> context.launchSafely(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }
             },
-            modifier = modifier,
+            modifier = modifier.then(order(1, 0, 2)),
             label = stringResource(R.string.bluetooth)
         )
     }
     val volume: @Composable (Modifier) -> Unit = { modifier ->
-        ControlCard(stringResource(R.string.media_volume), state.volume, model::volume, modifier,
+        ControlCard(stringResource(R.string.media_volume), state.volume, model::volume, modifier.then(order(2, 1, 3)),
             onLongPress = {
                 context.launchSafely(Intent(Settings.Panel.ACTION_VOLUME))
             })
@@ -131,7 +140,7 @@ internal fun QuickPage(openPanel: () -> Unit) {
     val brightnessCard: @Composable (Modifier) -> Unit = { modifier ->
         val displayed = draft ?: state.brightness
         ControlCard(
-            stringResource(R.string.brightness), displayed, { draft = it }, modifier,
+            stringResource(R.string.brightness), displayed, { draft = it }, modifier.then(order(3, 2, if (state.hasTorch) 4 else 5)),
             onTap = { brightnessMenu = true },
             valueLabel = if (state.automatic && draft == null) stringResource(R.string.automatic_short) else null,
             onDragSettled = {
@@ -141,9 +150,9 @@ internal fun QuickPage(openPanel: () -> Unit) {
         )
     }
     QuickGrid(
-        held = { modifier -> MediaCard(state, modifier, model::transport) },
+        held = { modifier -> MediaCard(state, modifier.then(order(5, if (state.hasTorch) 4 else 3, null)), model::transport) },
         rows = listOf(listOf(door, bluetooth), listOf(volume, brightnessCard)),
-        strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier, model::toggleTorch) } else null
+        strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier.then(order(4, 3, 5)), model::toggleTorch) } else null
     )
 
     if (brightnessMenu) {
@@ -211,6 +220,7 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
     val toggleLabel = stringResource(R.string.torch_toggle)
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = tokens.touch)
+            .cardInput(activate = toggle)
             .toggleable(value = on, role = Role.Switch, onValueChange = { toggle() })
             .semantics {
                 stateDescription = checked
@@ -238,8 +248,17 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
 private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long) -> Unit) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
-    val media = state.media
-    ContentCard(modifier) {
+    val media = state.media?.takeIf {
+        it.title != null || it.artist != null || it.artwork != null || (it.playback?.actions ?: 0L) != 0L
+    }
+    val active = media?.playback?.let {
+        if (it.state == PlaybackState.STATE_PLAYING) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
+    }
+    val activate: () -> Unit = {
+        if (!state.mediaAllowed) context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        else if (active != null) transport(active)
+    }
+    ContentCard(modifier.fillMaxWidth().cardInput(ownFocusTarget = true, activate = activate)) {
         Box(Modifier.padding(tokens.padding), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

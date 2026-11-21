@@ -21,6 +21,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -191,7 +193,7 @@ internal class RecentStore private constructor(context: Context) {
 }
 
 @Composable
-internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit) {
+internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit, first: FocusRequester) {
     val context = LocalContext.current
     val store = remember(context) { RecentStore.get(context) }
     val entries by store.entries.collectAsState()
@@ -233,7 +235,9 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                         onClick = { open(app) },
                         modifier = Modifier.offset(x = offset * distance * direction, y = tokens.gap * distance)
                             .width(width).aspectRatio(ratio)
-                            .graphicsLayer { rotationZ = rotation },
+                            .then(if (distance == 0) Modifier.focusRequester(first) else Modifier)
+                            .graphicsLayer { rotationZ = rotation }
+                            .cardInput(activate = { open(app) }),
                         shape = RoundedCornerShape(tokens.radius),
                         color = tokens.surface,
                         shadowElevation = tokens.elevation[2]
