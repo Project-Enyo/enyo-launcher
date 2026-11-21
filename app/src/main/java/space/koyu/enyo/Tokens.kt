@@ -55,13 +55,14 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val cardOpacity = if (dark) 0.91f else 0.93f
     val eagerAppLimit = 120
     val folderMaxHeight = 300.dp
-    val dockIconSize = 42.dp
+    val dockIconSize = 46.dp
+    val dockBottomSpace = 14.dp
     val dockOpacity = 0.93f
     val sheetScrim = 0.36f
     val sheetArrivalMillis = 230
     val sheetMaxWidth = 480.dp
     val sheetRadius = dimension(30, 26, 24).dp
-    val dockCellWidth = dimension(64, 58, 54, 48).dp
+    val dockCellWidth = dimension(68, 62, 58, 48).dp
     val brandInk = Color.White
     val brandSurface = if (dark) accentContainer else accent
     val appCellWidth = dimension(94, 86, 78, 68).dp
@@ -77,6 +78,9 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val iconBackgroundTolerance = 20
     val recentVisible = 3
     val recentCarouselGap = 20.dp
+    val stackSpread = 48.dp
+    val stackLift = 10.dp
+    val stackSpreadFraction = 0.30f
     val recentWidthFraction = 0.66f
     val recentHeightFraction = 0.38f
     val recentHeightUse = 0.85f

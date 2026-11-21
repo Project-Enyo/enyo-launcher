@@ -162,14 +162,15 @@ internal fun PinnedDock(
         return
     }
     BoxWithConstraints(
-        Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
+        Modifier.fillMaxWidth().padding(horizontal = tokens.margin)
+            .padding(top = tokens.gap, bottom = tokens.dockBottomSpace),
         contentAlignment = Alignment.Center
     ) {
         val cell = minOf(tokens.dockCellWidth, (maxWidth - tokens.gap * 2) / apps.size)
         Surface(
             color = tokens.surface.copy(alpha = tokens.dockOpacity),
             border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
-            shadowElevation = tokens.elevation[1],
+            shadowElevation = tokens.elevation.last(),
             shape = RoundedCornerShape(tokens.sheetRadius)
         ) {
             Row(Modifier.padding(horizontal = tokens.gap, vertical = tokens.gap / 2)) {

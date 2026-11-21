@@ -15,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -86,6 +87,7 @@ internal class RecentStore private constructor(context: Context) {
     private val lock = Any()
 
     val entries = MutableStateFlow<List<RecentEntry>>(emptyList())
+    val launchEvents = MutableStateFlow<Pair<ComponentName, Long>?>(null)
     @Volatile var capture: CaptureRequest? = null
     @Volatile private var targetWidth = 0
 
@@ -117,6 +119,7 @@ internal class RecentStore private constructor(context: Context) {
                 val next = listOf(item) + existing.filterNot { it.component == component }
                 next.drop(maxCards).forEach { file(it.component).delete() }
                 persist(next.take(maxCards))
+                launchEvents.value = component to SystemClock.elapsedRealtimeNanos()
             }
         }
     }
@@ -181,9 +184,8 @@ internal class RecentStore private constructor(context: Context) {
                 if (from.stack != null && from.stack == into.stack) return@synchronized
                 val stack = into.stack ?: UUID.randomUUID().toString()
                 persist(current.map {
-                    if (it.component == from.component || it.component == into.component ||
-                        (from.stack != null && from.stack == it.stack)
-                    ) it.copy(stack = stack) else it
+                    if (it.component == from.component || it.component == into.component)
+                        it.copy(stack = stack) else it
                 }.withoutSingleStacks())
             }
         }
@@ -269,7 +271,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
     val entries by store.entries.collectAsState()
     val groups = entries.mapNotNull { entry ->
         apps.find { app -> app.componentName == entry.component }?.let { BoardCard(entry, it) }
-    }.groupBy { it.entry.stack ?: it.entry.component.flattenToString() }.values.toList()
+    }.groupBy { it.entry.stack ?: it.entry.component.flattenToString() }.values.toList().asReversed()
     val tokens = LocalTokens.current
     val foreground = foregroundCycle()
     val enabled = remember(context, foreground) {
@@ -279,8 +281,19 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 it.resolveInfo.serviceInfo.name == EnyoCaptureService::class.java.name
         }
     }
-    var openedStack by remember { mutableStateOf<String?>(null) }
-    val scroll = rememberLazyListState()
+    var selected by remember { mutableStateOf<ComponentName?>(null) }
+    val scroll = rememberLazyListState(initialFirstVisibleItemIndex = groups.lastIndex.coerceAtLeast(0))
+    val launch by store.launchEvents.collectAsState()
+    var positioned by remember { mutableStateOf(false) }
+    var lastLaunch by remember { mutableStateOf<Pair<ComponentName, Long>?>(null) }
+    LaunchedEffect(launch, groups.size) {
+        if (groups.isNotEmpty() && (!positioned || launch != lastLaunch)) {
+            val target = groups.indexOfFirst { group -> group.any { it.entry.component == launch?.first } }
+            scroll.scrollToItem(if (target >= 0) target else groups.lastIndex)
+            lastLaunch = launch
+            positioned = true
+        }
+    }
     val bounds = remember { mutableMapOf<ComponentName, Rect>() }
     Column(Modifier.fillMaxSize().padding(tokens.margin)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -302,61 +315,78 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                     groups[index].first().entry.let { it.stack ?: it.component.flattenToString() }
                 }) { index ->
                     val cluster = groups[index]
-                    val card = cluster.first()
-                    val entry = card.entry
-                    val ratio = entry.aspect ?: tokens.recentDefaultAspect
-                    val width = minOf(cardWidth, availableHeight * ratio * tokens.recentHeightUse)
-                    val wide = ((ratio - tokens.recentTallAspect) /
-                        (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
-                    val fan = width * (tokens.recentOffset - wide * tokens.recentOffset / 2)
-                    val targets = groups.map { it.first() }.filter { it.entry.component != entry.component }
+                    val expanded = cluster.size > 1 && cluster.any { it.entry.component == selected }
+                    val heads = groups.map { it.first() }
                     val groupLabel = stringResource(R.string.cards_stack_with)
+                    val detachLabel = stringResource(R.string.cards_unstack)
                     val dismissLabel = stringResource(R.string.cards_dismiss)
-                    val accessibleTargets = targets.map { target ->
-                        CustomAccessibilityAction(context.getString(R.string.cards_stack_action, groupLabel, target.app.label)) {
-                            store.group(entry.component, target.entry.component)
-                            true
-                        }
-                    }
-                    DisposableEffect(entry.component) {
-                        onDispose { bounds.remove(entry.component) }
-                    }
+                    val openLabel = stringResource(R.string.message_open)
                     Box(Modifier.width(cardWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        cluster.drop(1).take(tokens.recentVisible - 1).asReversed().forEachIndexed { layer, back ->
-                            val depth = minOf(cluster.size - 1, tokens.recentVisible - 1) - layer
-                            val rearRatio = back.entry.aspect ?: ratio
-                            val rearWidth = minOf(width - fan * depth, availableHeight * rearRatio * tokens.recentHeightUse)
-                            val image by produceState<Bitmap?>(null, back.entry) {
-                                value = withContext(Dispatchers.IO) { store.bitmap(back.entry) }
-                            }
-                            Surface(
-                                modifier = Modifier.offset(x = fan * depth / 2, y = tokens.gap * depth)
-                                    .width(rearWidth).aspectRatio(rearRatio)
-                                    .graphicsLayer { rotationZ = (tokens.recentRotation + wide * tokens.recentRotation) * depth },
-                                shape = RoundedCornerShape(tokens.radius),
-                                color = tokens.surface,
-                                shadowElevation = tokens.elevation[1]
-                            ) {
-                                image?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
+                        cluster.asReversed().forEachIndexed { paintIndex, card ->
+                            val depth = cluster.lastIndex - paintIndex
+                            val entry = card.entry
+                            key(entry.component) {
+                                val ratio = entry.aspect ?: tokens.recentDefaultAspect
+                                val wide = ((ratio - tokens.recentTallAspect) /
+                                    (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
+                                val fanDepth = minOf(depth, tokens.recentVisible - 1)
+                                val fan = cardWidth * (tokens.recentOffset - wide * tokens.recentOffset / 2)
+                                val width = minOf(cardWidth - fan * fanDepth, availableHeight * ratio * tokens.recentHeightUse)
+                                val step = minOf(tokens.stackSpread, availableHeight * tokens.stackSpreadFraction / cluster.size)
+                                val offsetX by animateDpAsState(fan * fanDepth / 2, label = "stack x")
+                                val offsetY by animateDpAsState(
+                                    if (expanded) step * (depth - cluster.lastIndex / 2f) -
+                                        (if (selected == entry.component) tokens.stackLift else androidx.compose.ui.unit.Dp(0f))
+                                    else tokens.gap * fanDepth,
+                                    label = "stack y"
+                                )
+                                val targets = heads.filter { target ->
+                                    cluster.none { it.entry.component == target.entry.component }
+                                }
+                                val actions = targets.map { target ->
+                                    CustomAccessibilityAction(context.getString(R.string.cards_stack_action, groupLabel, target.app.label)) {
+                                        store.group(entry.component, target.entry.component)
+                                        true
+                                    }
+                                } + buildList {
+                                    if (cluster.size > 1) {
+                                        add(CustomAccessibilityAction(openLabel) { selected = null; open(card.app); true })
+                                        add(CustomAccessibilityAction(detachLabel) { selected = null; store.detach(entry.component); true })
+                                    }
+                                    add(CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true })
+                                }
+                                DisposableEffect(entry.component) { onDispose { bounds.remove(entry.component) } }
+                                CardTile(
+                                    card,
+                                    store,
+                                    if (depth == 0) cluster.size else 1,
+                                    modifier = Modifier.offset(x = offsetX, y = offsetY)
+                                        .width(width).aspectRatio(ratio)
+                                        .zIndex(if (entry.component == selected) 0.5f else 0f)
+                                        .then(if (index == groups.lastIndex && depth == 0) Modifier.focusRequester(first) else Modifier),
+                                    rotation = (tokens.recentRotation + wide * tokens.recentRotation) * fanDepth,
+                                    activate = {
+                                        if (cluster.size == 1 || selected == entry.component) {
+                                            selected = null
+                                            open(card.app)
+                                        } else selected = entry.component
+                                    },
+                                    actions = actions,
+                                    bounds = { bounds[entry.component] = it },
+                                    drop = { point ->
+                                        val destination = targets.firstOrNull { bounds[it.entry.component]?.contains(point) == true }
+                                        if (destination != null) {
+                                            selected = null
+                                            store.group(entry.component, destination.entry.component)
+                                        } else if (cluster.size > 1 && cluster.none { bounds[it.entry.component]?.contains(point) == true }) {
+                                            selected = null
+                                            store.detach(entry.component)
+                                        }
+                                    },
+                                    dismiss = { store.dismiss(entry.component) }
+                                )
                             }
                         }
-                        CardTile(
-                            card,
-                            store,
-                            cluster.size,
-                            modifier = Modifier.width(width).aspectRatio(ratio)
-                                .then(if (index == 0) Modifier.focusRequester(first) else Modifier),
-                            rotation = 0f,
-                            activate = { if (cluster.size > 1) openedStack = entry.stack else open(card.app) },
-                            actions = accessibleTargets + CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true },
-                            bounds = { bounds[entry.component] = it },
-                            drop = { point ->
-                                targets.firstOrNull { bounds[it.entry.component]?.contains(point) == true }?.let {
-                                    store.group(entry.component, it.entry.component)
-                                }
-                            },
-                            dismiss = { store.dismiss(entry.component) }
-                        )
                     }
                 }
             }
@@ -367,21 +397,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
             }
         }
     }
-    val expanded = groups.firstOrNull { openedStack != null && it.first().entry.stack == openedStack }
-    if (expanded != null) EnyoSheet(stringResource(R.string.cards_stack), { openedStack = null }) {
-        LazyColumn(Modifier.heightIn(max = tokens.folderMaxHeight)) {
-            items(expanded, key = { it.entry.component.flattenToString() }) { row ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { openedStack = null; open(row.app) }, modifier = Modifier.weight(1f)) {
-                        Text(row.app.label.toString())
-                    }
-                    TextButton(onClick = { store.detach(row.entry.component) }) {
-                        Text(stringResource(R.string.cards_unstack))
-                    }
-                }
-            }
-        }
-    }
+
 }
 
 @Composable
