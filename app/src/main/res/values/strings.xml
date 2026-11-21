@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Enyo</string>
+    <string name="wireless">Wireless</string>
+    <string name="network_state">Internet settings</string>
+    <string name="network_detail">Open Android network controls</string>
+    <string name="panel_unavailable">Network controls are unavailable</string>
+    <string name="volume">Volume preview</string>
+    <string name="now_playing">Now playing</string>
+    <string name="no_media">No media playing</string>
+</resources>

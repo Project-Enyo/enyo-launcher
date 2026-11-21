@@ -1,0 +1,29 @@
+plugins {
+    id("com.android.application") version "9.0.0"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
+}
+
+android {
+    val enyoId = listOf("space", "koyu", "enyo").joinToString(".")
+    namespace = enyoId
+    compileSdk = 36
+    defaultConfig {
+        applicationId = enyoId
+        minSdk = 31
+        targetSdk = 36
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
+    }
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.compose.material3:material3")
+}
