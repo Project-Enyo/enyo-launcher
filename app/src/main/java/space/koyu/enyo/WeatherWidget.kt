@@ -13,15 +13,8 @@ import android.os.CancellationSignal
 import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -55,14 +48,14 @@ internal fun Context.weatherAccess() = when {
     else -> WeatherAccess.None
 }
 
-internal enum class Conditions(val label: Int, val glyph: Glyph) {
-    Clear(R.string.weather_clear, Glyph.Today),
-    Cloudy(R.string.weather_cloudy, Glyph.Cloud),
-    Fog(R.string.weather_fog, Glyph.CloudFog),
-    Rain(R.string.weather_rain, Glyph.CloudRain),
-    Snow(R.string.weather_snow, Glyph.CloudSnow),
-    Storm(R.string.weather_storm, Glyph.CloudStorm),
-    Unknown(R.string.weather_conditions_unknown, Glyph.Cloud)
+internal enum class Conditions(val label: Int) {
+    Clear(R.string.weather_clear),
+    Cloudy(R.string.weather_cloudy),
+    Fog(R.string.weather_fog),
+    Rain(R.string.weather_rain),
+    Snow(R.string.weather_snow),
+    Storm(R.string.weather_storm),
+    Unknown(R.string.weather_conditions_unknown)
 }
 
 internal data class WeatherReading(
@@ -96,10 +89,7 @@ internal fun Context.isWeatherWidgetIntent(intent: Intent): Boolean =
     intent.action == weatherAction && intent.getStringExtra(weatherTokenExtra) == weatherWidgetToken()
 
 private class WeatherState : ViewModel() {
-    var reading by mutableStateOf<WeatherReading?>(null)
-        private set
-    var status by mutableIntStateOf(R.string.weather_loading)
-        private set
+    private var reading: WeatherReading? = null
     private var access = WeatherAccess.None
     private var lastRefresh = 0L
     private var lastWidgetTap = 0L
@@ -130,7 +120,7 @@ private class WeatherState : ViewModel() {
             if (remaining != null && remaining > 0) delay(remaining)
         }
         while (context.weatherAccess() == permission) {
-            status = R.string.weather_loading
+            var status = R.string.weather_loading
             val network = context.getSystemService(ConnectivityManager::class.java)
             if (network.activeNetwork == null) {
                 status = R.string.weather_network_unavailable
@@ -148,15 +138,8 @@ private class WeatherState : ViewModel() {
     }
 }
 
-internal data class WeatherWidgetState(
-    val allowed: Boolean,
-    val reading: WeatherReading?,
-    val status: Int,
-    val activate: () -> Unit
-)
-
 @Composable
-internal fun rememberWeatherWidget(foreground: Int, visible: Boolean, widgetTap: Long): WeatherWidgetState {
+internal fun ObserveTodayWeather(foreground: Int, visible: Boolean, widgetTap: Long) {
     val context = LocalContext.current
     val model = viewModel<WeatherState> { WeatherState() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -191,39 +174,6 @@ internal fun rememberWeatherWidget(foreground: Int, visible: Boolean, widgetTap:
     LaunchedEffect(visible, lifecycle, access, refreshAt, locationRevision) {
         if (!allowed || (visible && lifecycle.isAtLeast(Lifecycle.State.RESUMED))) {
             model.observe(context.applicationContext, access, refreshAt)
-        }
-    }
-    return WeatherWidgetState(allowed, model.reading, model.status, ::activate)
-}
-
-@Composable
-internal fun WeatherWidget(state: WeatherWidgetState) {
-    val tokens = LocalTokens.current
-    val allowed = state.allowed
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.widget_weather), style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val reading = state.reading
-            if (allowed && reading != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                    EnyoGlyph(reading.conditions.glyph, color = tokens.accent)
-                    Text(stringResource(R.string.weather_celsius, reading.celsius), style = tokens.value, maxLines = 1)
-                }
-                Text(
-                    if (reading.estimated) stringResource(R.string.weather_estimated_conditions) else stringResource(reading.conditions.label),
-                    style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis
-                )
-            } else {
-                Text(
-                    stringResource(if (allowed) state.status else R.string.weather_location_prompt),
-                    style = tokens.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        val iconLabel = stringResource(if (allowed) R.string.weather_location_on else R.string.weather_location_off)
-        IconButton(onClick = state.activate) {
-            EnyoGlyph(if (allowed) Glyph.Location else Glyph.LocationOff, description = iconLabel,
-                color = if (allowed) tokens.accent else tokens.quiet)
         }
     }
 }

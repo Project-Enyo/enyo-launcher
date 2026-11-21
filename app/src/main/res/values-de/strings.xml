@@ -160,13 +160,8 @@
     <string name="weather_location_on">Standort erlaubt. Wetter aktualisieren</string>
     <string name="weather_location_off">Standort aus. Zugriff für Wetter erlauben</string>
     <string name="weather_location_prompt">Standort für Wetter von wttr.in erlauben.</string>
-    <string name="weather_location_explanation">Enyo sendet deinen auf zwei Dezimalstellen gerundeten Standort an wttr.in, um das lokale Wetter abzurufen. Wenn keine Koordinaten verfügbar sind oder die Anfrage fehlschlägt, schätzt wttr.in deine Region anhand deiner IP Adresse.</string>
-    <string name="weather_allow_location">Standort erlauben</string>
-    <string name="weather_location_disabled">Aktiviere den Android Standort, um das Wetter abzurufen.</string>
-    <string name="weather_location_unavailable">Der Standort konnte nicht ermittelt werden.</string>
     <string name="weather_unavailable">Wetter nicht verfügbar. Tippe zum Wiederholen.</string>
     <string name="weather_network_unavailable">Keine Netzwerkverbindung für Wetter</string>
-    <string name="weather_network_help">Prüfe die Verbindung und die Netzwerkberechtigung für Enyo in Android.</string>
     <string name="weather_loading">Lokales Wetter wird geladen…</string>
     <string name="weather_celsius">%1$d °C</string>
     <string name="weather_clear">Klar</string>
@@ -178,7 +173,7 @@
     <string name="weather_conditions_unknown">Wetterlage nicht verfügbar</string>
     <string name="widget_add">Widget hinzufügen</string>
     <string name="widget_picker_empty">Keine Android Widgets verfügbar</string>
-    <string name="widget_convert_defaults">Integrierte Widgets umstellen</string>
+    <string name="widget_convert_defaults">Enyo Widgets aktivieren</string>
     <string name="widget_remove">Entfernen</string>
     <string name="widget_grow">Höher</string>
     <string name="widget_reduce">Niedriger</string>
