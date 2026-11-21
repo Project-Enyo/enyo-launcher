@@ -67,7 +67,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val widgetSurface = lerp(surface, accentContainer, 0.78f)
     val widgetTrack = accent.copy(alpha = 0.22f)
     val dockSurface = lerp(surface, accentContainer, 0.48f)
-    val wallpaperGalleryBackground = lerp(background, accentContainer, 0.40f)
+    val settingsBackground = lerp(background, accentContainer, 0.40f)
     val wallpaperTint = lerp(Color.Black, accent, 0.42f).copy(alpha = 0.14f)
 
     val margin = dimension(20, 16, 12).dp

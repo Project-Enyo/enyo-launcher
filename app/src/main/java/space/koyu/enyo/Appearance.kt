@@ -138,7 +138,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
     }
     BackHandler(onBack = back)
     LazyColumn(
-        Modifier.fillMaxSize().background(tokens.wallpaperGalleryBackground).safeDrawingPadding(),
+        Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding(),
         state = galleryScroll,
         contentPadding = PaddingValues(tokens.margin),
         verticalArrangement = Arrangement.spacedBy(tokens.gap)

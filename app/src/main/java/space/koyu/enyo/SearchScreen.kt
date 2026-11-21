@@ -439,48 +439,46 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
-    WallpaperBackdrop {
-        LazyColumn(
-            Modifier.fillMaxSize().safeDrawingPadding(),
-            contentPadding = PaddingValues(tokens.margin),
-            verticalArrangement = Arrangement.spacedBy(tokens.gap)
-        ) {
-            item { SettingsHeading(stringResource(R.string.preferences), back) }
-            item {
-                SettingsPanel(stringResource(R.string.appearance_title)) {
-                    SettingsLink(stringResource(R.string.wallpaper), stringResource(R.string.wallpaper_settings_summary),
-                        Glyph.Today, wallpaper)
-                    SettingsToggle(stringResource(R.string.icon_originals), originals) { enabled ->
-                        scope.launch { appearance.edit { it[originalIcons] = enabled } }
-                    }
+    LazyColumn(
+        Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding(),
+        contentPadding = PaddingValues(tokens.margin),
+        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+    ) {
+        item { SettingsHeading(stringResource(R.string.preferences), back) }
+        item {
+            SettingsPanel(stringResource(R.string.appearance_title)) {
+                SettingsLink(stringResource(R.string.wallpaper), stringResource(R.string.wallpaper_settings_summary),
+                    Glyph.Today, wallpaper)
+                SettingsToggle(stringResource(R.string.icon_originals), originals) { enabled ->
+                    scope.launch { appearance.edit { it[originalIcons] = enabled } }
                 }
             }
-            item {
-                SettingsPanel(stringResource(R.string.search)) {
-                    SettingsToggle(stringResource(R.string.search_history), historyOn) { enabled ->
-                        scope.launch {
-                            store.edit {
-                                it[searchHistoryEnabled] = enabled
-                                if (!enabled) it.remove(searchHistory)
-                            }
-                        }
-                    }
-                    if (installed.isNotEmpty()) {
-                        Text(stringResource(R.string.default_assistant), style = tokens.label)
-                        installed.forEach { option ->
-                            val isSelected = preferred == option.assistant.appId
-                            AssistantButton(option) { scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } } }
-                            if (isSelected) Text(stringResource(R.string.setup_enabled), style = tokens.label)
+        }
+        item {
+            SettingsPanel(stringResource(R.string.search)) {
+                SettingsToggle(stringResource(R.string.search_history), historyOn) { enabled ->
+                    scope.launch {
+                        store.edit {
+                            it[searchHistoryEnabled] = enabled
+                            if (!enabled) it.remove(searchHistory)
                         }
                     }
                 }
-            }
-            item { OverlayPreference() }
-            item {
-                SettingsPanel(null) {
-                    SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
-                        Glyph.Settings, setup)
+                if (installed.isNotEmpty()) {
+                    Text(stringResource(R.string.default_assistant), style = tokens.label)
+                    installed.forEach { option ->
+                        val isSelected = preferred == option.assistant.appId
+                        AssistantButton(option) { scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } } }
+                        if (isSelected) Text(stringResource(R.string.setup_enabled), style = tokens.label)
+                    }
                 }
+            }
+        }
+        item { OverlayPreference() }
+        item {
+            SettingsPanel(null) {
+                SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
+                    Glyph.Settings, setup)
             }
         }
     }
