@@ -87,11 +87,12 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val appCellHeight = dimension(100, 96, 88, 80).dp
     val iconSize = 56.dp
     val appGlyphSize = 30.dp
-    val iconRadius = 18.dp
+    val iconRadius = 9.dp
+    val artworkRadius = 18.dp
     val glyphSize = dimension(22, 21, 20, 16).dp
     val glyphStroke = 1.7.dp
     val iconPadding = 0.14f
-    val iconRasterCorner = 0.32f
+    val iconRasterCorner = iconRadius / iconSize
     val iconMonoPadding = 0.04f
     val iconSaturation = 0.64f
     val iconBackgroundTolerance = 20

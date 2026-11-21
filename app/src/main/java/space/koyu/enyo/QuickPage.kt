@@ -375,7 +375,7 @@ private fun MediaCover(media: MediaSnapshot?, modifier: Modifier, open: (() -> U
         detectTapGestures { openPlayer?.invoke() }
     }
     Box(
-        modifier.clip(RoundedCornerShape(tokens.iconRadius)).background(tokens.accentContainer).then(tapArtwork),
+        modifier.clip(RoundedCornerShape(tokens.artworkRadius)).background(tokens.accentContainer).then(tapArtwork),
         contentAlignment = Alignment.Center
     ) {
         val artwork = media?.artwork

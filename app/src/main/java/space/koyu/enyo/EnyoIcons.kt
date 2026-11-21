@@ -96,7 +96,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
     else produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, key) {
         value = withContext(iconDispatcher) { renderIcon(app, key, tokens, context, mark, brand) }
     }.value
-    val shape = RoundedCornerShape(tokens.iconRadius)
+    val shape = RoundedCornerShape(displaySize * tokens.iconRasterCorner)
     Box(
         modifier.size(displaySize)
             .then(if (originals) Modifier else Modifier

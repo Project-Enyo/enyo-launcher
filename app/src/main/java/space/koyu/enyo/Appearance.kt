@@ -219,7 +219,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                     ) {
                         Box(
                             Modifier.fillMaxWidth().height(tokens.wallpaperThumbnail)
-                                .clip(RoundedCornerShape(tokens.iconRadius)).background(tokens.surface)
+                                .clip(RoundedCornerShape(tokens.artworkRadius)).background(tokens.surface)
                         ) {
                             picture?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                         }
