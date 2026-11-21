@@ -355,11 +355,11 @@ private fun MediaCard(
                 val detailsSpace = with(LocalDensity.current) {
                     (tokens.mediaTitle.fontSize.toDp() * 2 + tokens.secondary.fontSize.toDp()) * 1.25f
                 }
-                val coverHeight = maxHeight - detailsSpace - tokens.touch - tokens.gap * 2 - progressSpace
+                val coverHeight = maxHeight - detailsSpace - tokens.mediaControlSize - tokens.gap * 2 - progressSpace
                 val heroCover = minOf(tokens.cover, maxWidth * 0.7f, coverHeight)
                 val stacked = heroCover >= tokens.mediaCompactCover
                 val cover = if (stacked) heroCover else minOf(tokens.mediaCompactCover, maxWidth / 3)
-                val inlineControls = !stacked && maxWidth - cover - tokens.gap >= tokens.touch * 3
+                val inlineControls = !stacked && maxWidth - cover - tokens.gap >= tokens.mediaControlSize * 3
                 Column(
                     Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -465,10 +465,11 @@ private fun MediaButton(
     val tokens = LocalTokens.current
     if (primary) FilledTonalIconButton(
         onClick = { transport(action) },
+        modifier = Modifier.size(tokens.mediaControlSize),
         colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accentContainer)
     ) {
         EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.accent, description = stringResource(label))
-    } else IconButton(onClick = { transport(action) }) {
+    } else IconButton(onClick = { transport(action) }, modifier = Modifier.size(tokens.mediaControlSize)) {
         EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), description = stringResource(label))
     }
 }
@@ -494,7 +495,7 @@ private fun MediaProgress(media: MediaSnapshot, seekable: Boolean, seek: (MediaS
     var scrub by remember(media.token, media.duration, seekable) { mutableStateOf<Float?>(null) }
     val sendSeek by rememberUpdatedState(seek)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val strokeWidth = tokens.mediaProgressStroke
+    val strokeWidth = tokens.stroke
     fun fraction(x: Float, width: Int, stroke: Float): Float {
         val fromStart = if (rtl) width - x else x
         return ((fromStart - stroke / 2) / (width - stroke).coerceAtLeast(1f)).coerceIn(0f, 1f)
