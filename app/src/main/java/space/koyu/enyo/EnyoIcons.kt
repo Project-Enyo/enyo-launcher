@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -31,10 +30,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
-internal val LocalBrandIcons = staticCompositionLocalOf { emptyMap<String, android.graphics.drawable.Icon>() }
+internal val LocalBrandIcons = compositionLocalOf { emptyMap<String, android.graphics.drawable.Icon>() }
 
 internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit, Back, Forward, Close }
 
@@ -48,8 +50,8 @@ private data class IconKey(
     val notificationSource: Int
 )
 
-private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
-    override fun sizeOf(key: IconKey, value: Bitmap): Int = value.byteCount
+private val iconCache = object : LruCache<IconKey, androidx.compose.ui.graphics.ImageBitmap>(16 * 1024 * 1024) {
+    override fun sizeOf(key: IconKey, value: androidx.compose.ui.graphics.ImageBitmap): Int = value.width * value.height * 4
 }
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 private val iconDispatcher = Dispatchers.Default.limitedParallelism(1)
@@ -67,54 +69,13 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
     val brand = component.packageName in brandedNotificationApps
     val mark = if (!originals && brand) LocalBrandIcons.current[component.packageName] else null
     val noteSource = if (mark?.type == android.graphics.drawable.Icon.TYPE_RESOURCE) mark.resId else mark?.hashCode() ?: 0
-    val dedicated = when (component.packageName) {
-        "com.android.settings" -> Glyph.Settings
-        "com.android.calculator2" -> Glyph.Calculator
-        "com.android.documentsui", "com.google.android.documentsui" -> Glyph.Folder
-        "app.grapheneos.camera" -> Glyph.Camera
-        "de.dhl.paket" -> Glyph.Dhl
-        transitPackage -> Glyph.Transit
-        else -> null
-    }
-    val key = IconKey(component, app.applicationInfo.sourceDir, size, originalSize, originals, tokens.ink.toArgb(), noteSource)
+    val dedicated = dedicatedGlyph(component.packageName)
+    val key = IconKey(component, app.applicationInfo.sourceDir,
+        size, originalSize, originals, if (originals) 0 else tokens.ink.toArgb(), noteSource)
     val cached = remember(key) { iconCache.get(key) }
     val icon = if (cached != null || (!originals && (dedicated != null || arches))) cached
-    else produceState<Bitmap?>(null, key) {
-        value = withContext(iconDispatcher) {
-            iconCache.get(key) ?: runCatching {
-                val source = app.getIcon(originalSize).mutate()
-                val monochrome = mark?.loadDrawable(context)?.mutate() ?:
-                    if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
-                        source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
-                    } else null
-                val foreground = if (!originals && source is AdaptiveIconDrawable) source.foreground?.mutate() else null
-                val drawable = monochrome ?: foreground ?: source
-                val padding = when {
-                    originals -> 0
-                    monochrome != null || foreground != null -> (size * tokens.iconMonoPadding).roundToInt()
-                    else -> (size * tokens.iconPadding).roundToInt()
-                }
-                if (!originals && !brand && monochrome == null) {
-                    drawable.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(tokens.iconSaturation) })
-                }
-                Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
-                    drawable.setBounds(padding, padding, size - padding, size - padding)
-                    val canvas = android.graphics.Canvas(it)
-                    if (!originals) {
-                        val radius = size * tokens.iconRasterCorner
-                        val outline = android.graphics.Path().apply {
-                            addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), radius, radius, android.graphics.Path.Direction.CW)
-                        }
-                        canvas.clipPath(outline)
-                    }
-                    drawable.draw(canvas)
-                    if (!originals && source !is AdaptiveIconDrawable) {
-                        extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
-                    }
-                    iconCache.put(key, it)
-                }
-            }.getOrNull()
-        }
+    else produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, key) {
+        value = withContext(iconDispatcher) { renderIcon(app, key, tokens, context, mark, brand) }
     }.value
     val shape = RoundedCornerShape(tokens.iconRadius)
     Box(
@@ -123,15 +84,14 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
                 .background(if (brand || arches) tokens.brandSurface else tokens.accentContainer, shape)),
         contentAlignment = Alignment.Center
     ) {
-        val bitmap = remember(icon) { icon?.asImageBitmap() }
         when {
             !originals && arches -> Image(
                 painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)),
                 colorFilter = ColorFilter.tint(tokens.brandInk)
             )
             !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)))
-            bitmap != null -> Image(
-                bitmap, null, Modifier.fillMaxSize(),
+            icon != null -> Image(
+                icon, null, Modifier.fillMaxSize(),
                 colorFilter = if (!originals && brand) ColorFilter.tint(tokens.brandInk) else null
             )
             else -> {
@@ -142,6 +102,85 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
         }
     }
 }
+
+private fun dedicatedGlyph(packageName: String) = when (packageName) {
+    "com.android.settings" -> Glyph.Settings
+    "com.android.calculator2" -> Glyph.Calculator
+    "com.android.documentsui", "com.google.android.documentsui" -> Glyph.Folder
+    "app.grapheneos.camera" -> Glyph.Camera
+    "de.dhl.paket" -> Glyph.Dhl
+    transitPackage -> Glyph.Transit
+    else -> null
+}
+
+@Composable
+internal fun WarmAppIcons(apps: List<LauncherActivityInfo>) {
+    val tokens = LocalTokens.current
+    val context = LocalContext.current.applicationContext
+    val density = LocalDensity.current
+    val originals = LocalOriginalIcons.current
+    val size = with(density) { tokens.iconSize.roundToPx() }
+    val dpi = (160 * density.density).roundToInt()
+    val color = if (originals) 0 else tokens.ink.toArgb()
+    LaunchedEffect(apps, size, dpi, originals, color) {
+        withContext(iconDispatcher) {
+            for (app in apps.take(iconCache.maxSize() / (size * size * 8))) {
+                currentCoroutineContext().ensureActive()
+                val component = app.componentName
+                val pkg = component.packageName
+                if (!originals && (dedicatedGlyph(pkg) != null ||
+                        pkg == "de.mcdonalds.mcdonaldsinfoapp" || pkg in brandedNotificationApps)) continue
+                val key = IconKey(component, app.applicationInfo.sourceDir,
+                    size, dpi, originals, color, 0)
+                renderIcon(app, key, tokens, context, null, false)
+                yield()
+            }
+        }
+    }
+}
+
+private fun renderIcon(
+    app: LauncherActivityInfo,
+    key: IconKey,
+    tokens: Tokens,
+    context: android.content.Context,
+    mark: android.graphics.drawable.Icon?,
+    brand: Boolean
+) = iconCache.get(key) ?: runCatching {
+    val size = key.pixelSize
+    val originals = key.original
+    val source = app.getIcon(key.density).mutate()
+    val monochrome = mark?.loadDrawable(context)?.mutate() ?:
+        if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
+            source.monochrome?.mutate()?.apply { setTint(key.color) }
+        } else null
+    val foreground = if (!originals && source is AdaptiveIconDrawable) source.foreground?.mutate() else null
+    val drawable = monochrome ?: foreground ?: source
+    val padding = when {
+        originals -> 0
+        monochrome != null || foreground != null -> (size * tokens.iconMonoPadding).roundToInt()
+        else -> (size * tokens.iconPadding).roundToInt()
+    }
+    if (!originals && !brand && monochrome == null) {
+        drawable.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(tokens.iconSaturation) })
+    }
+    Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
+        drawable.setBounds(padding, padding, size - padding, size - padding)
+        val canvas = android.graphics.Canvas(it)
+        if (!originals) {
+            val radius = size * tokens.iconRasterCorner
+            val outline = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), radius, radius, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(outline)
+        }
+        drawable.draw(canvas)
+        if (!originals && source !is AdaptiveIconDrawable) {
+            extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
+        }
+        it.prepareToDraw()
+    }.asImageBitmap().also { iconCache.put(key, it) }
+}.getOrNull()
 
 private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int) {
     val edge = bitmap.width - padding - 1
@@ -157,13 +196,15 @@ private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int
     val corners = listOf(padding to padding, edge to padding, padding to edge, edge to edge)
     if (!corners.all { (x, y) -> near(pixels[y * width + x]) }) return
     val visited = BooleanArray(pixels.size)
-    val pending = ArrayDeque<Int>()
+    val pending = IntArray(pixels.size)
+    var head = 0
+    var tail = 0
     fun add(x: Int, y: Int) {
         if (x !in padding..edge || y !in padding..edge) return
         val i = y * width + x
         if (!visited[i] && near(pixels[i])) {
             visited[i] = true
-            pending.add(i)
+            pending[tail++] = i
         }
     }
     for (i in padding..edge) {
@@ -173,8 +214,8 @@ private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int
         add(edge, i)
     }
     var removed = 0
-    while (pending.isNotEmpty()) {
-        val i = pending.removeFirst()
+    while (head < tail) {
+        val i = pending[head++]
         val x = i % width
         val y = i / width
         removed++

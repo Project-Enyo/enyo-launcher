@@ -114,6 +114,7 @@ internal fun LauncherScreen(
         }
     }
     val apps = remember(catalog) { catalog.map { it.first } }
+    WarmAppIcons(apps)
     val labels = remember(catalog) { catalog.associate { it.first.componentName to it.second } }
     val transit = remember(apps) { apps.filter { it.componentName.packageName == transitPackage } }
     val providers = remember(apps) {
@@ -128,6 +129,7 @@ internal fun LauncherScreen(
     var transitPicker by remember { mutableStateOf(false) }
     var appMenu by remember { mutableStateOf<LauncherActivityInfo?>(null) }
     val pins by remember(context) { context.pins() }.collectAsState(emptyList())
+    val installed = remember(apps) { apps.map { it.componentName }.toSet() }
     val pinned = remember(apps, pins) { pins.mapNotNull { id -> apps.firstOrNull { it.componentName == id } } }
     val pages = listOf(R.string.today, R.string.apps, R.string.cards, R.string.inbox, R.string.quick)
     val pager = rememberPagerState(initialPage = 2) { pages.size }
@@ -238,7 +240,7 @@ internal fun LauncherScreen(
                 enabled = pinnedApp || pinned.size < dockCapacity,
                 onClick = {
                     appMenu = null
-                    scope.launch { context.changePin(component, !pinnedApp, apps.map { it.componentName }.toSet()) }
+                    scope.launch { context.changePin(component, !pinnedApp, installed) }
                 }
             ) { Text(stringResource(if (pinnedApp) R.string.dock_unpin else R.string.dock_pin)) }
             if (!pinnedApp && pinned.size >= dockCapacity) Text(stringResource(R.string.dock_full), style = tokens.secondary)
@@ -306,7 +308,12 @@ internal fun LauncherScreen(
                     }
                     2 -> Column(Modifier.fillMaxSize()) {
                         Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus, surface == 0 && searchPullFraction == 0f) }
-                        PinnedDock(pinned, { scope.launch { pager.animateScrollToPage(1) } }, ::openApp) { appMenu = it }
+                        PinnedDock(
+                            pinned, { scope.launch { pager.animateScrollToPage(1) } },
+                            ::openApp, { appMenu = it }, labels,
+                            move = { component, anchor, after -> scope.launch { context.movePin(component, anchor, after) } },
+                            remove = { component -> scope.launch { context.changePin(component, false, installed) } }
+                        )
                     }
                     3 -> InboxPage(apps, ::openApp)
                     4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4)

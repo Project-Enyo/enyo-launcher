@@ -5,14 +5,13 @@ import android.content.Context
 import android.content.pm.LauncherActivityInfo
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +27,19 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
@@ -57,7 +69,19 @@ internal suspend fun Context.changePin(component: ComponentName, pin: Boolean, i
     }
 }
 
+internal suspend fun Context.movePin(component: ComponentName, anchor: ComponentName, after: Boolean) {
+    appearancePreferences.edit { prefs ->
+        val saved = prefs[dockApps].orEmpty().lineSequence().mapNotNull(ComponentName::unflattenFromString)
+            .distinct().take(dockCapacity).toMutableList()
+        if (component !in saved || anchor !in saved || component == anchor) return@edit
+        saved.remove(component)
+        saved.add(saved.indexOf(anchor) + if (after) 1 else 0, component)
+        prefs[dockApps] = saved.joinToString("\n") { it.flattenToString() }
+    }
+}
+
 internal const val dockCapacity = 5
+private const val preparedTileLimit = 80
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -68,49 +92,64 @@ internal fun AppsGrid(
     tile: @Composable (LauncherActivityInfo) -> Unit
 ) {
     val tokens = LocalTokens.current
-    Box(
-        Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithCache {
-                val edge = (tokens.appEdgeFade.toPx() / size.height.coerceAtLeast(1f)).coerceIn(0f, 0.45f)
-                val mask = Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    edge to Color.Black,
-                    (1f - edge) to Color.Black,
-                    1f to Color.Transparent
-                )
-                onDrawWithContent {
-                    drawContent()
-                    drawRect(mask, blendMode = BlendMode.DstIn)
+    val reportTop by rememberUpdatedState(onAtTopChanged)
+    val fade = Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithCache {
+            val edge = (tokens.appEdgeFade.toPx() / size.height.coerceAtLeast(1f)).coerceIn(0f, 0.45f)
+            val mask = Brush.verticalGradient(
+                0f to Color.Transparent, edge to Color.Black,
+                (1f - edge) to Color.Black, 1f to Color.Transparent
+            )
+            onDrawWithContent {
+                drawContent()
+                drawRect(mask, blendMode = BlendMode.DstIn)
+            }
+        }
+    BoxWithConstraints(Modifier.fillMaxSize().then(fade)) {
+        val width = maxWidth - tokens.margin * 2
+        val columns = ((width + tokens.gap) / (tokens.appCellWidth + tokens.gap)).toInt().coerceAtLeast(1)
+        val leading = if (extra == null) 0 else 1
+        val entries = apps.size + leading
+        val rows = (entries + columns - 1) / columns
+        val collection = Modifier.fillMaxSize().semantics { collectionInfo = CollectionInfo(rows, columns) }
+        val rowContent: @Composable (Int) -> Unit = { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                repeat(columns) { column ->
+                    val index = row * columns + column
+                    val cell = if (index < entries) Modifier.semantics {
+                        collectionItemInfo = CollectionItemInfo(row, 1, column, 1)
+                    } else Modifier
+                    Box(Modifier.weight(1f).then(cell)) {
+                        if (index < leading) extra?.invoke()
+                        else apps.getOrNull(index - leading)?.let { app ->
+                            key(app.componentName) { tile(app) }
+                        }
+                    }
                 }
             }
-    ) {
-        GridContent(apps, extra, onAtTopChanged, tile)
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun GridContent(
-    apps: List<LauncherActivityInfo>,
-    extra: (@Composable () -> Unit)?,
-    onAtTopChanged: (Boolean) -> Unit,
-    tile: @Composable (LauncherActivityInfo) -> Unit
-) {
-    val tokens = LocalTokens.current
-    val reportTop by rememberUpdatedState(onAtTopChanged)
-    val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.20f, behindFraction = 0.18f) }
-    val state = rememberLazyGridState(cacheWindow = cache)
-    LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(tokens.appCellWidth),
-        modifier = Modifier.fillMaxSize(),
-        state = state,
-        contentPadding = PaddingValues(tokens.margin),
-        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-        verticalArrangement = Arrangement.spacedBy(tokens.gap)
-    ) {
-        if (extra != null) item(key = "feature", contentType = "app") { extra() }
-        items(apps, key = { it.componentName.flattenToString() }, contentType = { "app" }) { tile(it) }
+        }
+        if (entries <= preparedTileLimit) {
+            val state = rememberScrollState()
+            LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
+            Column(
+                collection.verticalScroll(state).padding(tokens.margin),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                repeat(rows) { rowContent(it) }
+            }
+        } else {
+            val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.50f, behindFraction = 0.30f) }
+            val state = rememberLazyListState(cacheWindow = cache)
+            LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
+            LazyColumn(
+                modifier = collection,
+                state = state,
+                contentPadding = PaddingValues(tokens.margin),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                items(rows, contentType = { "appRow" }) { rowContent(it) }
+            }
+        }
     }
 }
 
@@ -165,9 +204,20 @@ internal fun PinnedDock(
     apps: List<LauncherActivityInfo>,
     browse: () -> Unit,
     open: (LauncherActivityInfo) -> Unit,
-    actions: (LauncherActivityInfo) -> Unit
+    actions: (LauncherActivityInfo) -> Unit,
+    labels: Map<ComponentName, String>,
+    move: (ComponentName, ComponentName, Boolean) -> Unit,
+    remove: (ComponentName) -> Unit
 ) {
     val tokens = LocalTokens.current
+    val components = remember(apps) { apps.map { it.componentName } }
+    val movePin by rememberUpdatedState(move)
+    val removePin by rememberUpdatedState(remove)
+    var dragged by remember(components) { mutableStateOf<ComponentName?>(null) }
+    var offset by remember(components) { mutableStateOf(Offset.Zero) }
+    val earlier = stringResource(R.string.dock_move_earlier)
+    val later = stringResource(R.string.dock_move_later)
+    val unpin = stringResource(R.string.dock_unpin)
     if (apps.isEmpty()) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             TextButton(onClick = browse) { Text(stringResource(R.string.dock_empty), style = tokens.secondary) }
@@ -182,24 +232,89 @@ internal fun PinnedDock(
         val available = maxWidth - tokens.dockInnerHorizontal * 2
         val cell = minOf(tokens.dockCellWidth, available / apps.size).coerceAtLeast(tokens.touch)
         val scroll = available < cell * apps.size
-        Surface(
-            color = tokens.surface.copy(alpha = tokens.dockOpacity),
-            border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
-            shadowElevation = tokens.elevation.last(),
-            shape = RoundedCornerShape(tokens.sheetRadius)
-        ) {
+        val density = LocalDensity.current
+        val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+        val step = with(density) { cell.roundToPx().toFloat() }
+        val sidePad = with(density) { tokens.dockInnerHorizontal.toPx() }
+        val halfHeight = with(density) { maxOf(tokens.touch, minOf(tokens.dockIconSize, cell)).toPx() / 2 + tokens.dockInnerVertical.toPx() }
+        fun destination(index: Int) = (index + (offset.x * direction / step).roundToInt()).coerceIn(components.indices)
+        fun outside(index: Int): Boolean {
+            val center = (index + 0.5f) * step + offset.x * direction
+            return kotlin.math.abs(offset.y) > halfHeight ||
+                center < -sidePad || center > step * components.size + sidePad
+        }
+        Box {
+            Surface(
+                modifier = Modifier.matchParentSize(),
+                color = tokens.surface.copy(alpha = tokens.dockOpacity),
+                border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
+                shadowElevation = tokens.elevation.last(),
+                shape = RoundedCornerShape(tokens.sheetRadius)
+            ) {}
             Row(
                 Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
                     .padding(horizontal = tokens.dockInnerHorizontal, vertical = tokens.dockInnerVertical)
             ) {
-                apps.forEach { app ->
-                    val label = app.label.toString()
-                    Box(
-                        Modifier.width(cell).heightIn(min = tokens.touch)
-                            .appPress({ open(app) }, { actions(app) })
-                            .semantics { contentDescription = label },
-                        contentAlignment = Alignment.Center
-                    ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell)) }
+                apps.forEachIndexed { index, app ->
+                    val component = app.componentName
+                    key(component) {
+                        val label = labels[component].orEmpty()
+                        Box(
+                            Modifier.width(cell).heightIn(min = tokens.touch)
+                                .zIndex(if (dragged == component) 1f else 0f)
+                                .graphicsLayer {
+                                    val from = components.indexOf(dragged)
+                                    val to = if (from >= 0) destination(from) else from
+                                    translationX = when {
+                                        from == index -> offset.x
+                                        from < index && index <= to -> -step * direction
+                                        to <= index && index < from -> step * direction
+                                        else -> 0f
+                                    }
+                                    translationY = if (from == index) offset.y else 0f
+                                    alpha = if (from == index && outside(index)) 0.65f else 1f
+                                }
+                                .pointerInput(components, index, step, direction, halfHeight, sidePad) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragged = component
+                                            offset = Offset.Zero
+                                        },
+                                        onDrag = { change, delta ->
+                                            change.consume()
+                                            offset += delta
+                                        },
+                                        onDragEnd = {
+                                            val target = destination(index)
+                                            if (outside(index)) removePin(component)
+                                            else if (target != index) movePin(component, components[target], target > index)
+                                            dragged = null
+                                            offset = Offset.Zero
+                                        },
+                                        onDragCancel = {
+                                            dragged = null
+                                            offset = Offset.Zero
+                                        }
+                                    )
+                                }
+                                .appPress({ open(app) }, { actions(app) })
+                                .semantics {
+                                    contentDescription = label
+                                    customActions = buildList {
+                                        if (index > 0) add(CustomAccessibilityAction(earlier) {
+                                            movePin(component, components[index - 1], false)
+                                            true
+                                        })
+                                        if (index < components.lastIndex) add(CustomAccessibilityAction(later) {
+                                            movePin(component, components[index + 1], true)
+                                            true
+                                        })
+                                        add(CustomAccessibilityAction(unpin) { removePin(component); true })
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell), label = label) }
+                    }
                 }
             }
         }
