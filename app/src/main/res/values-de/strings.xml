@@ -94,4 +94,23 @@
         <item quantity="one">%d Karte</item>
         <item quantity="other">%d Karten</item>
     </plurals>
+    <string name="wallpaper">Hintergrundbild</string>
+    <string name="wallpaper_system">Android Hintergrundbild</string>
+    <string name="wallpaper_meadow">Offene Wiese</string>
+    <string name="wallpaper_stream">Alpenbach</string>
+    <string name="wallpaper_custom">Eigenes Bild</string>
+    <string name="wallpaper_scope">Wähle einen Hintergrund für Enyo oder übernimm ihn für Android. Der Android Sperrbildschirm ändert sich nur, wenn du ihn auswählst.</string>
+    <string name="wallpaper_pick">Bild auswählen</string>
+    <string name="wallpaper_current">Aktueller Enyo Hintergrund: %1$s</string>
+    <string name="wallpaper_use_in_enyo">In Enyo verwenden</string>
+    <string name="wallpaper_follow_system">Android Hintergrund verwenden</string>
+    <string name="wallpaper_apply_android">Für Android übernehmen</string>
+    <string name="wallpaper_applied">Android Hintergrundbild aktualisiert</string>
+    <string name="wallpaper_enyo_applied">Enyo Hintergrund aktualisiert</string>
+    <string name="wallpaper_unavailable">Dieses Hintergrundbild konnte nicht übernommen werden</string>
+    <string name="wallpaper_android_unavailable">Das Android Hintergrundbild kann in diesem Profil nicht geändert werden.</string>
+    <string name="wallpaper_home">Startbildschirm</string>
+    <string name="wallpaper_lock">Sperrbildschirm</string>
+    <string name="wallpaper_both">Startbildschirm und Sperrbildschirm</string>
+    <string name="icon_originals">Originale App Symbole verwenden</string>
 </resources>

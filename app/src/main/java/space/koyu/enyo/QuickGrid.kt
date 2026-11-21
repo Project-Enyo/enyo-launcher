@@ -1,6 +1,5 @@
 package space.koyu.enyo
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,7 +17,7 @@ internal fun QuickGrid(
     val tokens = LocalTokens.current
     val keyboard = WindowInsets.isImeVisible
     BoxWithConstraints(
-        Modifier.fillMaxSize().background(tokens.background).padding(tokens.margin)
+        Modifier.fillMaxSize().padding(tokens.margin)
     ) {
         val tiny = tokens.size == CardSize.Tiny
         val compact = tokens.size == CardSize.CompactHeight

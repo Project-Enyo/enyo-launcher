@@ -13,9 +13,12 @@ import android.provider.Settings
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -23,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.FocusRequester
@@ -88,7 +92,7 @@ internal fun LauncherScreen(
             val collator = Collator.getInstance()
             runCatching {
                 launcher.getActivityList(null, Process.myUserHandle())
-                    .filter { it.componentName.packageName != context.packageName }
+                    .filterNot { it.componentName.packageName in setOf(context.packageName, "com.android.stk", "com.android.stk2") }
                     .sortedWith(compareBy(collator) { it.label.toString() })
             }.getOrDefault(emptyList())
         }
@@ -156,10 +160,10 @@ internal fun LauncherScreen(
     }
     when (surface) {
         1 -> SearchScreen(query, { query = it }, apps, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle)
-        2 -> PreferencesScreen({ surface = 0 }, packageCycle)
-        else -> Column(
-            Modifier.fillMaxSize().background(tokens.background)
-                .safeDrawingPadding().windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+        2 -> PreferencesScreen({ surface = 0 }, packageCycle) { surface = 3 }
+        3 -> AppearanceScreen { surface = 2 }
+        else -> WallpaperBackdrop { Column(
+            Modifier.fillMaxSize().safeDrawingPadding().windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                 .padding(bottom = tokens.bottomClearance)
 
         ) {
@@ -175,9 +179,15 @@ internal fun LauncherScreen(
             HorizontalPager(pager, Modifier.weight(1f)) { page ->
                 when (page) {
                     0 -> TodayPage(foreground)
-                    1 -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
+                    1 -> LazyVerticalGrid(
+                        columns = GridCells.Adaptive(tokens.appCellWidth),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(tokens.margin),
+                        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+                    ) {
                         items(apps, key = { it.componentName.flattenToString() }) { app ->
-                            TextButton(onClick = { openApp(app) }) { Text(app.label.toString(), color = tokens.ink) }
+                            LibraryTile(app, onClick = { openApp(app) })
                         }
                     }
                     2 -> CardsPage(apps, ::openApp, cardsFocus)
@@ -197,19 +207,50 @@ internal fun LauncherScreen(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues()
                     ) {
-                        Text(stringResource(label), style = tokens.label.copy(color = tokens.ink), maxLines = 1)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            EnyoGlyph(pageGlyphs[index])
+                            Text(stringResource(label), style = tokens.label.copy(color = tokens.ink), maxLines = 1)
+                        }
                     }
                 }
             }
-        }
+        } }
+    }
+}
+
+private val pageGlyphs = listOf(Glyph.Today, Glyph.Apps, Glyph.Cards, Glyph.Inbox, Glyph.Quick)
+
+@Composable
+internal fun LibraryTile(app: LauncherActivityInfo, onClick: () -> Unit) {
+    val tokens = LocalTokens.current
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = tokens.appCellHeight).clickable(onClick = onClick)
+            .padding(vertical = tokens.gap),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+    ) {
+        AppIcon(app)
+        Text(
+            app.label.toString(),
+            style = tokens.secondary.copy(color = tokens.ink),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
-private fun PageMessage(label: Int) {
+internal fun LibraryRow(app: LauncherActivityInfo, onClick: () -> Unit) {
     val tokens = LocalTokens.current
-    Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = androidx.compose.ui.Alignment.Center) {
-        Text(stringResource(label), style = tokens.secondary)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = tokens.touch).clickable(onClick = onClick)
+            .padding(horizontal = tokens.padding, vertical = tokens.gap),
+        horizontalArrangement = Arrangement.spacedBy(tokens.padding),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AppIcon(app)
+        Text(app.label.toString(), style = tokens.state, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 

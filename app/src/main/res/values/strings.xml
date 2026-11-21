@@ -94,4 +94,23 @@
         <item quantity="one">%d card</item>
         <item quantity="other">%d cards</item>
     </plurals>
+    <string name="wallpaper">Wallpaper</string>
+    <string name="wallpaper_system">Android wallpaper</string>
+    <string name="wallpaper_meadow">Open meadow</string>
+    <string name="wallpaper_stream">Alpine stream</string>
+    <string name="wallpaper_custom">Your image</string>
+    <string name="wallpaper_scope">Choose a background for Enyo or apply it to Android. The Android lock screen changes only when you select it.</string>
+    <string name="wallpaper_pick">Choose an image</string>
+    <string name="wallpaper_current">Current Enyo background: %1$s</string>
+    <string name="wallpaper_use_in_enyo">Use in Enyo</string>
+    <string name="wallpaper_follow_system">Follow Android wallpaper</string>
+    <string name="wallpaper_apply_android">Apply to Android</string>
+    <string name="wallpaper_applied">Android wallpaper updated</string>
+    <string name="wallpaper_enyo_applied">Enyo background updated</string>
+    <string name="wallpaper_unavailable">This wallpaper could not be applied</string>
+    <string name="wallpaper_android_unavailable">Android wallpaper changes are unavailable in this profile.</string>
+    <string name="wallpaper_home">Home screen</string>
+    <string name="wallpaper_lock">Lock screen</string>
+    <string name="wallpaper_both">Home and lock screens</string>
+    <string name="icon_originals">Use original app icons</string>
 </resources>

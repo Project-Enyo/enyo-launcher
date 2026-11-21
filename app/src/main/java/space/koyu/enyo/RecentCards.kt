@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
@@ -388,7 +387,6 @@ private fun CardTile(
     dismiss: () -> Unit
 ) {
     val tokens = LocalTokens.current
-    val density = LocalDensity.current
     val entry = card.entry
     val illustration by produceState<Bitmap?>(null, entry) {
         value = withContext(Dispatchers.IO) { store.bitmap(entry) }
@@ -399,18 +397,6 @@ private fun CardTile(
     var position by remember { mutableStateOf(Rect.Zero) }
     val dropCard by rememberUpdatedState(drop)
     val removeCard by rememberUpdatedState(dismiss)
-    val iconSize = with(density) { tokens.touch.roundToPx() }
-    val icon by produceState<Bitmap?>(null, card.app, iconSize) {
-        if (entry.aspect == null) value = withContext(Dispatchers.IO) {
-            runCatching {
-                val drawable = card.app.getIcon(density.density.times(160).roundToInt())
-                Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888).also {
-                    drawable.setBounds(0, 0, iconSize, iconSize)
-                    drawable.draw(Canvas(it))
-                }
-            }.getOrNull()
-        }
-    }
     Surface(
         onClick = activate,
         modifier = modifier
@@ -475,7 +461,7 @@ private fun CardTile(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(tokens.gap)
             ) {
-                icon?.let { Image(it.asImageBitmap(), null, Modifier.size(tokens.touch)) }
+                AppIcon(card.app)
                 Text(card.app.label.toString(), style = tokens.state, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (count > 1) Surface(

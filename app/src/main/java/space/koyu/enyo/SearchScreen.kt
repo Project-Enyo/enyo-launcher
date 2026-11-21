@@ -17,6 +17,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,6 +30,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -272,7 +274,7 @@ internal fun SearchScreen(
             if (status != 0) item { Text(stringResource(status), style = tokens.secondary) }
             if (input.isNotBlank()) {
                 items(appResults) { app ->
-                    TextButton(onClick = { record(input); openApp(app) }) { Text(app.label.toString(), color = tokens.ink) }
+                    LibraryRow(app) { record(input); openApp(app) }
                 }
                 if (command?.first in listOf(null, Command.Settings)) {
                     settingsDestinations.filter {
@@ -350,7 +352,7 @@ private fun SearchButton(label: Int, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int) {
+internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: () -> Unit) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val store = context.searchPreferences
@@ -358,6 +360,8 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int) {
     val installed = installedAssistants(packageCycle)
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val appearance = context.appearancePreferences
+    val originals = LocalOriginalIcons.current
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
     LazyColumn(
         Modifier.fillMaxSize().background(tokens.background).safeDrawingPadding(),
@@ -366,6 +370,18 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int) {
         item {
             SearchButton(R.string.back, back)
             Text(stringResource(R.string.preferences), style = tokens.state)
+            SearchButton(R.string.wallpaper, wallpaper)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = tokens.touch).toggleable(
+                    value = originals, role = Role.Switch,
+                    onValueChange = { enabled -> scope.launch { appearance.edit { it[originalIcons] = enabled } } }
+                ),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Switch(checked = originals, onCheckedChange = null)
+                Spacer(Modifier.width(tokens.gap))
+                Text(stringResource(R.string.icon_originals), style = tokens.state)
+            }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Switch(checked = historyOn, onCheckedChange = { enabled ->
                     scope.launch {

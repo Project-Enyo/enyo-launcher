@@ -15,6 +15,9 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -54,8 +57,33 @@ class EnyoActivity : ComponentActivity() {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val size = resolveCardSize(maxWidth, maxHeight)
                 val tokens = remember(dark, size) { Tokens(dark, size) }
-                CompositionLocalProvider(LocalTokens provides tokens) {
-                    LauncherScreen(::openInternetPanel, homeSequence) { launcherKeys = it }
+                val appearance = remember { appearancePreferences.data }
+                val prefs by appearance.collectAsState(null)
+                val scheme = remember(tokens) {
+                    val base = if (dark) darkColorScheme() else lightColorScheme()
+                    base.copy(
+                        primary = tokens.accent,
+                        onPrimary = tokens.background,
+                        primaryContainer = tokens.accentContainer,
+                        onPrimaryContainer = tokens.ink,
+                        secondary = tokens.accent,
+                        tertiary = tokens.accent,
+                        background = tokens.background,
+                        onBackground = tokens.ink,
+                        surface = tokens.surface,
+                        onSurface = tokens.ink,
+                        onSurfaceVariant = tokens.quiet,
+                        surfaceContainerHigh = tokens.surface,
+                        outline = tokens.quiet
+                    )
+                }
+                MaterialTheme(colorScheme = scheme) {
+                    CompositionLocalProvider(
+                        LocalTokens provides tokens,
+                        LocalOriginalIcons provides (prefs?.get(originalIcons) == true)
+                    ) {
+                        LauncherScreen(::openInternetPanel, homeSequence) { launcherKeys = it }
+                    }
                 }
             }
         }
@@ -81,7 +109,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
         onClick = open,
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)).cardInput(activate = open),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface,
+        color = tokens.surface.copy(alpha = tokens.cardOpacity),
         shadowElevation = tokens.elevation[1]
     ) {
         Row(
@@ -167,7 +195,7 @@ internal fun ContentCard(modifier: Modifier = Modifier, content: @Composable () 
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface,
+        color = tokens.surface.copy(alpha = tokens.cardOpacity),
         shadowElevation = tokens.elevation[1],
         content = content
     )
