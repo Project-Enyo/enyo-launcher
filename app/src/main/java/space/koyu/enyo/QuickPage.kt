@@ -287,7 +287,7 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
                 customActions = listOf(CustomAccessibilityAction(toggleLabel) { toggle(); true })
             },
         shape = RoundedCornerShape(tokens.radius),
-        color = if (on) tokens.accentContainer else tokens.surface,
+        color = if (on) tokens.accent else tokens.widgetSurface,
         shadowElevation = tokens.elevation[if (on) 2 else 1]
     ) {
         Row(
@@ -296,10 +296,13 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
             horizontalArrangement = Arrangement.spacedBy(tokens.gap)
         ) {
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.torch), style = tokens.state, color = if (on) tokens.onAccentContainer else tokens.ink)
-                if (state.torchFailed) Text(stringResource(R.string.torch_failed), style = tokens.secondary, maxLines = 1)
+                Text(stringResource(R.string.torch), style = tokens.state, color = if (on) tokens.onAccent else tokens.ink)
+                if (state.torchFailed) Text(
+                    stringResource(R.string.torch_failed), style = tokens.secondary, maxLines = 1,
+                    color = if (on) tokens.onAccent else tokens.quiet
+                )
             }
-            Text(checked, style = tokens.secondary, color = if (on) tokens.onAccentContainer else tokens.quiet)
+            Text(checked, style = tokens.secondary, color = if (on) tokens.onAccent else tokens.quiet)
         }
     }
 }
@@ -466,9 +469,9 @@ private fun MediaButton(
     if (primary) FilledTonalIconButton(
         onClick = { transport(action) },
         modifier = Modifier.size(tokens.mediaControlSize),
-        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accentContainer)
+        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accent)
     ) {
-        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.onAccentContainer, description = stringResource(label))
+        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.onAccent, description = stringResource(label))
     } else IconButton(onClick = { transport(action) }, modifier = Modifier.size(tokens.mediaControlSize)) {
         EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), description = stringResource(label))
     }

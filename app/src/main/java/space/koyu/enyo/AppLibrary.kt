@@ -269,8 +269,8 @@ internal fun PinnedDock(
             Box {
                 Surface(
                     modifier = Modifier.matchParentSize(),
-                    color = tokens.surface.copy(alpha = tokens.dockOpacity),
-                    border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.dockBorderOpacity)),
+                    color = tokens.dockSurface.copy(alpha = tokens.dockOpacity),
+                    border = BorderStroke(tokens.glyphStroke / 2, tokens.onAccentContainer.copy(alpha = tokens.dockBorderOpacity)),
                     shadowElevation = tokens.elevation.last(),
                     shape = RoundedCornerShape(dockRadius)
                 ) {}

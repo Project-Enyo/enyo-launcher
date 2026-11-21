@@ -84,9 +84,10 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     val battery = rememberBattery()
     val connection = rememberConnection()
 
-    LaunchedEffect(visible, battery, tokens.accent, tokens.accentContainer) { if (visible) publishTodayWidget(context, TodayWidget.Battery) }
-    LaunchedEffect(visible, event, calendarAllowed) { if (visible) publishTodayWidget(context, TodayWidget.Calendar, event) }
-    LaunchedEffect(visible, connection) { if (visible) publishTodayWidget(context, TodayWidget.Network) }
+    LaunchedEffect(visible, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Clock) }
+    LaunchedEffect(visible, battery, tokens.widgetSurface, tokens.accent) { if (visible) publishTodayWidget(context, TodayWidget.Battery) }
+    LaunchedEffect(visible, event, calendarAllowed, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Calendar, event) }
+    LaunchedEffect(visible, connection, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Network) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current

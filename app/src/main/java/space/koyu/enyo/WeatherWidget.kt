@@ -168,8 +168,8 @@ internal fun ObserveTodayWeather(foreground: Int, visible: Boolean, widgetTap: L
     LaunchedEffect(widgetTap, resumed) {
         if (resumed && model.consumeWidgetTap(widgetTap)) activate()
     }
-    val accent = LocalTokens.current.accent
-    LaunchedEffect(resumed, accent) {
+    val tokens = LocalTokens.current
+    LaunchedEffect(resumed, tokens.accent, tokens.widgetSurface) {
         if (resumed) publishTodayWidget(context, TodayWidget.Weather)
     }
     LaunchedEffect(visible, lifecycle, access, refreshAt, locationRevision) {

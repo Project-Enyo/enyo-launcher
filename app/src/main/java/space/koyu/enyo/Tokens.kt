@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -63,6 +64,9 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val accentContainer = palette?.container ?: tone(0xFFDCE8CA, 0xFF34482C)
     val onAccent = palette?.onAccent ?: background
     val onAccentContainer = palette?.onContainer ?: ink
+    val widgetSurface = lerp(surface, accentContainer, 0.78f)
+    val widgetTrack = accent.copy(alpha = 0.22f)
+    val dockSurface = lerp(surface, accentContainer, 0.48f)
 
     val margin = dimension(20, 16, 12).dp
     val gap = dimension(12, 10, 8).dp

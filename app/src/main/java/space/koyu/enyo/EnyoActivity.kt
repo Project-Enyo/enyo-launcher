@@ -146,7 +146,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
         onClick = open,
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)).cardInput(activate = open),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface,
+        color = tokens.widgetSurface,
         shadowElevation = tokens.elevation[1]
     ) {
         Row(
@@ -213,7 +213,7 @@ internal fun ControlCard(
             Text(valueLabel ?: format.format(value.toDouble()), style = tokens.value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Canvas(Modifier.fillMaxWidth().height(tokens.stroke)) {
                 val center = size.height / 2
-                drawLine(tokens.accentContainer, Offset(0f, center), Offset(size.width, center), size.height)
+                drawLine(tokens.widgetTrack, Offset(0f, center), Offset(size.width, center), size.height)
                 drawLine(tokens.accent, Offset(0f, center), Offset(size.width * value, center), size.height)
             }
         }
@@ -226,7 +226,7 @@ internal fun ContentCard(modifier: Modifier = Modifier, content: @Composable () 
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch)),
         shape = RoundedCornerShape(tokens.radius),
-        color = tokens.surface,
+        color = tokens.widgetSurface,
         shadowElevation = tokens.elevation[1],
         content = content
     )

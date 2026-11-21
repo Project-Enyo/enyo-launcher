@@ -86,6 +86,9 @@ private fun renderTodayWidget(
     val locale = context.resources.configuration.locales[0]
     val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     val views = RemoteViews(context.packageName, if (kind == TodayWidget.Clock) R.layout.today_widget_clock else R.layout.today_widget)
+    val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
+    views.setColorStateList(R.id.widget_content, "setBackgroundTintList", ColorStateList.valueOf(tokens.widgetSurface.toArgb()))
+    views.setTextColor(R.id.widget_value, tokens.onAccentContainer.toArgb())
     if (kind != TodayWidget.Clock) {
         views.setTextViewText(R.id.widget_title, label)
         views.setViewVisibility(R.id.widget_detail, View.GONE)
@@ -119,7 +122,6 @@ private fun renderTodayWidget(
                     }
                     if (expandedBattery) {
                         icon(Glyph.Battery)
-                        val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
                         views.setColorStateList(R.id.widget_icon, "setImageTintList", null)
                         views.setImageViewBitmap(R.id.widget_icon, batteryWidgetImage(context, tokens, level.toFloat() / scale))
                         views.setViewLayoutWidth(R.id.widget_icon, 92f, android.util.TypedValue.COMPLEX_UNIT_DIP)
@@ -141,7 +143,6 @@ private fun renderTodayWidget(
                 val reading = latestWeather.takeIf { hasAccess }
                 icon(if (hasAccess) Glyph.Location else Glyph.LocationOff,
                     if (hasAccess) R.string.weather_location_on else R.string.weather_location_off)
-                val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
                 views.setColorStateList(R.id.widget_icon, "setImageTintList", ColorStateList.valueOf(tokens.accent.toArgb()))
                 if (reading == null) {
                     views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -172,7 +173,7 @@ private fun batteryWidgetImage(context: Context, tokens: Tokens, level: Float): 
     val w = bitmap.width / 24f
     val h = bitmap.height / 12f
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-        color = tokens.accentContainer.toArgb()
+        color = tokens.widgetTrack.toArgb()
     }
     canvas.drawRoundRect(6 * w, 3 * h, (6 + 11 * level.coerceIn(0f, 1f)) * w, 9 * h, h, h, paint)
     context.getDrawable(Glyph.Battery.drawable)?.apply {
