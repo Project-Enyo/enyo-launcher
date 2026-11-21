@@ -123,4 +123,15 @@
     <string name="clear_search">Suche leeren</string>
     <string name="search_history_recent">Letzte Suchen</string>
     <string name="contacts_results">Kontakte</string>
+    <string name="setup_title">Berechtigungen und Einrichtung</string>
+    <string name="setup_home">Standardlauncher</string>
+    <string name="setup_home_reason">Wähle Enyo, wenn Android es über die Starttaste öffnen soll.</string>
+    <string name="setup_calendar_reason">Zeige den nächsten Termin auf Heute an.</string>
+    <string name="setup_notification_reason">Zeige Benachrichtigungen im Postfach und die Wiedergabe unter Schnell an.</string>
+    <string name="setup_bluetooth">Geräte in der Nähe</string>
+    <string name="setup_bluetooth_reason">Aktiviere die Bluetooth Steuerung und zeige ein verbundenes Gerät an.</string>
+    <string name="setup_intro">Wähle die gewünschten Funktionen aus. Du kannst diese Auswahl später in den Enyo Einstellungen ändern.</string>
+    <string name="setup_enabled">Aktiviert</string>
+    <string name="setup_configure">Einrichten</string>
+    <string name="setup_finish">Weiter zu Enyo</string>
 </resources>

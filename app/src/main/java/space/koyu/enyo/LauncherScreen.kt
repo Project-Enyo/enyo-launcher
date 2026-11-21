@@ -45,6 +45,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -122,6 +124,16 @@ internal fun LauncherScreen(
     val scope = rememberCoroutineScope()
     var surface by rememberSaveable { mutableIntStateOf(0) }
     var query by remember { mutableStateOf(TextFieldValue()) }
+    val setupComplete by remember(context) { context.searchPreferences.data.map { it[setupSeen] == true } }
+        .collectAsState(null)
+    fun closeSetup() {
+        if (setupComplete == false) {
+            scope.launch {
+                context.searchPreferences.edit { it[setupSeen] = true }
+                surface = 0
+            }
+        } else surface = 2
+    }
     LaunchedEffect(homeSequence) {
         if (homeSequence > 0) {
             surface = 0
@@ -206,14 +218,17 @@ internal fun LauncherScreen(
             if (!pinnedApp && pinned.size >= dockCapacity) Text(stringResource(R.string.dock_full), style = tokens.secondary)
         }
     }
-    SearchOnboarding()
     BackHandler(surface != 0 || pager.currentPage != 2) {
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
-    when (surface) {
+    when (if (setupComplete == false) 4 else surface) {
         1 -> SearchScreen(query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle, transit) { transitPicker = true }
-        2 -> PreferencesScreen({ surface = 0 }, packageCycle) { surface = 3 }
+        2 -> PreferencesScreen({ surface = 0 }, packageCycle, { surface = 3 }, { surface = 4 })
         3 -> AppearanceScreen { surface = 2 }
+        4 -> {
+            BackHandler { closeSetup() }
+            PermissionSetup(setupComplete == false, ::closeSetup)
+        }
         else -> WallpaperBackdrop { Column(
             Modifier.fillMaxSize().safeDrawingPadding().windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                 .padding(bottom = tokens.bottomClearance)

@@ -53,10 +53,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-private val Context.searchPreferences by preferencesDataStore("search")
+internal val Context.searchPreferences by preferencesDataStore("search")
 private val searchHistoryEnabled = booleanPreferencesKey("history_enabled")
 private val searchHistory = stringPreferencesKey("history")
-private val setupSeen = booleanPreferencesKey("setup_seen")
+internal val setupSeen = booleanPreferencesKey("setup_seen")
 private val defaultAssistant = stringPreferencesKey("assistant")
 
 private enum class Assistant(val appId: String, val label: Int) {
@@ -107,28 +107,6 @@ private val settingsDestinations = listOf(
 
 private enum class Command { Call, Message, Calendar, Web, Settings }
 private data class Confirmation(val title: String, val intent: Intent)
-
-@Composable
-internal fun SearchOnboarding() {
-    val context = LocalContext.current
-    val store = context.searchPreferences
-    val scope = rememberCoroutineScope()
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        scope.launch { store.edit { it[setupSeen] = true } }
-    }
-    val loaded by remember(store) { store.data.map { it[setupSeen] != true } }.collectAsState(false)
-    if (loaded) {
-        fun dismiss() { scope.launch { store.edit { it[setupSeen] = true } } }
-        EnyoSheet(stringResource(R.string.contacts_permission), { dismiss() }) {
-            Text(stringResource(R.string.contacts_reason), style = LocalTokens.current.secondary)
-            Text(stringResource(R.string.battery_discovery), style = LocalTokens.current.secondary)
-            TextButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) {
-                Text(stringResource(R.string.contacts_permission))
-            }
-            TextButton(onClick = { dismiss() }) { Text(stringResource(R.string.skip_setup)) }
-        }
-    }
-}
 
 @Composable
 internal fun SearchScreen(
@@ -400,14 +378,13 @@ private fun SearchButton(label: Int, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: () -> Unit) {
+internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: () -> Unit, setup: () -> Unit) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val store = context.searchPreferences
     val scope = rememberCoroutineScope()
     val installed = installedAssistants(packageCycle)
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
@@ -442,13 +419,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                 Spacer(Modifier.width(tokens.gap))
                 Text(stringResource(R.string.search_history), style = tokens.state)
             }
-            Text(stringResource(R.string.contacts_reason), style = tokens.secondary)
-            SearchButton(R.string.contacts_permission) { permission.launch(Manifest.permission.READ_CONTACTS) }
-            Text(stringResource(R.string.battery_discovery), style = tokens.secondary)
-            SearchButton(R.string.calendar_permission) { permission.launch(Manifest.permission.READ_CALENDAR) }
-            SearchButton(R.string.notification_access) {
-                context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            }
+            SearchButton(R.string.setup_title, setup)
             if (installed.isNotEmpty()) {
                 Text(stringResource(R.string.default_assistant), style = tokens.state)
                 installed.find { it.assistant.appId == preferred }?.let {
