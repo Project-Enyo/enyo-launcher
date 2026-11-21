@@ -7,7 +7,6 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.os.Build
 import android.util.LruCache
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,14 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -38,7 +32,29 @@ import kotlin.math.roundToInt
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
 internal val LocalBrandIcons = compositionLocalOf { emptyMap<String, android.graphics.drawable.Icon>() }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit, Back, Forward, Close }
+internal enum class Glyph(val drawable: Int) {
+    Today(R.drawable.tabler_sun),
+    Apps(R.drawable.tabler_apps),
+    Cards(R.drawable.tabler_cards),
+    Inbox(R.drawable.tabler_inbox),
+    Quick(R.drawable.tabler_adjustments_horizontal),
+    Search(R.drawable.tabler_search),
+    Settings(R.drawable.tabler_settings),
+    Messages(R.drawable.tabler_messages),
+    Calculator(R.drawable.tabler_calculator),
+    Folder(R.drawable.tabler_folder),
+    Camera(R.drawable.tabler_camera),
+    Dhl(R.drawable.tabler_truck_delivery),
+    Transit(R.drawable.tabler_train),
+    Back(R.drawable.tabler_arrow_left),
+    Forward(R.drawable.tabler_chevron_right),
+    Close(R.drawable.tabler_x),
+    Battery(R.drawable.tabler_battery),
+    Play(R.drawable.tabler_player_play),
+    Pause(R.drawable.tabler_player_pause),
+    PreviousTrack(R.drawable.tabler_player_skip_back),
+    NextTrack(R.drawable.tabler_player_skip_forward),
+}
 
 private data class IconKey(
     val component: android.content.ComponentName,
@@ -231,114 +247,16 @@ private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int
 }
 
 @Composable
-internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color = LocalTokens.current.ink) {
-    val tokens = LocalTokens.current
-    Canvas(modifier.size(tokens.glyphSize)) {
-        fun point(x: Float, y: Float) = Offset(x * size.width, y * size.height)
-        val stroke = tokens.glyphStroke.toPx()
-        fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
-            drawLine(color, point(x1, y1), point(x2, y2), stroke, cap = StrokeCap.Round)
-        }
-        fun circle(x: Float, y: Float, radius: Float, fill: Boolean = false) {
-            if (fill) drawCircle(color, radius * size.width, point(x, y))
-            else drawCircle(color, radius * size.width, point(x, y), style = Stroke(stroke))
-        }
-        fun box(left: Float, top: Float, right: Float, bottom: Float) {
-            drawRoundRect(
-                color,
-                topLeft = point(left, top),
-                size = Size((right - left) * size.width, (bottom - top) * size.height),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.10f),
-                style = Stroke(stroke)
-            )
-        }
-        when (glyph) {
-            Glyph.Today -> {
-                circle(.50f, .50f, .20f)
-                for (index in 0 until 8) {
-                    val angle = index * Math.PI / 4
-                    val x = kotlin.math.cos(angle).toFloat()
-                    val y = kotlin.math.sin(angle).toFloat()
-                    line(.50f + .32f * x, .50f + .32f * y, .50f + .42f * x, .50f + .42f * y)
-                }
-            }
-            Glyph.Apps -> for (x in listOf(.29f, .71f)) for (y in listOf(.29f, .71f)) circle(x, y, .11f, true)
-            Glyph.Cards -> {
-                box(.25f, .23f, .80f, .84f)
-                line(.14f, .68f, .14f, .22f)
-                line(.14f, .22f, .59f, .12f)
-            }
-            Glyph.Inbox -> {
-                box(.13f, .23f, .87f, .80f)
-                line(.14f, .32f, .50f, .57f)
-                line(.50f, .57f, .86f, .32f)
-            }
-            Glyph.Quick -> {
-                line(.16f, .28f, .84f, .28f); circle(.41f, .28f, .105f, true)
-                line(.16f, .52f, .84f, .52f); circle(.66f, .52f, .105f, true)
-                line(.16f, .76f, .84f, .76f); circle(.36f, .76f, .105f, true)
-            }
-            Glyph.Back -> { line(.18f, .50f, .82f, .50f); line(.18f, .50f, .45f, .23f); line(.18f, .50f, .45f, .77f) }
-            Glyph.Forward -> { line(.37f, .26f, .64f, .50f); line(.64f, .50f, .37f, .74f) }
-            Glyph.Close -> { line(.25f, .25f, .75f, .75f); line(.25f, .75f, .75f, .25f) }
-            Glyph.Search -> { circle(.43f, .43f, .25f); line(.62f, .62f, .82f, .82f) }
-            Glyph.Settings -> {
-                val gear = Path().apply {
-                    val radii = listOf(.31f, .31f, .43f, .43f, .31f, .31f)
-                    for (tooth in 0 until 8) {
-                        radii.forEachIndexed { index, radius ->
-                            val angle = (tooth + index / radii.size.toDouble()) * Math.PI / 4
-                            val x = .50f + radius * kotlin.math.cos(angle).toFloat()
-                            val y = .50f + radius * kotlin.math.sin(angle).toFloat()
-                            val p = point(x, y)
-                            if (tooth == 0 && index == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
-                        }
-                    }
-                    close()
-                }
-                drawPath(gear, color, style = Stroke(stroke))
-                circle(.50f, .50f, .15f)
-            }
-            Glyph.Messages -> {
-                box(.14f, .20f, .86f, .70f)
-                line(.30f, .70f, .23f, .86f); line(.23f, .86f, .46f, .70f)
-                circle(.33f, .45f, .045f, true)
-                circle(.50f, .45f, .045f, true)
-                circle(.67f, .45f, .045f, true)
-            }
-            Glyph.Calculator -> {
-                box(.24f, .13f, .76f, .87f)
-                line(.34f, .36f, .66f, .36f)
-                for (x in listOf(.38f, .62f)) for (y in listOf(.55f, .71f)) circle(x, y, .055f, true)
-            }
-            Glyph.Folder -> {
-                val path = Path().apply {
-                    moveTo(point(.11f, .76f).x, point(.11f, .76f).y)
-                    for ((x, y) in listOf(.11f to .26f, .36f to .26f, .45f to .36f, .88f to .36f, .88f to .76f)) {
-                        val p = point(x, y)
-                        lineTo(p.x, p.y)
-                    }
-                    close()
-                }
-                drawPath(path, color, style = Stroke(stroke))
-            }
-            Glyph.Camera -> { box(.12f, .32f, .88f, .79f); circle(.50f, .55f, .15f); line(.32f, .22f, .62f, .22f) }
-            Glyph.Dhl -> {
-                box(.36f, .24f, .89f, .76f)
-                line(.61f, .25f, .61f, .48f)
-                line(.13f, .39f, .29f, .39f)
-                line(.07f, .52f, .30f, .52f)
-                line(.15f, .65f, .29f, .65f)
-            }
-            Glyph.Transit -> {
-                box(.24f, .17f, .76f, .73f)
-                line(.25f, .48f, .75f, .48f)
-                line(.37f, .74f, .28f, .87f)
-                line(.63f, .74f, .72f, .87f)
-                circle(.37f, .61f, .05f, true)
-                circle(.63f, .61f, .05f, true)
-            }
-            Glyph.Audio -> { line(.43f, .23f, .43f, .71f); line(.43f, .23f, .78f, .18f); circle(.30f, .72f, .13f, true) }
-        }
-    }
+internal fun EnyoGlyph(
+    glyph: Glyph,
+    modifier: Modifier = Modifier,
+    color: Color = LocalTokens.current.ink,
+    description: String? = null
+) {
+    Image(
+        painter = painterResource(glyph.drawable),
+        contentDescription = description,
+        modifier = modifier.size(LocalTokens.current.glyphSize),
+        colorFilter = ColorFilter.tint(color)
+    )
 }

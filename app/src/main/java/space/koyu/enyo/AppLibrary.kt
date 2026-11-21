@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.pm.LauncherActivityInfo
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -29,6 +29,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.CollectionInfo
@@ -218,102 +222,114 @@ internal fun PinnedDock(
     val earlier = stringResource(R.string.dock_move_earlier)
     val later = stringResource(R.string.dock_move_later)
     val unpin = stringResource(R.string.dock_unpin)
+    val appActions = stringResource(R.string.dock_app_actions)
+    val haptics = LocalHapticFeedback.current
     if (apps.isEmpty()) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             TextButton(onClick = browse) { Text(stringResource(R.string.dock_empty), style = tokens.secondary) }
         }
         return
     }
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().padding(horizontal = tokens.margin)
-            .padding(top = tokens.gap, bottom = tokens.dockBottomSpace),
-        contentAlignment = Alignment.Center
-    ) {
-        val available = maxWidth - tokens.dockInnerHorizontal * 2
-        val cell = minOf(tokens.dockCellWidth, available / apps.size).coerceAtLeast(tokens.touch)
-        val scroll = available < cell * apps.size
-        val density = LocalDensity.current
-        val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
-        val step = with(density) { cell.roundToPx().toFloat() }
-        val sidePad = with(density) { tokens.dockInnerHorizontal.toPx() }
-        val halfHeight = with(density) { maxOf(tokens.touch, minOf(tokens.dockIconSize, cell)).toPx() / 2 + tokens.dockInnerVertical.toPx() }
-        fun destination(index: Int) = (index + (offset.x * direction / step).roundToInt()).coerceIn(components.indices)
-        fun outside(index: Int): Boolean {
-            val center = (index + 0.5f) * step + offset.x * direction
-            return kotlin.math.abs(offset.y) > halfHeight ||
-                center < -sidePad || center > step * components.size + sidePad
+    val platformGestures = LocalViewConfiguration.current
+    val pickupGestures = remember(platformGestures, tokens.dockHoldMillis) {
+        object : ViewConfiguration by platformGestures {
+            override val longPressTimeoutMillis = maxOf(tokens.dockHoldMillis, platformGestures.longPressTimeoutMillis)
         }
-        Box {
-            Surface(
-                modifier = Modifier.matchParentSize(),
-                color = tokens.surface.copy(alpha = tokens.dockOpacity),
-                border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
-                shadowElevation = tokens.elevation.last(),
-                shape = RoundedCornerShape(tokens.sheetRadius)
-            ) {}
-            Row(
-                Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
-                    .padding(horizontal = tokens.dockInnerHorizontal, vertical = tokens.dockInnerVertical)
-            ) {
-                apps.forEachIndexed { index, app ->
-                    val component = app.componentName
-                    key(component) {
-                        val label = labels[component].orEmpty()
-                        Box(
-                            Modifier.width(cell).heightIn(min = tokens.touch)
-                                .zIndex(if (dragged == component) 1f else 0f)
-                                .graphicsLayer {
-                                    val from = components.indexOf(dragged)
-                                    val to = if (from >= 0) destination(from) else from
-                                    translationX = when {
-                                        from == index -> offset.x
-                                        from < index && index <= to -> -step * direction
-                                        to <= index && index < from -> step * direction
-                                        else -> 0f
-                                    }
-                                    translationY = if (from == index) offset.y else 0f
-                                    alpha = if (from == index && outside(index)) 0.65f else 1f
-                                }
-                                .pointerInput(components, index, step, direction, halfHeight, sidePad) {
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            dragged = component
-                                            offset = Offset.Zero
-                                        },
-                                        onDrag = { change, delta ->
-                                            change.consume()
-                                            offset += delta
-                                        },
-                                        onDragEnd = {
-                                            val target = destination(index)
-                                            if (outside(index)) removePin(component)
-                                            else if (target != index) movePin(component, components[target], target > index)
-                                            dragged = null
-                                            offset = Offset.Zero
-                                        },
-                                        onDragCancel = {
-                                            dragged = null
-                                            offset = Offset.Zero
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides pickupGestures) {
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().padding(horizontal = tokens.margin)
+                .padding(top = tokens.gap, bottom = tokens.dockBottomSpace),
+            contentAlignment = Alignment.Center
+        ) {
+            val available = maxWidth - tokens.dockInnerHorizontal * 2
+            val cell = minOf(tokens.dockCellWidth, available / apps.size).coerceAtLeast(tokens.touch)
+            val scroll = available < cell * apps.size
+            val density = LocalDensity.current
+            val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+            val step = with(density) { cell.roundToPx().toFloat() }
+            val sidePad = with(density) { tokens.dockInnerHorizontal.toPx() }
+            val halfHeight = with(density) { maxOf(tokens.touch, minOf(tokens.dockIconSize, cell)).toPx() / 2 + tokens.dockInnerVertical.toPx() }
+            fun destination(index: Int) = (index + (offset.x * direction / step).roundToInt()).coerceIn(components.indices)
+            fun outside(index: Int): Boolean {
+                val center = (index + 0.5f) * step + offset.x * direction
+                return kotlin.math.abs(offset.y) > halfHeight ||
+                    center < -sidePad || center > step * components.size + sidePad
+            }
+            Box {
+                Surface(
+                    modifier = Modifier.matchParentSize(),
+                    color = tokens.surface.copy(alpha = tokens.dockOpacity),
+                    border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
+                    shadowElevation = tokens.elevation.last(),
+                    shape = RoundedCornerShape(tokens.sheetRadius)
+                ) {}
+                Row(
+                    Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                        .padding(horizontal = tokens.dockInnerHorizontal, vertical = tokens.dockInnerVertical)
+                ) {
+                    apps.forEachIndexed { index, app ->
+                        val component = app.componentName
+                        key(component) {
+                            val label = labels[component].orEmpty()
+                            Box(
+                                Modifier.width(cell).heightIn(min = tokens.touch)
+                                    .zIndex(if (dragged == component) 1f else 0f)
+                                    .graphicsLayer {
+                                        val from = components.indexOf(dragged)
+                                        val to = if (from >= 0) destination(from) else from
+                                        translationX = when {
+                                            from == index -> offset.x
+                                            from < index && index <= to -> -step * direction
+                                            to <= index && index < from -> step * direction
+                                            else -> 0f
                                         }
-                                    )
-                                }
-                                .appPress({ open(app) }, { actions(app) })
-                                .semantics {
-                                    contentDescription = label
-                                    customActions = buildList {
-                                        if (index > 0) add(CustomAccessibilityAction(earlier) {
-                                            movePin(component, components[index - 1], false)
-                                            true
-                                        })
-                                        if (index < components.lastIndex) add(CustomAccessibilityAction(later) {
-                                            movePin(component, components[index + 1], true)
-                                            true
-                                        })
-                                        add(CustomAccessibilityAction(unpin) { removePin(component); true })
+                                        translationY = if (from == index) offset.y else 0f
+                                        alpha = if (from == index && outside(index)) 0.65f else 1f
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell), label = label) }
+                                    .appPress({ if (dragged != component) open(app) })
+                                    .pointerInput(components, index, step, direction, halfHeight, sidePad, haptics) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                dragged = component
+                                                offset = Offset.Zero
+                                            },
+                                            onDrag = { change, delta ->
+                                                change.consume()
+                                                offset += delta
+                                            },
+                                            onDragEnd = {
+                                                val target = destination(index)
+                                                if (outside(index)) removePin(component)
+                                                else if (target != index) movePin(component, components[target], target > index)
+                                                dragged = null
+                                                offset = Offset.Zero
+                                            },
+                                            onDragCancel = {
+                                                dragged = null
+                                                offset = Offset.Zero
+                                            }
+                                        )
+                                    }
+                                    .semantics {
+                                        contentDescription = label
+                                        customActions = buildList {
+                                            add(CustomAccessibilityAction(appActions) { actions(app); true })
+                                            if (index > 0) add(CustomAccessibilityAction(earlier) {
+                                                movePin(component, components[index - 1], false)
+                                                true
+                                            })
+                                            if (index < components.lastIndex) add(CustomAccessibilityAction(later) {
+                                                movePin(component, components[index + 1], true)
+                                                true
+                                            })
+                                            add(CustomAccessibilityAction(unpin) { removePin(component); true })
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell), label = label) }
+                        }
                     }
                 }
             }

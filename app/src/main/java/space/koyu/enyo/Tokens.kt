@@ -44,7 +44,6 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val touch = 48.dp
     val bottomClearance = 24.dp
     val chevronSize = 12.dp
-    val chevronStroke = 2.dp
     val stroke = dimension(4, 4, 3).dp
     val progress = 2.dp
     val navigationDotSize = 4.dp
@@ -66,6 +65,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val notificationTrayHeight = dimension(240, 210, 180, 148).dp
     val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
     val folderMaxHeight = 300.dp
+    val dockHoldMillis = 500L
     val dockIconSize = 46.dp
     val dockBottomSpace = 20.dp
     val dockInnerHorizontal = 12.dp

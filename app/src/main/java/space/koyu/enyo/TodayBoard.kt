@@ -13,6 +13,10 @@ import android.os.BatteryManager
 import android.provider.CalendarContract
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -27,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -228,20 +231,22 @@ private fun rememberConnection(): Int {
 @Composable
 private fun BatteryGlyph(battery: BatteryReading?) {
     val tokens = LocalTokens.current
-    Canvas(Modifier.size(tokens.widgetBatteryWidth, tokens.widgetBatteryHeight)) {
-        val outline = tokens.glyphStroke.toPx()
-        val housing = size.width * 0.88f
-        val radius = CornerRadius(size.height * 0.22f)
-        drawRoundRect(tokens.accent, Offset(outline, outline),
-            Size(housing - outline * 2, size.height - outline * 2), radius, style = Stroke(outline))
-        drawRoundRect(tokens.accent, Offset(housing, size.height * 0.33f),
-            Size(size.width - housing, size.height * 0.34f), CornerRadius(outline))
-        val inset = outline * 2.5f
-        val available = (housing - inset * 2).coerceAtLeast(0f)
-        val fill = available * (battery?.level ?: 0f)
-        if (fill > 0f) drawRoundRect(
-            if (battery?.charging == true) tokens.accent else tokens.accentContainer,
-            Offset(inset, inset), Size(fill, (size.height - inset * 2).coerceAtLeast(0f)), CornerRadius(radius.x / 2)
+    Box(Modifier.size(tokens.widgetBatteryWidth, tokens.widgetBatteryHeight)) {
+        Canvas(Modifier.matchParentSize()) {
+            // Coordinates follow the interior of the Tabler battery viewport.
+            val unitX = size.width / 24f
+            val unitY = size.height / 12f
+            val fill = (battery?.level ?: 0f).coerceIn(0f, 1f)
+            if (fill > 0f) drawRoundRect(
+                if (battery?.charging == true) tokens.accent else tokens.accentContainer,
+                topLeft = Offset(6f * unitX, 3f * unitY),
+                size = Size(11f * unitX * fill, 6f * unitY),
+                cornerRadius = CornerRadius(unitY)
+            )
+        }
+        Image(
+            painterResource(Glyph.Battery.drawable), null, Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds, colorFilter = ColorFilter.tint(tokens.accent)
         )
     }
 }

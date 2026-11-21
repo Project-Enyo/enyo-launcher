@@ -311,9 +311,10 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                     val playing = media.playback?.state == PlaybackState.STATE_PLAYING
                     val primary = if (playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
                     Row {
-                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_PREVIOUS, R.string.previous_track, transport)
-                        MediaButton(actions, primary, if (playing) R.string.pause else R.string.play, transport)
-                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_NEXT, R.string.next_track, transport)
+                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_PREVIOUS, R.string.previous_track, Glyph.PreviousTrack, transport)
+                        MediaButton(actions, primary, if (playing) R.string.pause else R.string.play,
+                            if (playing) Glyph.Pause else Glyph.Play, transport)
+                        MediaButton(actions, PlaybackState.ACTION_SKIP_TO_NEXT, R.string.next_track, Glyph.NextTrack, transport)
                     }
                     if (media.duration > 0 && media.playback != null) MediaProgress(media)
                 }
@@ -323,9 +324,9 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
 }
 
 @Composable
-private fun MediaButton(actions: Long, action: Long, label: Int, transport: (Long) -> Unit) {
-    if (actions and action != 0L) TextButton(onClick = { transport(action) }) {
-        Text(stringResource(label), color = LocalTokens.current.ink)
+private fun MediaButton(actions: Long, action: Long, label: Int, glyph: Glyph, transport: (Long) -> Unit) {
+    if (actions and action != 0L) IconButton(onClick = { transport(action) }) {
+        EnyoGlyph(glyph, description = stringResource(label))
     }
 }
 

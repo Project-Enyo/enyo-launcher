@@ -117,6 +117,7 @@
     <string name="app_info">App Info</string>
     <string name="app_uninstall">Deinstallieren</string>
     <string name="dock_pin">Im Dock anheften</string>
+    <string name="dock_app_actions">App Aktionen</string>
     <string name="dock_move_earlier">Im Dock nach vorne verschieben</string>
     <string name="dock_move_later">Im Dock nach hinten verschieben</string>
     <string name="dock_unpin">Vom Dock lösen</string>

@@ -136,13 +136,7 @@ internal fun DoorCard(state: String, detail: String?, open: () -> Unit, modifier
                     Text(detail, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Canvas(Modifier.size(tokens.chevronSize)) {
-                val start = Offset(size.width / 4, size.height / 5)
-                val middle = Offset(size.width * 3 / 4, size.height / 2)
-                val end = Offset(start.x, size.height * 4 / 5)
-                drawLine(tokens.quiet, start, middle, tokens.chevronStroke.toPx())
-                drawLine(tokens.quiet, middle, end, tokens.chevronStroke.toPx())
-            }
+            EnyoGlyph(Glyph.Forward, Modifier.size(tokens.chevronSize), color = tokens.quiet)
         }
     }
 }

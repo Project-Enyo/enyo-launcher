@@ -117,6 +117,7 @@
     <string name="app_info">App info</string>
     <string name="app_uninstall">Uninstall</string>
     <string name="dock_pin">Pin to dock</string>
+    <string name="dock_app_actions">App actions</string>
     <string name="dock_move_earlier">Move earlier in dock</string>
     <string name="dock_move_later">Move later in dock</string>
     <string name="dock_unpin">Unpin from dock</string>
