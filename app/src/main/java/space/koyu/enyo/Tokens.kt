@@ -99,8 +99,6 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val focusStroke = 2.dp
     val focusOffset = 2.dp
     val hoverOpacity = 0.45f
-    val wallpaperEdgeAlpha = if (dark) 0.84f else 0.87f
-    val wallpaperCenterAlpha = if (dark) 0.40f else 0.36f
     val appEdgeFade = 18.dp
     val toggleWidth = 48.dp
     val toggleHeight = 26.dp

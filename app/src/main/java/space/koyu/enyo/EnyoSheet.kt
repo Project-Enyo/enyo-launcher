@@ -35,7 +35,7 @@ internal fun EnyoSheet(title: String, close: () -> Unit, content: @Composable Co
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier.matchParentSize()
-                    .background(tokens.background.copy(alpha = tokens.sheetScrim * arrival.value))
+                    .background(tokens.widgetSurface.copy(alpha = tokens.sheetScrim * arrival.value))
                     .clickable(interactionSource = null, indication = null, onClick = close)
             )
             BoxWithConstraints(

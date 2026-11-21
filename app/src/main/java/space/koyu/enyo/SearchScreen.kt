@@ -129,7 +129,7 @@ internal fun SearchOverlay(reveal: Float, active: Boolean, close: () -> Unit, co
     } else Modifier
     Box(Modifier.fillMaxSize().then(blankTap)) {
         Box(Modifier.matchParentSize()
-            .drawBehind { drawRect(tokens.background.copy(alpha = tokens.searchScrim * reveal)) })
+            .drawBehind { drawRect(tokens.widgetSurface.copy(alpha = tokens.searchScrim * reveal)) })
         Box(
             Modifier.fillMaxSize()
                 .then(if (active) Modifier else Modifier.clearAndSetSemantics {})

@@ -22,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,7 +75,6 @@ private fun currentBackdrop(): Backdrop {
 @Composable
 internal fun WallpaperBackdrop(content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val tokens = LocalTokens.current
     val choice = currentBackdrop()
     val bitmap by produceState<Bitmap?>(null, choice) {
         value = withContext(Dispatchers.IO) { context.decode(choice) }
@@ -85,17 +83,6 @@ internal fun WallpaperBackdrop(content: @Composable () -> Unit) {
         bitmap?.let {
             Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        tokens.background.copy(alpha = tokens.wallpaperEdgeAlpha),
-                        tokens.background.copy(alpha = tokens.wallpaperCenterAlpha),
-                        tokens.background.copy(alpha = tokens.wallpaperEdgeAlpha)
-                    )
-                )
-            )
-        )
         content()
     }
 }
