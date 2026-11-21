@@ -246,28 +246,25 @@ internal fun PinnedDock(
             val rowHeight = maxOf(tokens.touch, iconSize)
             val padding = tokens.dockInnerPadding
             val singleTileWidth = rowHeight + padding * 2
-            val gap = tokens.dockIconGap
             val cell = if (apps.size == 1) rowHeight else {
                 // The end cells contribute half their spare width to the dock inset.
-                val fit = (maxWidth - singleTileWidth) / (apps.size - 1) - gap
+                val fit = (maxWidth - singleTileWidth) / (apps.size - 1)
                 minOf(tokens.dockCellWidth, singleTileWidth, fit).coerceAtLeast(rowHeight)
             }
             val horizontalPadding = padding - (cell - rowHeight) / 2
-            val scroll = maxWidth < cell * apps.size + gap * (apps.size - 1) + horizontalPadding * 2
+            val scroll = maxWidth < cell * apps.size + horizontalPadding * 2
             val iconInset = padding + (rowHeight - iconSize) / 2
             val dockRadius = iconSize * tokens.iconRasterCorner + iconInset
             val density = LocalDensity.current
             val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
-            val cellPixels = with(density) { cell.roundToPx().toFloat() }
-            val step = cellPixels + with(density) { gap.roundToPx() }
-            val rowWidth = step * (apps.size - 1) + cellPixels
+            val step = with(density) { cell.roundToPx().toFloat() }
             val sidePad = with(density) { horizontalPadding.toPx() }
             val halfHeight = with(density) { (rowHeight / 2 + padding).toPx() }
             fun destination(index: Int) = (index + (offset.x * direction / step).roundToInt()).coerceIn(components.indices)
             fun outside(index: Int): Boolean {
-                val center = index * step + cellPixels / 2 + offset.x * direction
+                val center = (index + 0.5f) * step + offset.x * direction
                 return kotlin.math.abs(offset.y) > halfHeight ||
-                    center < -sidePad || center > rowWidth + sidePad
+                    center < -sidePad || center > step * components.size + sidePad
             }
             Box {
                 Surface(
@@ -279,8 +276,7 @@ internal fun PinnedDock(
                 ) {}
                 Row(
                     Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
-                        .padding(horizontal = horizontalPadding, vertical = padding),
-                    horizontalArrangement = Arrangement.spacedBy(gap)
+                        .padding(horizontal = horizontalPadding, vertical = padding)
                 ) {
                     apps.forEachIndexed { index, app ->
                         val component = app.componentName
