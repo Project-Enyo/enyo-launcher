@@ -75,6 +75,7 @@ private fun currentBackdrop(): Backdrop {
 @Composable
 internal fun WallpaperBackdrop(content: @Composable () -> Unit) {
     val context = LocalContext.current
+    val tint = LocalTokens.current.wallpaperTint
     val choice = currentBackdrop()
     val bitmap by produceState<Bitmap?>(null, choice) {
         value = withContext(Dispatchers.IO) { context.decode(choice) }
@@ -83,6 +84,7 @@ internal fun WallpaperBackdrop(content: @Composable () -> Unit) {
         bitmap?.let {
             Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
+        Box(Modifier.matchParentSize().background(tint))
         content()
     }
 }
