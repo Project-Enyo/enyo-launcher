@@ -151,7 +151,7 @@ private fun renderTodayWidget(
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
                 views.setOnClickPendingIntent(R.id.widget_icon, open)
-                views.setOnClickPendingIntent(R.id.widget_content, open)
+                views.setOnClickPendingIntent(R.id.widget_content, null)
             }
         }
     }
