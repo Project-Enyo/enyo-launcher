@@ -6,17 +6,18 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.SystemClock
 import android.os.PowerManager
+import android.os.Process
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +26,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -283,18 +283,13 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val media = state.media
-    val packageName = media?.packageName
-    val launchIntent = remember(context, packageName) {
-        packageName?.let { runCatching { context.packageManager.getLaunchIntentForPackage(it) }.getOrNull() }
-    }
-    val open = when {
+    val open: (() -> Unit)? = when {
         !state.mediaAllowed -> {
             { context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); Unit }
         }
-        media?.sessionActivity != null || launchIntent != null -> {
+        media != null -> {
             {
-                val sent = media?.sessionActivity?.let { runCatching { it.send() }.isSuccess } == true
-                if (!sent && (launchIntent == null || !context.launchSafely(launchIntent))) {
+                if (!context.openMediaPlayer(media)) {
                     Toast.makeText(context, R.string.action_unavailable, Toast.LENGTH_SHORT).show()
                 }
             }
@@ -338,7 +333,7 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                         horizontalArrangement = Arrangement.spacedBy(tokens.gap),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        MediaCover(media, Modifier.size(cover), open)
+                        MediaCover(media, Modifier.size(cover), open, actionLabel)
                         Column(Modifier.weight(1f)) {
                             if (!compact) Text(
                                 stringResource(R.string.now_playing), style = tokens.label,
@@ -367,13 +362,31 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
     }
 }
 
+private fun Context.openMediaPlayer(media: MediaSnapshot): Boolean {
+    val user = Process.myUserHandle()
+    val launcher = getSystemService(LauncherApps::class.java)
+    val launched = runCatching {
+        val activity = launcher.getActivityList(media.packageName, user).firstOrNull { it.user == user }
+        if (activity == null) false else {
+            launcher.startMainActivity(activity.componentName, user, null, null)
+            true
+        }
+    }.getOrDefault(false)
+    if (launched) return true
+
+    val intent = runCatching { packageManager.getLaunchIntentForPackage(media.packageName) }.getOrNull()
+    if (intent != null && launchSafely(intent)) return true
+    return media.sessionActivity?.let { runCatching { it.send() }.isSuccess } == true
+}
+
 @Composable
-private fun MediaCover(media: MediaSnapshot?, modifier: Modifier, open: (() -> Unit)? = null) {
+private fun MediaCover(
+    media: MediaSnapshot?, modifier: Modifier, open: (() -> Unit)? = null, openLabel: String? = null
+) {
     val tokens = LocalTokens.current
-    val openPlayer by rememberUpdatedState(open)
-    val tapArtwork = if (open == null) Modifier else Modifier.pointerInput(Unit) {
-        detectTapGestures { openPlayer?.invoke() }
-    }
+    val tapArtwork = if (open == null) Modifier else Modifier.clickable(
+        interactionSource = null, indication = null, role = Role.Button, onClickLabel = openLabel, onClick = open
+    )
     Box(
         modifier.clip(RoundedCornerShape(tokens.artworkRadius)).background(tokens.accentContainer).then(tapArtwork),
         contentAlignment = Alignment.Center
