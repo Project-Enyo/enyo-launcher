@@ -59,6 +59,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val recentSquareAspect = 0.9f
     val recentRotation = 3f
     val recentOffset = 0.16f
+    val recentDismissFraction = 0.23f
     val elevation = listOf(1.dp, dimension(3, 2, 2).dp, dimension(8, 6, 5).dp)
 
     val state = TextStyle(fontSize = dimension(18, 17, 16).sp, fontWeight = FontWeight.SemiBold, color = ink)

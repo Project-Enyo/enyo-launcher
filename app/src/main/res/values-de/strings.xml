@@ -83,4 +83,15 @@
     <string name="cards_capture_service">Enyo Kartenvorschau</string>
     <string name="cards_capture_description">Erlaubt Enyo, beim Öffnen einer App über Enyo ein lokales Vorschaubild zu speichern. Geschützte Fenster können nicht erfasst werden.</string>
     <string name="battery_discovery">Wenn Aktualisierungen nach dem Ruhezustand verspätet erscheinen, kannst du Enyo in den Android Akkueinstellungen die Hintergrundnutzung erlauben.</string>
+    <string name="cards_stack_with">Stapeln mit</string>
+    <string name="cards_stack_action">%1$s %2$s</string>
+    <string name="cards_stack">Kartenstapel</string>
+    <string name="cards_unstack">Aus Stapel holen</string>
+    <string name="cards_dismiss">Karte entfernen</string>
+    <string name="older_cards">Ältere Karten</string>
+    <string name="older_cards_back">Neuere Karten</string>
+    <plurals name="cards_stack_count">
+        <item quantity="one">%d Karte</item>
+        <item quantity="other">%d Karten</item>
+    </plurals>
 </resources>

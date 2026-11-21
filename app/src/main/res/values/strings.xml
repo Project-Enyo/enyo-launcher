@@ -83,4 +83,15 @@
     <string name="cards_capture_service">Enyo card previews</string>
     <string name="cards_capture_description">Allows Enyo to save a local thumbnail when you open an app through Enyo. Secure windows cannot be captured.</string>
     <string name="battery_discovery">If your device delays updates after sleep, consider allowing Enyo to run in the background in Android battery settings.</string>
+    <string name="cards_stack_with">Stack with</string>
+    <string name="cards_stack_action">%1$s %2$s</string>
+    <string name="cards_stack">Card stack</string>
+    <string name="cards_unstack">Unstack</string>
+    <string name="cards_dismiss">Remove card</string>
+    <string name="older_cards">Older cards</string>
+    <string name="older_cards_back">Newer cards</string>
+    <plurals name="cards_stack_count">
+        <item quantity="one">%d card</item>
+        <item quantity="other">%d cards</item>
+    </plurals>
 </resources>

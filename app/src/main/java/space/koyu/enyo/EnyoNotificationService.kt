@@ -18,7 +18,7 @@ class EnyoNotificationService : NotificationListenerService() {
 
     private fun refresh() {
         entries.value = runCatching {
-            activeNotifications.orEmpty().filter { it.user == Process.myUserHandle() && !it.isKeepaliveNotice() }
+            activeNotifications.orEmpty().filter { it.user == Process.myUserHandle() && !it.isBackgroundNotice() }
         }.getOrDefault(emptyList())
     }
 
@@ -27,7 +27,11 @@ class EnyoNotificationService : NotificationListenerService() {
     }
 }
 
-private fun StatusBarNotification.isKeepaliveNotice(): Boolean {
+private fun StatusBarNotification.isBackgroundNotice(): Boolean {
+    if (packageName == "moe.zhs.caffeine" ||
+        notification.category == Notification.CATEGORY_TRANSPORT ||
+        notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
+    ) return true
     val flags = notification.flags
     val persistent = flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR) != 0
     if (!persistent) return false

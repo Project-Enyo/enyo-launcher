@@ -13,6 +13,11 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -23,7 +28,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,13 +54,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal data class RecentEntry(
     val component: ComponentName,
     val aspect: Float? = null,
     val version: Long = 0,
-    val denied: Boolean = false
+    val denied: Boolean = false,
+    val stack: String? = null
 )
 
 internal data class CaptureRequest(
@@ -125,7 +142,8 @@ internal class RecentStore private constructor(context: Context) {
                             .getOrDefault(false)
                         if (written && partial.renameTo(target)) {
                             val existing = entries.value.ifEmpty(::readEntries)
-                            val updated = RecentEntry(request.component, aspect, SystemClock.elapsedRealtime())
+                            val updated = (existing.find { it.component == request.component } ?: RecentEntry(request.component))
+                                .copy(aspect = aspect, version = SystemClock.elapsedRealtime())
                             persist(existing.withCapture(updated))
                         } else partial.delete()
                     }
@@ -146,6 +164,48 @@ internal class RecentStore private constructor(context: Context) {
     fun bitmap(entry: RecentEntry): Bitmap? =
         if (entry.aspect == null) null else runCatching { BitmapFactory.decodeFile(file(entry.component).path) }.getOrNull()
 
+    fun group(dragged: ComponentName, destination: ComponentName) {
+        if (dragged == destination) return
+        scope.launch {
+            synchronized(lock) {
+                val current = entries.value
+                val from = current.find { it.component == dragged } ?: return@synchronized
+                val into = current.find { it.component == destination } ?: return@synchronized
+                if (from.stack != null && from.stack == into.stack) return@synchronized
+                val stack = into.stack ?: UUID.randomUUID().toString()
+                persist(current.map {
+                    if (it.component == from.component || it.component == into.component ||
+                        (from.stack != null && from.stack == it.stack)
+                    ) it.copy(stack = stack) else it
+                }.withoutSingleStacks())
+            }
+        }
+    }
+
+    fun detach(component: ComponentName) {
+        scope.launch {
+            synchronized(lock) {
+                persist(entries.value.map { if (it.component == component) it.copy(stack = null) else it }
+                    .withoutSingleStacks())
+            }
+        }
+    }
+
+    fun dismiss(component: ComponentName) {
+        scope.launch {
+            synchronized(lock) {
+                if (capture?.component == component) capture = null
+                file(component).delete()
+                persist(entries.value.filterNot { it.component == component }.withoutSingleStacks())
+            }
+        }
+    }
+
+    private fun List<RecentEntry>.withoutSingleStacks(): List<RecentEntry> {
+        val grouped = groupBy { it.stack }
+        return map { if (it.stack != null && grouped[it.stack]?.size == 1) it.copy(stack = null) else it }
+    }
+
     private fun file(component: ComponentName): File {
         val hash = MessageDigest.getInstance("SHA-256").digest(component.flattenToString().toByteArray())
         return File(directory, hash.joinToString("") { "%02x".format(it) } + ".png")
@@ -158,7 +218,7 @@ internal class RecentStore private constructor(context: Context) {
                 val row = saved.getJSONObject(index)
                 val component = ComponentName.unflattenFromString(row.getString("component")) ?: continue
                 add(RecentEntry(component, row.optDouble("aspect").takeIf { it.isFinite() && it > 0 }?.toFloat(),
-                    row.optLong("version"), row.optBoolean("denied")))
+                    row.optLong("version"), row.optBoolean("denied"), row.optString("stack").ifBlank { null }))
             }
         }
     }.getOrDefault(emptyList())
@@ -172,6 +232,7 @@ internal class RecentStore private constructor(context: Context) {
                 put("aspect", item.aspect)
                 put("version", item.version)
                 put("denied", item.denied)
+                put("stack", item.stack)
             })
         }
         runCatching {
@@ -192,14 +253,16 @@ internal class RecentStore private constructor(context: Context) {
     }
 }
 
+private data class BoardCard(val entry: RecentEntry, val app: LauncherActivityInfo)
+
 @Composable
 internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit, first: FocusRequester) {
     val context = LocalContext.current
     val store = remember(context) { RecentStore.get(context) }
     val entries by store.entries.collectAsState()
-    val recent = entries.mapNotNull { entry ->
-        apps.find { app -> app.componentName == entry.component }?.let { entry to it }
-    }
+    val groups = entries.mapNotNull { entry ->
+        apps.find { app -> app.componentName == entry.component }?.let { BoardCard(entry, it) }
+    }.groupBy { it.entry.stack ?: it.entry.component.flattenToString() }.values.toList()
     val tokens = LocalTokens.current
     val foreground = foregroundCycle()
     val enabled = remember(context, foreground) {
@@ -209,70 +272,219 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 it.resolveInfo.serviceInfo.name == EnyoCaptureService::class.java.name
         }
     }
+    var start by remember { mutableIntStateOf(0) }
+    var openedStack by remember { mutableStateOf<String?>(null) }
+    val firstIndex = start.coerceIn(0, (groups.size - 1).coerceAtLeast(0))
+    val visible = groups.drop(firstIndex).take(tokens.recentVisible)
+    val bounds = remember { mutableMapOf<ComponentName, Rect>() }
     Column(Modifier.fillMaxSize().padding(tokens.margin)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val density = LocalDensity.current
             val cardWidth = minOf(maxWidth * tokens.recentWidthFraction, maxHeight * tokens.recentHeightFraction)
-            val measured = with(density) { cardWidth.roundToPx() }
-            SideEffect { store.setTargetWidth(measured) }
-            if (recent.isEmpty()) Text(stringResource(R.string.cards_empty), style = tokens.secondary)
+            SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
+            if (visible.isEmpty()) Text(stringResource(R.string.cards_empty), style = tokens.secondary)
             else {
-                val visible = recent.take(tokens.recentVisible)
-                val frontAspect = visible.first().first.aspect ?: tokens.recentDefaultAspect
+                val frontAspect = visible.first().first().entry.aspect ?: tokens.recentDefaultAspect
                 val wide = ((frontAspect - tokens.recentTallAspect) /
                     (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
-                visible.asReversed().forEachIndexed { index, (entry, app) ->
+                visible.asReversed().forEachIndexed { index, cluster ->
+                    val card = cluster.first()
+                    val entry = card.entry
                     val distance = visible.lastIndex - index
                     val direction = if (distance % 2 == 0) -1f else 1f
                     val rotation = (tokens.recentRotation + wide * tokens.recentRotation) * distance * direction
-                    val offset = cardWidth * (tokens.recentOffset - wide * tokens.recentOffset / 2)
+                    val fan = cardWidth * (tokens.recentOffset - wide * tokens.recentOffset / 2)
                     val ratio = entry.aspect ?: tokens.recentDefaultAspect
                     val width = minOf(cardWidth, maxHeight * ratio * tokens.recentHeightUse)
-                    val artwork by produceState<Bitmap?>(null, entry) {
-                        value = withContext(Dispatchers.IO) { store.bitmap(entry) }
-                    }
-                    Surface(
-                        onClick = { open(app) },
-                        modifier = Modifier.offset(x = offset * distance * direction, y = tokens.gap * distance)
-                            .width(width).aspectRatio(ratio)
-                            .then(if (distance == 0) Modifier.focusRequester(first) else Modifier)
-                            .graphicsLayer { rotationZ = rotation }
-                            .cardInput(activate = { open(app) }),
-                        shape = RoundedCornerShape(tokens.radius),
-                        color = tokens.surface,
-                        shadowElevation = tokens.elevation[2]
-                    ) {
-                        val image = artwork
-                        if (image != null) {
-                            Image(image.asImageBitmap(), app.label.toString(), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-                        } else Box(Modifier.padding(tokens.padding), contentAlignment = Alignment.Center) {
-                            val iconSize = with(density) { tokens.touch.roundToPx() }
-                            val icon by produceState<Bitmap?>(null, app, iconSize) {
-                                value = withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        val drawable = app.getIcon(density.density.times(160).roundToInt())
-                                        Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888).also {
-                                            drawable.setBounds(0, 0, iconSize, iconSize)
-                                            drawable.draw(Canvas(it))
-                                        }
-                                    }.getOrNull()
-                                }
-                            }
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(tokens.gap)
-                            ) {
-                                icon?.let { Image(it.asImageBitmap(), null, Modifier.size(tokens.touch)) }
-                                Text(app.label.toString(), style = tokens.state, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
+                    key(entry.component) {
+                        val activate = {
+                            if (cluster.size > 1) openedStack = entry.stack else open(card.app)
                         }
+                        val targets = visible.map { it.first() }.filter { it.entry.component != entry.component }
+                        val groupLabel = stringResource(R.string.cards_stack_with)
+                        val dismissLabel = stringResource(R.string.cards_dismiss)
+                        val actions = targets.map { target ->
+                            CustomAccessibilityAction(
+                                context.getString(R.string.cards_stack_action, groupLabel, target.app.label)
+                            ) {
+                                store.group(entry.component, target.entry.component)
+                                true
+                            }
+                        } + CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true }
+                        CardTile(
+                            card,
+                            store,
+                            cluster.size,
+                            modifier = Modifier
+                                .offset(x = fan * distance * direction, y = tokens.gap * distance)
+                                .width(width).aspectRatio(ratio)
+                                .then(if (distance == 0) Modifier.focusRequester(first) else Modifier),
+                            rotation = rotation,
+                            activate = activate,
+                            actions = actions,
+                            bounds = { bounds[entry.component] = it },
+                            drop = { point ->
+                                targets.firstOrNull { bounds[it.entry.component]?.contains(point) == true }?.let {
+                                    store.group(entry.component, it.entry.component)
+                                }
+                            },
+                            dismiss = { store.dismiss(entry.component) }
+                        )
                     }
+                }
+            }
+        }
+        if (groups.size > tokens.recentVisible) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(enabled = firstIndex > 0, onClick = { start = firstIndex - 1 }) {
+                    Text(stringResource(R.string.older_cards_back), color = tokens.ink)
+                }
+                TextButton(enabled = firstIndex + tokens.recentVisible < groups.size, onClick = { start = firstIndex + 1 }) {
+                    Text(stringResource(R.string.older_cards), color = tokens.ink)
                 }
             }
         }
         if (Build.VERSION.SDK_INT >= 34 && !enabled) {
             TextButton(onClick = { context.launchSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                 Text(stringResource(R.string.cards_capture_permission), color = tokens.ink)
+            }
+        }
+    }
+    val expanded = groups.firstOrNull { openedStack != null && it.first().entry.stack == openedStack }
+    if (expanded != null) AlertDialog(
+        onDismissRequest = { openedStack = null },
+        title = { Text(stringResource(R.string.cards_stack)) },
+        text = {
+            LazyColumn {
+                items(expanded, key = { it.entry.component.flattenToString() }) { row ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { openedStack = null; open(row.app) }, modifier = Modifier.weight(1f)) {
+                            Text(row.app.label.toString())
+                        }
+                        TextButton(onClick = { store.detach(row.entry.component) }) {
+                            Text(stringResource(R.string.cards_unstack))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { openedStack = null }) { Text(stringResource(R.string.back)) }
+        }
+    )
+}
+
+@Composable
+private fun CardTile(
+    card: BoardCard,
+    store: RecentStore,
+    count: Int,
+    modifier: Modifier,
+    rotation: Float,
+    activate: () -> Unit,
+    actions: List<CustomAccessibilityAction>,
+    bounds: (Rect) -> Unit,
+    drop: (Offset) -> Unit,
+    dismiss: () -> Unit
+) {
+    val tokens = LocalTokens.current
+    val density = LocalDensity.current
+    val entry = card.entry
+    val illustration by produceState<Bitmap?>(null, entry) {
+        value = withContext(Dispatchers.IO) { store.bitmap(entry) }
+    }
+    var displacement by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    var start by remember { mutableStateOf(Offset.Zero) }
+    var position by remember { mutableStateOf(Rect.Zero) }
+    val dropCard by rememberUpdatedState(drop)
+    val removeCard by rememberUpdatedState(dismiss)
+    val iconSize = with(density) { tokens.touch.roundToPx() }
+    val icon by produceState<Bitmap?>(null, card.app, iconSize) {
+        if (entry.aspect == null) value = withContext(Dispatchers.IO) {
+            runCatching {
+                val drawable = card.app.getIcon(density.density.times(160).roundToInt())
+                Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888).also {
+                    drawable.setBounds(0, 0, iconSize, iconSize)
+                    drawable.draw(Canvas(it))
+                }
+            }.getOrNull()
+        }
+    }
+    Surface(
+        onClick = activate,
+        modifier = modifier
+            .zIndex(if (dragging) 1f else 0f)
+            .onGloballyPositioned {
+                if (!dragging) {
+                    position = it.boundsInRoot()
+                    bounds(position)
+                }
+            }
+            .pointerInput(entry.component) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        start = position.topLeft + offset
+                        dragging = true
+                    },
+                    onDragEnd = {
+                        dropCard(start + displacement)
+                        dragging = false
+                        displacement = Offset.Zero
+                    },
+                    onDragCancel = { dragging = false; displacement = Offset.Zero }
+                ) { change, delta ->
+                    change.consume()
+                    displacement += delta
+                }
+            }
+            .pointerInput(entry.component) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = {
+                        if (displacement.y < -size.height * tokens.recentDismissFraction) removeCard()
+                        dragging = false
+                        displacement = Offset.Zero
+                    },
+                    onDragCancel = { dragging = false; displacement = Offset.Zero }
+                ) { change, delta ->
+                    change.consume()
+                    displacement += Offset(0f, delta)
+                }
+            }
+            .graphicsLayer {
+                rotationZ = if (dragging) 0f else rotation
+                translationX = displacement.x
+                translationY = displacement.y
+                if (dragging && displacement.y < 0f && displacement.x == 0f) {
+                    alpha = (1f - abs(displacement.y) / size.height).coerceAtLeast(tokens.hoverOpacity)
+                }
+            }
+            .cardInput(activate = activate)
+            .semantics { customActions = actions },
+        shape = RoundedCornerShape(tokens.radius),
+        color = tokens.surface,
+        shadowElevation = tokens.elevation[2]
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            val image = illustration
+            if (image != null) {
+                Image(image.asImageBitmap(), card.app.label.toString(), Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+            } else Column(
+                modifier = Modifier.padding(tokens.padding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                icon?.let { Image(it.asImageBitmap(), null, Modifier.size(tokens.touch)) }
+                Text(card.app.label.toString(), style = tokens.state, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            if (count > 1) Surface(
+                modifier = Modifier.align(Alignment.BottomStart).padding(tokens.gap),
+                shape = RoundedCornerShape(tokens.radius),
+                color = tokens.surface
+            ) {
+                val countLabel = androidx.compose.ui.res.pluralStringResource(R.plurals.cards_stack_count, count, count)
+                Text(countLabel, Modifier.padding(tokens.padding), style = tokens.secondary)
             }
         }
     }
