@@ -53,7 +53,7 @@ import kotlin.math.abs
 private val widgetWidths = stringPreferencesKey("today_wide")
 
 @Composable
-internal fun TodayBoard(foreground: Int, visible: Boolean) {
+internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
     val board = LocalWidgetBoard.current
@@ -94,6 +94,9 @@ internal fun TodayBoard(foreground: Int, visible: Boolean) {
             nextTodayEvent(context, now.time)
         }
     }
+    val hasWeather = TodayWidget.Weather !in board.migrated ||
+        board.placements.any { it.kind == TodayWidget.Weather || board.info(it.id)?.provider == TodayWidget.Weather.component(context) }
+    val weather = rememberWeatherWidget(foreground, visible && (hasWeather || weatherTap > 0), weatherTap)
     val battery = rememberBattery()
     val connection = rememberConnection()
 
@@ -140,7 +143,6 @@ internal fun TodayBoard(foreground: Int, visible: Boolean) {
                     val label = stringResource(widget.title)
                     if (placement != null) {
                         val info = board.info(placement.id)
-                        if (widget == TodayWidget.Weather) WeatherWidget(foreground, visible, render = false)
                         Column {
                             HostedWidget(board, placement, info, tokens.todayWidgetHeight)
                             if (editing) {
@@ -168,7 +170,7 @@ internal fun TodayBoard(foreground: Int, visible: Boolean) {
                                         Text(label, style = tokens.label)
                                         Text(event ?: stringResource(R.string.calendar_empty), style = tokens.state, maxLines = 2)
                                     }
-                                    TodayWidget.Weather -> WeatherWidget(foreground, visible)
+                                    TodayWidget.Weather -> WeatherWidget(weather)
                                     TodayWidget.Battery -> {
                                         Row(verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(tokens.padding)) {

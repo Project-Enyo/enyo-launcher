@@ -9,24 +9,14 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
-import android.net.Uri
-import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.SystemClock
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -87,26 +77,23 @@ internal data class WeatherReading(
 @Volatile internal var latestWeatherStatus = R.string.weather_loading
     private set
 
-class WeatherActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
-                val tokens = Tokens(isSystemInDarkTheme(), resolveCardSize(maxWidth, maxHeight))
-                MaterialTheme {
-                    CompositionLocalProvider(LocalTokens provides tokens) {
-                        Surface(color = tokens.background, modifier = Modifier.fillMaxSize()) {
-                            Column(Modifier.padding(tokens.margin), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                                SettingsHeading(stringResource(R.string.widget_weather), ::finish)
-                                WeatherWidget(foregroundCycle(), visible = true, showPrompt = true)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+private const val weatherAction = "weather_widget_refresh"
+private const val weatherTokenExtra = "weather_widget_token"
+
+@Synchronized
+private fun Context.weatherWidgetToken(): String {
+    val preferences = getSharedPreferences("weather_widget_action", Context.MODE_PRIVATE)
+    return preferences.getString(weatherTokenExtra, null) ?: java.util.UUID.randomUUID().toString().also {
+        preferences.edit().putString(weatherTokenExtra, it).apply()
     }
 }
+
+internal fun Context.weatherWidgetIntent() = Intent(this, EnyoActivity::class.java)
+    .setAction(weatherAction)
+    .putExtra(weatherTokenExtra, weatherWidgetToken())
+
+internal fun Context.isWeatherWidgetIntent(intent: Intent): Boolean =
+    intent.action == weatherAction && intent.getStringExtra(weatherTokenExtra) == weatherWidgetToken()
 
 private class WeatherState : ViewModel() {
     var reading by mutableStateOf<WeatherReading?>(null)
@@ -115,6 +102,13 @@ private class WeatherState : ViewModel() {
         private set
     private var access = WeatherAccess.None
     private var lastRefresh = 0L
+    private var lastWidgetTap = 0L
+
+    fun consumeWidgetTap(tap: Long): Boolean {
+        if (tap <= lastWidgetTap) return false
+        lastWidgetTap = tap
+        return true
+    }
 
     suspend fun observe(context: Context, permission: WeatherAccess, refreshAt: Long) {
         if (access != permission) {
@@ -154,10 +148,16 @@ private class WeatherState : ViewModel() {
     }
 }
 
+internal data class WeatherWidgetState(
+    val allowed: Boolean,
+    val reading: WeatherReading?,
+    val status: Int,
+    val activate: () -> Unit
+)
+
 @Composable
-internal fun WeatherWidget(foreground: Int, visible: Boolean, render: Boolean = true, showPrompt: Boolean = false) {
+internal fun rememberWeatherWidget(foreground: Int, visible: Boolean, widgetTap: Long): WeatherWidgetState {
     val context = LocalContext.current
-    val tokens = LocalTokens.current
     val model = viewModel<WeatherState> { WeatherState() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     var locationRevision by remember { mutableIntStateOf(0) }
@@ -172,23 +172,38 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean, render: Boolean = 
     }
     var permissionResult by remember { mutableIntStateOf(0) }
     var refreshAt by remember { mutableLongStateOf(0) }
-    var explained by rememberSaveable { mutableStateOf(showPrompt && context.weatherAccess() == WeatherAccess.None) }
-    var previouslyRequested by rememberSaveable { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionResult++
     }
     val access = remember(context, foreground, permissionResult, lifecycle) { context.weatherAccess() }
     val allowed = access != WeatherAccess.None
+    val resumed = visible && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    fun activate() {
+        if (context.weatherAccess() == WeatherAccess.None) request.launch(weatherPermissions)
+        else refreshAt = SystemClock.elapsedRealtime()
+    }
+    LaunchedEffect(widgetTap, resumed) {
+        if (resumed && model.consumeWidgetTap(widgetTap)) activate()
+    }
+    LaunchedEffect(resumed) {
+        if (resumed) publishTodayWidget(context, TodayWidget.Weather)
+    }
     LaunchedEffect(visible, lifecycle, access, refreshAt, locationRevision) {
         if (!allowed || (visible && lifecycle.isAtLeast(Lifecycle.State.RESUMED))) {
             model.observe(context.applicationContext, access, refreshAt)
         }
     }
-    if (!render) return
+    return WeatherWidgetState(allowed, model.reading, model.status, ::activate)
+}
+
+@Composable
+internal fun WeatherWidget(state: WeatherWidgetState) {
+    val tokens = LocalTokens.current
+    val allowed = state.allowed
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(stringResource(R.string.widget_weather), style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val reading = model.reading
+            val reading = state.reading
             if (allowed && reading != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
                     EnyoGlyph(reading.conditions.glyph, color = tokens.accent)
@@ -200,36 +215,16 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean, render: Boolean = 
                 )
             } else {
                 Text(
-                    stringResource(if (allowed) model.status else R.string.weather_location_prompt),
+                    stringResource(if (allowed) state.status else R.string.weather_location_prompt),
                     style = tokens.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis
                 )
             }
         }
         val iconLabel = stringResource(if (allowed) R.string.weather_location_on else R.string.weather_location_off)
-        IconButton(onClick = {
-            if (!allowed) explained = true else refreshAt = SystemClock.elapsedRealtime()
-        }) {
+        IconButton(onClick = state.activate) {
             EnyoGlyph(if (allowed) Glyph.Location else Glyph.LocationOff, description = iconLabel,
                 color = if (allowed) tokens.accent else tokens.quiet)
         }
-    }
-    if (showPrompt && allowed && model.status == R.string.weather_network_unavailable) {
-        Text(stringResource(R.string.weather_network_help), style = tokens.secondary)
-        TextButton(onClick = {
-            context.launchSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
-        }) { Text(stringResource(R.string.app_info)) }
-    }
-    if (explained) EnyoSheet(stringResource(R.string.widget_weather), { explained = false }) {
-        Text(stringResource(R.string.weather_location_explanation), style = tokens.secondary)
-        TextButton(onClick = {
-            explained = false
-            previouslyRequested = true
-            request.launch(weatherPermissions)
-        }) { Text(stringResource(R.string.weather_allow_location)) }
-        if (previouslyRequested) TextButton(onClick = {
-            explained = false
-            context.launchSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
-        }) { Text(stringResource(R.string.app_info)) }
     }
 }
 

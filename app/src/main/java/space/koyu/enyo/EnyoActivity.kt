@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.icu.text.NumberFormat
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -61,6 +62,7 @@ class EnyoActivity : ComponentActivity() {
 
     private var launcherKeys: ((android.view.KeyEvent) -> Boolean)? = null
     private var homeSequence by mutableIntStateOf(0)
+    private var weatherTap by mutableLongStateOf(0)
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.action == android.view.KeyEvent.ACTION_DOWN && !event.isCtrlPressed &&
@@ -72,11 +74,13 @@ class EnyoActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) homeSequence++
+        if (isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
+        else if (intent.hasCategory(Intent.CATEGORY_HOME)) homeSequence++
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null && isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
         enableEdgeToEdge()
         setContent {
             val dark = isSystemInDarkTheme()
@@ -111,7 +115,7 @@ class EnyoActivity : ComponentActivity() {
                         LocalOriginalIcons provides (prefs?.get(originalIcons) == true),
                         LocalBrandIcons provides brandIcons
                     ) {
-                        LauncherScreen(::openInternetPanel, homeSequence) { launcherKeys = it }
+                        LauncherScreen(::openInternetPanel, homeSequence, weatherTap) { launcherKeys = it }
                     }
                 }
             }

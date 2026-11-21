@@ -159,7 +159,7 @@
     <string name="widget_weather">Wetter</string>
     <string name="weather_location_on">Standort erlaubt. Wetter aktualisieren</string>
     <string name="weather_location_off">Standort aus. Zugriff für Wetter erlauben</string>
-    <string name="weather_location_prompt">Tippe auf das Standortsymbol, um das lokale Wetter zu sehen.</string>
+    <string name="weather_location_prompt">Standort für Wetter von wttr.in erlauben.</string>
     <string name="weather_location_explanation">Enyo sendet deinen auf zwei Dezimalstellen gerundeten Standort an wttr.in, um das lokale Wetter abzurufen. Wenn keine Koordinaten verfügbar sind oder die Anfrage fehlschlägt, schätzt wttr.in deine Region anhand deiner IP Adresse.</string>
     <string name="weather_allow_location">Standort erlauben</string>
     <string name="weather_location_disabled">Aktiviere den Android Standort, um das Wetter abzurufen.</string>

@@ -80,6 +80,7 @@ internal fun foregroundCycle(): Int {
 internal fun LauncherScreen(
     openPanel: () -> Unit,
     homeSequence: Int,
+    weatherTap: Long,
     setTyping: (((KeyEvent) -> Boolean)?) -> Unit
 ) {
     val tokens = LocalTokens.current
@@ -158,6 +159,12 @@ internal fun LauncherScreen(
         if (homeSequence > 0) {
             surface = 0
             pager.scrollToPage(2)
+        }
+    }
+    LaunchedEffect(weatherTap) {
+        if (weatherTap > 0) {
+            surface = 0
+            pager.scrollToPage(0)
         }
     }
     val searchFocus = remember { FocusRequester() }
@@ -287,7 +294,7 @@ internal fun LauncherScreen(
                 userScrollEnabled = surface == 0 && searchPullFraction == 0f
             ) { page ->
                 when (page) {
-                    0 -> TodayBoard(foreground, pager.settledPage == 0 && surface == 0)
+                    0 -> TodayBoard(foreground, pager.settledPage == 0 && surface == 0, weatherTap)
                     1 -> AppsGrid(library, onAtTopChanged = { appsAtTop = it }, extra = {
                         AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
                             androidx.compose.material3.Surface(

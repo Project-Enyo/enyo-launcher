@@ -147,7 +147,7 @@ private fun renderTodayWidget(
                     detail(context.getString(if (reading.estimated) R.string.weather_estimated_conditions else reading.conditions.label))
                 }
                 val open = PendingIntent.getActivity(
-                    context, id, Intent(context, WeatherActivity::class.java),
+                    context, id, context.weatherWidgetIntent(),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
                 views.setOnClickPendingIntent(R.id.widget_icon, open)
