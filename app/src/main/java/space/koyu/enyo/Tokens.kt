@@ -67,7 +67,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val folderMaxHeight = 300.dp
     val dockHoldMillis = 500L
     val dockIconSize = 46.dp
-    val dockBottomSpace = 20.dp
+    val dockBottomSpace = 28.dp
+    val dockIconGap = 4.dp
     val dockInnerPadding = 7.dp
     val dockOpacity = 0.93f
     val dockBorderOpacity = 0.20f
