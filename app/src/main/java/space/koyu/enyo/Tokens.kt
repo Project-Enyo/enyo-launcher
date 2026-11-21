@@ -61,7 +61,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val toggleHeight = 26.dp
     val toggleInset = 4.dp
     val wallpaperThumbnail = 82.dp
-    val weatherWidgetHeight = dimension(144, 112, 108, 112).dp
+    val todayWidgetHeight = dimension(144, 112, 108, 112).dp
     val widgetBatteryWidth = dimension(114, 104, 92, 82).dp
     val widgetBatteryHeight = dimension(58, 52, 46, 40).dp
     val widgetResizeDistance = 48.dp

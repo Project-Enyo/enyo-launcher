@@ -11,7 +11,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
@@ -143,73 +142,76 @@ internal fun TodayBoard(foreground: Int, visible: Boolean) {
                         val info = board.info(placement.id)
                         if (widget == TodayWidget.Weather) WeatherWidget(foreground, visible, render = false)
                         Column {
-                            HostedWidget(board, placement, info, if (widget == TodayWidget.Weather) tokens.weatherWidgetHeight else tokens.cardHeight)
+                            HostedWidget(board, placement, info, tokens.todayWidgetHeight)
                             if (editing) {
                                 WidgetEditActions(
                                     remove = { board.remove(placement) },
                                     resizeWidth = if (columns > 1) ({ resizeToday(widget, !full) }) else null,
-                                wide = full
+                                    wide = full
                                 )
                             }
                         }
-                    } else Surface(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = tokens.cardHeight).animateContentSize(),
-                        color = tokens.surface,
-                        shape = RoundedCornerShape(tokens.radius),
-                        shadowElevation = tokens.elevation[1]
-                    ) {
-                        Column(Modifier.padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                            when (widget) {
-                                TodayWidget.Clock -> {
-                                    Text(DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(now), style = tokens.value)
-                                    Text(DateFormat.getDateInstance(DateFormat.FULL, locale).format(now), style = tokens.secondary)
-                                }
-                                TodayWidget.Calendar -> {
-                                    Text(label, style = tokens.label)
-                                    Text(event ?: stringResource(R.string.calendar_empty), style = tokens.state, maxLines = 2)
-                                }
-                                TodayWidget.Weather -> WeatherWidget(foreground, visible)
-                                TodayWidget.Battery -> {
-                                    Row(verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(tokens.padding)) {
-                                        if (full) BatteryGlyph(battery)
-                                        Column {
-                                            Text(label, style = tokens.label)
-                                            Text(battery?.let { NumberFormat.getPercentInstance(locale).format(it.level.toDouble()) }
-                                                ?: stringResource(R.string.torch_unavailable), style = tokens.value)
-                                            if (battery?.charging == true) Text(stringResource(R.string.widget_charging), style = tokens.secondary)
+                    } else Column {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().height(tokens.todayWidgetHeight),
+                            color = tokens.surface,
+                            shape = RoundedCornerShape(tokens.radius),
+                            shadowElevation = tokens.elevation[1]
+                        ) {
+                            Column(Modifier.fillMaxSize().padding(tokens.padding), verticalArrangement = Arrangement.Center) {
+                                when (widget) {
+                                    TodayWidget.Clock -> {
+                                        Text(DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(now), style = tokens.value)
+                                        Text(DateFormat.getDateInstance(DateFormat.FULL, locale).format(now), style = tokens.secondary)
+                                    }
+                                    TodayWidget.Calendar -> {
+                                        Text(label, style = tokens.label)
+                                        Text(event ?: stringResource(R.string.calendar_empty), style = tokens.state, maxLines = 2)
+                                    }
+                                    TodayWidget.Weather -> WeatherWidget(foreground, visible)
+                                    TodayWidget.Battery -> {
+                                        Row(verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(tokens.padding)) {
+                                            if (full) BatteryGlyph(battery)
+                                            Column {
+                                                Text(label, style = tokens.label)
+                                                Text(battery?.let { NumberFormat.getPercentInstance(locale).format(it.level.toDouble()) }
+                                                    ?: stringResource(R.string.torch_unavailable), style = tokens.value)
+                                                if (battery?.charging == true) Text(stringResource(R.string.widget_charging), style = tokens.secondary)
+                                            }
                                         }
                                     }
-                                }
-                                TodayWidget.Network -> {
-                                    Text(label, style = tokens.label)
-                                    Text(stringResource(connection), style = tokens.state)
+                                    TodayWidget.Network -> {
+                                        Text(label, style = tokens.label)
+                                        Text(stringResource(connection), style = tokens.state)
+                                    }
                                 }
                             }
-                            if (editing && columns > 1) {
-                                val change by rememberUpdatedState<(Boolean) -> Unit> { resizeToday(widget, it) }
-                                val action = stringResource(if (full) R.string.widget_shrink else R.string.widget_expand)
-                                Box(
-                                    Modifier.align(Alignment.End).heightIn(min = tokens.touch)
-                                        .appPress({ resizeToday(widget, !full) })
-                                        .pointerInput(widget) {
-                                            var distance = 0f
-                                            detectHorizontalDragGestures(
-                                                onDragStart = { distance = 0f },
-                                                onDragEnd = {
-                                                    if (abs(distance) >= tokens.widgetResizeDistance.toPx()) change(distance > 0)
-                                                }
-                                            ) { event, delta -> event.consume(); distance += delta }
-                                        },
-                                    contentAlignment = Alignment.CenterEnd
-                                ) { Text(action, style = tokens.secondary) }
-                            }
+                        }
+                        if (editing && columns > 1) {
+                            val change by rememberUpdatedState<(Boolean) -> Unit> { resizeToday(widget, it) }
+                            val action = stringResource(if (full) R.string.widget_shrink else R.string.widget_expand)
+                            Box(
+                                Modifier.align(Alignment.End).heightIn(min = tokens.touch)
+                                    .appPress({ resizeToday(widget, !full) })
+                                    .pointerInput(widget) {
+                                        var distance = 0f
+                                        detectHorizontalDragGestures(
+                                            onDragStart = { distance = 0f },
+                                            onDragEnd = {
+                                                if (abs(distance) >= tokens.widgetResizeDistance.toPx()) change(distance > 0)
+                                            }
+                                        ) { event, delta -> event.consume(); distance += delta }
+                                    },
+                                contentAlignment = Alignment.CenterEnd
+                            ) { Text(action, style = tokens.secondary) }
                         }
                     }
                 }
             }
             for (widget in board.placements.filter { it.kind == null }) {
                 val info = board.info(widget.id)
+                val isEnyoWidget = info != null && TodayWidget.entries.any { it.component(context) == info.provider }
                 val minimumWidth = info?.let {
                     if (it.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0 && it.minResizeWidth > 0)
                         it.minResizeWidth else it.minWidth
@@ -218,11 +220,11 @@ internal fun TodayBoard(foreground: Int, visible: Boolean) {
                 val rows = info?.widgetRows(rowHeight, availableHeight, widget.rows) ?: widget.rows
                 item(key = widget.id, span = { GridItemSpan(if (full) maxLineSpan else 1) }) {
                     Column {
-                        HostedWidget(board, widget, info, tokens.cardHeight * rows)
+                        HostedWidget(board, widget, info, if (isEnyoWidget) tokens.todayWidgetHeight else tokens.cardHeight * rows)
                         if (editing) {
                             val canChangeWidth = columns > 1 && minimumWidth <= cellWidthPx &&
                                 info != null && info.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0
-                            val canChangeHeight = info != null && info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0
+                            val canChangeHeight = !isEnyoWidget && info != null && info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0
                             WidgetEditActions(
                                 remove = { board.remove(widget) },
                                 resizeWidth = if (canChangeWidth) ({ board.resize(widget, columns = if (full) 1 else 2) }) else null,

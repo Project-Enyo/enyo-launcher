@@ -186,31 +186,32 @@ internal fun WeatherWidget(foreground: Int, visible: Boolean, render: Boolean = 
     }
     if (!render) return
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.widget_weather), Modifier.weight(1f), style = tokens.label, maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.widget_weather), style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val reading = model.reading
+            if (allowed && reading != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                    EnyoGlyph(reading.conditions.glyph, color = tokens.accent)
+                    Text(stringResource(R.string.weather_celsius, reading.celsius), style = tokens.value, maxLines = 1)
+                }
+                Text(
+                    if (reading.estimated) stringResource(R.string.weather_estimated_conditions) else stringResource(reading.conditions.label),
+                    style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+            } else {
+                Text(
+                    stringResource(if (allowed) model.status else R.string.weather_location_prompt),
+                    style = tokens.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         val iconLabel = stringResource(if (allowed) R.string.weather_location_on else R.string.weather_location_off)
         IconButton(onClick = {
-            when {
-                !allowed -> explained = true
-                else -> refreshAt = SystemClock.elapsedRealtime()
-            }
+            if (!allowed) explained = true else refreshAt = SystemClock.elapsedRealtime()
         }) {
             EnyoGlyph(if (allowed) Glyph.Location else Glyph.LocationOff, description = iconLabel,
                 color = if (allowed) tokens.accent else tokens.quiet)
         }
-    }
-    val reading = model.reading
-    if (allowed && reading != null) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-            EnyoGlyph(reading.conditions.glyph, Modifier.size(tokens.appGlyphSize), color = tokens.accent)
-            Text(stringResource(R.string.weather_celsius, reading.celsius), style = tokens.value, maxLines = 1)
-        }
-        Text(
-            if (reading.estimated) stringResource(R.string.weather_estimated_conditions) else stringResource(reading.conditions.label),
-            style = tokens.secondary
-        )
-    } else {
-        Text(stringResource(if (allowed) model.status else R.string.weather_location_prompt), style = tokens.secondary)
     }
     if (showPrompt && allowed && model.status == R.string.weather_network_unavailable) {
         Text(stringResource(R.string.weather_network_help), style = tokens.secondary)

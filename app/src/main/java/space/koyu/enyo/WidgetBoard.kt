@@ -266,7 +266,9 @@ internal fun WidgetPicker(board: WidgetBoard, close: () -> Unit) {
 internal fun HostedWidget(board: WidgetBoard, widget: WidgetPlacement, info: AppWidgetProviderInfo?, height: Dp) {
     val tokens = LocalTokens.current
     if (info == null) {
-        Text(stringResource(R.string.widget_unavailable), Modifier.padding(tokens.padding), style = tokens.secondary)
+        Box(Modifier.fillMaxWidth().height(height).padding(tokens.padding)) {
+            Text(stringResource(R.string.widget_unavailable), style = tokens.secondary)
+        }
         return
     }
     BoxWithConstraints(Modifier.fillMaxWidth().height(height)) {
