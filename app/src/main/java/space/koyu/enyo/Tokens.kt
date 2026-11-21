@@ -68,8 +68,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val dockHoldMillis = 500L
     val dockIconSize = 46.dp
     val dockBottomSpace = 20.dp
-    val dockInnerHorizontal = 12.dp
-    val dockInnerVertical = 7.dp
+    val dockInnerPadding = 7.dp
     val dockOpacity = 0.93f
     val sheetScrim = 0.36f
     val searchScrim = 0.78f

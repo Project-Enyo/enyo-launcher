@@ -242,14 +242,24 @@ internal fun PinnedDock(
                 .padding(top = tokens.gap, bottom = tokens.dockBottomSpace),
             contentAlignment = Alignment.Center
         ) {
-            val available = maxWidth - tokens.dockInnerHorizontal * 2
-            val cell = minOf(tokens.dockCellWidth, available / apps.size).coerceAtLeast(tokens.touch)
-            val scroll = available < cell * apps.size
+            val iconSize = tokens.dockIconSize
+            val rowHeight = maxOf(tokens.touch, iconSize)
+            val padding = tokens.dockInnerPadding
+            val singleTileWidth = rowHeight + padding * 2
+            val cell = if (apps.size == 1) rowHeight else {
+                // The end cells contribute half their spare width to the dock inset.
+                val fit = (maxWidth - singleTileWidth) / (apps.size - 1)
+                minOf(tokens.dockCellWidth, singleTileWidth, fit).coerceAtLeast(rowHeight)
+            }
+            val horizontalPadding = padding - (cell - rowHeight) / 2
+            val scroll = maxWidth < cell * apps.size + horizontalPadding * 2
+            val iconInset = padding + (rowHeight - iconSize) / 2
+            val dockRadius = iconSize * tokens.iconRasterCorner + iconInset
             val density = LocalDensity.current
             val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
             val step = with(density) { cell.roundToPx().toFloat() }
-            val sidePad = with(density) { tokens.dockInnerHorizontal.toPx() }
-            val halfHeight = with(density) { maxOf(tokens.touch, minOf(tokens.dockIconSize, cell)).toPx() / 2 + tokens.dockInnerVertical.toPx() }
+            val sidePad = with(density) { horizontalPadding.toPx() }
+            val halfHeight = with(density) { (rowHeight / 2 + padding).toPx() }
             fun destination(index: Int) = (index + (offset.x * direction / step).roundToInt()).coerceIn(components.indices)
             fun outside(index: Int): Boolean {
                 val center = (index + 0.5f) * step + offset.x * direction
@@ -262,18 +272,18 @@ internal fun PinnedDock(
                     color = tokens.surface.copy(alpha = tokens.dockOpacity),
                     border = BorderStroke(tokens.glyphStroke / 2, tokens.quiet.copy(alpha = tokens.hoverOpacity)),
                     shadowElevation = tokens.elevation.last(),
-                    shape = RoundedCornerShape(tokens.sheetRadius)
+                    shape = RoundedCornerShape(dockRadius)
                 ) {}
                 Row(
                     Modifier.then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
-                        .padding(horizontal = tokens.dockInnerHorizontal, vertical = tokens.dockInnerVertical)
+                        .padding(horizontal = horizontalPadding, vertical = padding)
                 ) {
                     apps.forEachIndexed { index, app ->
                         val component = app.componentName
                         key(component) {
                             val label = labels[component].orEmpty()
                             Box(
-                                Modifier.width(cell).heightIn(min = tokens.touch)
+                                Modifier.width(cell).height(rowHeight)
                                     .zIndex(if (dragged == component) 1f else 0f)
                                     .graphicsLayer {
                                         val from = components.indexOf(dragged)
@@ -328,7 +338,7 @@ internal fun PinnedDock(
                                         }
                                     },
                                 contentAlignment = Alignment.Center
-                            ) { AppIcon(app, displaySize = minOf(tokens.dockIconSize, cell), label = label) }
+                            ) { AppIcon(app, displaySize = iconSize, label = label) }
                         }
                     }
                 }
