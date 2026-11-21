@@ -340,27 +340,15 @@ private fun MediaCard(state: QuickSnapshot, modifier: Modifier, transport: (Long
                     ) {
                         MediaCover(media, Modifier.size(cover), open)
                         Column(Modifier.weight(1f)) {
-                            if (!compact) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        stringResource(R.string.now_playing), Modifier.weight(1f),
-                                        style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (open != null) {
-                                        Text(actionLabel, style = tokens.secondary, maxLines = 1)
-                                        EnyoGlyph(Glyph.Forward, Modifier.size(tokens.chevronSize), color = tokens.quiet)
-                                    }
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    media.title ?: stringResource(R.string.now_playing), Modifier.weight(1f),
-                                    style = tokens.mediaTitle, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis
-                                )
-                                if (compact && open != null) {
-                                    EnyoGlyph(Glyph.Forward, Modifier.size(tokens.chevronSize), color = tokens.quiet)
-                                }
-                            }
+                            if (!compact) Text(
+                                stringResource(R.string.now_playing), style = tokens.label,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                media.title ?: stringResource(R.string.now_playing),
+                                style = tokens.mediaTitle, maxLines = if (compact) 1 else 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             media.artist?.let {
                                 Text(it, style = tokens.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
