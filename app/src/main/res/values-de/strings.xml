@@ -160,4 +160,8 @@
     <string name="widget_shrink">Verkleinern</string>
     <string name="widget_edit">Widgets anpassen</string>
     <string name="widget_done">Fertig</string>
+    <string name="overlay_recommended">Für Benachrichtigungen empfohlen</string>
+    <string name="overlay_enable">Enyo Banner über anderen Apps anzeigen</string>
+    <string name="overlay_privacy">Mit deiner Erlaubnis kann Enyo kurze Banner über anderen Apps anzeigen, solange das Telefon entsperrt ist. Sie können Benachrichtigungstext enthalten. Android kann sie auf geschützten Bildschirmen ausblenden. Hier kannst du sie ausschalten.</string>
+    <string name="overlay_close">Banner schließen</string>
 </resources>

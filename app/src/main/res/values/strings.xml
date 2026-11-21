@@ -160,4 +160,8 @@
     <string name="widget_shrink">Make narrower</string>
     <string name="widget_edit">Resize widgets</string>
     <string name="widget_done">Done</string>
+    <string name="overlay_recommended">Recommended for notifications</string>
+    <string name="overlay_enable">Show Enyo banners over other apps</string>
+    <string name="overlay_privacy">With your permission, brief Enyo banners can appear over other apps while the phone is unlocked. They may show notification text. Android can hide them on protected screens. You can turn them off here.</string>
+    <string name="overlay_close">Close banner</string>
 </resources>

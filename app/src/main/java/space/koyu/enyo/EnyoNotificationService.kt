@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class EnyoNotificationService : NotificationListenerService() {
+    private var overlays: OverlayBanners? = null
+
     override fun onListenerConnected() {
         connected = this
+        if (overlays == null) overlays = OverlayBanners(this)
         refresh()
     }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -24,11 +27,15 @@ class EnyoNotificationService : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) = refresh()
     override fun onListenerDisconnected() {
         if (connected === this) connected = null
+        overlays?.close()
+        overlays = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
     }
     override fun onDestroy() {
         if (connected === this) connected = null
+        overlays?.close()
+        overlays = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
         super.onDestroy()

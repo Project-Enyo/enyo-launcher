@@ -82,6 +82,7 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
                 if (firstRun) null else close)
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
                 item { SettingsPanel(null) { Text(stringResource(R.string.setup_intro), style = tokens.secondary) } }
+                item { OverlayPreference(recommended = true) }
                 steps.forEach { step ->
                     item(key = step.title) {
                         SettingsPanel(null) {

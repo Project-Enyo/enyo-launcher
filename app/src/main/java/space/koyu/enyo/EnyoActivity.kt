@@ -33,6 +33,16 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 
 class EnyoActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        launcherVisible.value = true
+    }
+
+    override fun onStop() {
+        launcherVisible.value = false
+        super.onStop()
+    }
+
     private var launcherKeys: ((android.view.KeyEvent) -> Boolean)? = null
     private var homeSequence by mutableIntStateOf(0)
 
