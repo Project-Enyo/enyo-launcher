@@ -50,7 +50,7 @@ private enum class BrightnessLevel(val fraction: Float, val label: Int) {
 }
 
 @Composable
-internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
+internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: Boolean) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -187,6 +187,7 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
         )
     }
     QuickGrid(
+        ignoreIme = searchOverlay,
         held = { modifier -> MediaCard(state, modifier.then(order(5, if (state.hasTorch) 4 else 3, null)), model::transport) },
         rows = listOf(listOf(door, bluetooth), listOf(volume, brightnessCard)),
         strip = if (state.hasTorch) { modifier -> TorchCard(state, modifier.then(order(4, 3, 5)), model::toggleTorch) } else null

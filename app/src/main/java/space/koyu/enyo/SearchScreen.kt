@@ -17,6 +17,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,6 +35,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -109,6 +115,25 @@ private enum class Command { Call, Message, Calendar, Web, Settings }
 private data class Confirmation(val title: String, val intent: Intent)
 
 @Composable
+internal fun SearchOverlay(reveal: Float, active: Boolean, close: () -> Unit, content: @Composable () -> Unit) {
+    val tokens = LocalTokens.current
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.matchParentSize()
+            .drawBehind { drawRect(tokens.background.copy(alpha = tokens.searchScrim * reveal)) }
+            .then(if (active) Modifier.clickable(interactionSource = null, indication = null, onClick = close) else Modifier))
+        Box(
+            Modifier.fillMaxSize()
+                .then(if (active) Modifier else Modifier.clearAndSetSemantics {})
+                .graphicsLayer {
+                    val distance = tokens.searchPullDistance.toPx()
+                    translationY = -(1f - reveal) * distance
+                    alpha = reveal
+                }
+        ) { content() }
+    }
+}
+
+@Composable
 internal fun SearchScreen(
     query: TextFieldValue,
     onQuery: (TextFieldValue) -> Unit,
@@ -119,7 +144,8 @@ internal fun SearchScreen(
     packageCycle: Int,
     transit: List<LauncherActivityInfo>,
     openTransit: () -> Unit,
-    openMessages: () -> Unit
+    openMessages: () -> Unit,
+    active: Boolean
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
@@ -134,7 +160,7 @@ internal fun SearchScreen(
     val scope = rememberCoroutineScope()
     val history by remember(store) { store.data.map { it[searchHistory].orEmpty() } }.collectAsState("")
     val matchesPreferred = installed.find { it.assistant.appId == preferred }
-    val active = selected?.let { choice -> installed.find { it.assistant == choice } ?: matchesPreferred ?: installed.firstOrNull() }
+    val activeAssistant = selected?.let { choice -> installed.find { it.assistant == choice } ?: matchesPreferred ?: installed.firstOrNull() }
     fun record(term: String) {
         if (term.isBlank()) return
         scope.launch {
@@ -195,7 +221,18 @@ internal fun SearchScreen(
             }
         }
     }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(active) {
+        if (active) {
+            focus.requestFocus()
+            keyboard?.show()
+        } else if (query.text.isNotEmpty()) {
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }
+    }
+    DisposableEffect(active) { onDispose { if (active) keyboard?.hide() } }
 
     fun open(intent: Intent) {
         if (!context.launchSafely(intent)) status = R.string.action_unavailable
@@ -208,8 +245,8 @@ internal fun SearchScreen(
         )
     }
     Column(
-        Modifier.fillMaxSize().background(tokens.background).safeDrawingPadding().imePadding()
-            .padding(horizontal = tokens.margin),
+        Modifier.fillMaxSize().safeDrawingPadding().imePadding()
+            .padding(horizontal = tokens.margin).padding(top = tokens.gap),
         verticalArrangement = Arrangement.spacedBy(tokens.gap)
     ) {
         val backLabel = stringResource(R.string.back)
@@ -221,7 +258,7 @@ internal fun SearchScreen(
             horizontalArrangement = Arrangement.spacedBy(tokens.gap),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = back, modifier = Modifier.semantics { contentDescription = backLabel }) {
+            IconButton(onClick = back, enabled = active, modifier = Modifier.semantics { contentDescription = backLabel }) {
                 EnyoGlyph(Glyph.Back)
             }
             Surface(
@@ -232,6 +269,7 @@ internal fun SearchScreen(
                 BasicTextField(
                     value = query,
                     onValueChange = onQuery,
+                    enabled = active,
                     singleLine = true,
                     textStyle = tokens.state,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -258,7 +296,7 @@ internal fun SearchScreen(
                     }
                 )
             }
-            IconButton(onClick = preferences, modifier = Modifier.semantics { contentDescription = preferencesLabel }) {
+            IconButton(onClick = preferences, enabled = active, modifier = Modifier.semantics { contentDescription = preferencesLabel }) {
                 EnyoGlyph(Glyph.Settings)
             }
         }
@@ -324,12 +362,12 @@ internal fun SearchScreen(
                     }
                 }
             }
-            if (installed.isNotEmpty()) item {
+            if (active && installed.isNotEmpty()) item {
                 SearchButton(R.string.assistant_search) {
                     if (selected == null) selected = (matchesPreferred ?: installed.first()).assistant
                     else choosing = true
                 }
-                active?.let {
+                activeAssistant?.let {
                     if (installed.size > 1) SearchButton(R.string.change_assistant) { choosing = true }
                     val name = stringResource(it.assistant.label)
                     Text(stringResource(R.string.assistant_copy_explanation, name), style = tokens.secondary)

@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
@@ -296,7 +297,10 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
     }
     val bounds = remember { mutableMapOf<ComponentName, Rect>() }
     Column(Modifier.fillMaxSize().padding(tokens.margin)) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val collapse = if (selected != null) Modifier.clickable(
+            interactionSource = null, indication = null, onClick = { selected = null }
+        ) else Modifier
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().then(collapse), contentAlignment = Alignment.Center) {
             val density = LocalDensity.current
             val cardWidth = minOf(maxWidth * tokens.recentWidthFraction, maxHeight * tokens.recentHeightFraction)
             val availableHeight = maxHeight
@@ -368,7 +372,6 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                 CardTile(
                                     card,
                                     store,
-                                    if (depth == 0) cluster.size else 1,
                                     modifier = Modifier.offset(x = offsetX, y = offsetY)
                                         .width(width).aspectRatio(ratio)
                                         .zIndex(if (entry.component == selected) 0.5f else 0f)
@@ -413,7 +416,6 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
 private fun CardTile(
     card: BoardCard,
     store: RecentStore,
-    count: Int,
     modifier: Modifier,
     rotation: Float,
     activate: () -> Unit,
@@ -479,7 +481,7 @@ private fun CardTile(
                             latest = change.position
                             val delta = latest - down.position
                             if (delta.getDistance() > viewConfiguration.touchSlop) {
-                                if (abs(delta.x) > abs(delta.y)) return@withTimeoutOrNull false
+                                if (delta.y > 0f || abs(delta.x) > abs(delta.y)) return@withTimeoutOrNull false
                                 change.consume()
                                 return@withTimeoutOrNull true
                             }
@@ -539,14 +541,7 @@ private fun CardTile(
                 AppIcon(card.app)
                 Text(card.app.label.toString(), style = tokens.state, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            if (count > 1) Surface(
-                modifier = Modifier.align(Alignment.BottomStart).padding(tokens.gap),
-                shape = RoundedCornerShape(tokens.radius),
-                color = tokens.surface
-            ) {
-                val countLabel = androidx.compose.ui.res.pluralStringResource(R.plurals.cards_stack_count, count, count)
-                Text(countLabel, Modifier.padding(tokens.padding), style = tokens.secondary)
-            }
+
         }
     }
 }

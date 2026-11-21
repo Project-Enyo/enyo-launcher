@@ -10,12 +10,13 @@ import androidx.compose.ui.platform.LocalDensity
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun QuickGrid(
+    ignoreIme: Boolean,
     held: @Composable (Modifier) -> Unit,
     rows: List<List<@Composable (Modifier) -> Unit>>,
     strip: (@Composable (Modifier) -> Unit)?
 ) {
     val tokens = LocalTokens.current
-    val keyboard = WindowInsets.isImeVisible
+    val keyboard = !ignoreIme && WindowInsets.isImeVisible
     BoxWithConstraints(
         Modifier.fillMaxSize().padding(tokens.margin)
     ) {

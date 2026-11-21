@@ -14,6 +14,8 @@ import android.provider.CalendarContract
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -128,6 +130,13 @@ internal fun LauncherScreen(
     val scope = rememberCoroutineScope()
     var surface by rememberSaveable { mutableIntStateOf(0) }
     var query by remember { mutableStateOf(TextFieldValue()) }
+    var searchPullFraction by remember { mutableFloatStateOf(0f) }
+    val searchVisible = surface == 1 && !transitPicker && !messagesPicker && appMenu == null
+    val searchReveal by animateFloatAsState(
+        if (searchVisible) 1f else searchPullFraction,
+        tween(tokens.searchPullAnimationMillis),
+        label = "search reveal"
+    )
     val setupComplete by remember(context) { context.searchPreferences.data.map { it[setupSeen] == true } }
         .collectAsState(null)
     fun closeSetup() {
@@ -234,19 +243,23 @@ internal fun LauncherScreen(
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
     when (if (setupComplete == false) 4 else surface) {
-        1 -> SearchScreen(query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 }, packageCycle, transit, { transitPicker = true }, { messagesPicker = true })
+
         2 -> PreferencesScreen({ surface = 0 }, packageCycle, { surface = 3 }, { surface = 4 })
         3 -> AppearanceScreen { surface = 2 }
         4 -> {
             BackHandler { closeSetup() }
             PermissionSetup(setupComplete == false, ::closeSetup)
         }
-        else -> WallpaperBackdrop { Column(
-            Modifier.fillMaxSize().safeDrawingPadding().windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+        else -> WallpaperBackdrop { Box { Column(
+            Modifier.fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
+                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                 .padding(bottom = tokens.bottomClearance)
+                .searchPull(surface == 0, { searchPullFraction = it }) { query = TextFieldValue(); surface = 1 }
 
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = tokens.margin), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (surface == 1 || searchReveal > 0f) Spacer(Modifier.height(tokens.touch))
+            else Row(Modifier.fillMaxWidth().padding(horizontal = tokens.margin), horizontalArrangement = Arrangement.SpaceBetween) {
                 val searchLabel = stringResource(R.string.search)
                 val preferencesLabel = stringResource(R.string.preferences)
                 IconButton(
@@ -285,7 +298,7 @@ internal fun LauncherScreen(
                         PinnedDock(pinned, { scope.launch { pager.animateScrollToPage(1) } }, ::openApp) { appMenu = it }
                     }
                     3 -> InboxPage(apps, ::openApp)
-                    4 -> QuickPage(openPanel, quickFocus)
+                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1)
                 }
             }
             Canvas(Modifier.fillMaxWidth().height(tokens.progress)) {
@@ -307,6 +320,15 @@ internal fun LauncherScreen(
                     }
                 }
             }
+        }
+        if (searchVisible || (surface == 0 && searchReveal > 0f)) {
+            SearchOverlay(searchReveal, searchVisible, { surface = 0 }) {
+                SearchScreen(
+                    query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 },
+                    packageCycle, transit, { transitPicker = true }, { messagesPicker = true }, searchVisible
+                )
+            }
+        }
         } }
     }
 }
