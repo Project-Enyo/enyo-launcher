@@ -1,7 +1,15 @@
 package space.koyu.enyo
 
+import android.content.Context
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -21,7 +29,28 @@ internal fun resolveCardSize(width: Dp, height: Dp): CardSize = when {
     else -> CardSize.Tiny
 }
 
-internal class Tokens(private val dark: Boolean, val size: CardSize) {
+internal data class AccentPalette(
+    val accent: Color,
+    val container: Color,
+    val onAccent: Color,
+    val onContainer: Color
+)
+
+internal fun systemAccent(context: Context, dark: Boolean): AccentPalette? = runCatching {
+    val colors = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    AccentPalette(colors.primary, colors.primaryContainer, colors.onPrimary, colors.onPrimaryContainer)
+        .takeIf { it.accent.isSpecified && it.container.isSpecified && it.accent.alpha > 0f && it.container.alpha > 0f }
+}.getOrNull()
+
+@Composable
+internal fun rememberTokens(dark: Boolean, size: CardSize): Tokens {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val palette = remember(context, configuration, dark) { systemAccent(context, dark) }
+    return remember(dark, size, palette) { Tokens(dark, size, palette) }
+}
+
+internal class Tokens(private val dark: Boolean, val size: CardSize, palette: AccentPalette? = null) {
     private fun tone(light: Long, night: Long) = Color(if (dark) night else light)
     private fun dimension(expanded: Int, medium: Int, compact: Int, tiny: Int = compact) =
         listOf(expanded, medium, compact, tiny)[size.ordinal]
@@ -30,8 +59,10 @@ internal class Tokens(private val dark: Boolean, val size: CardSize) {
     val surface = tone(0xFFEEE9DB, 0xFF28291F)
     val quiet = tone(0xFF5B5749, 0xFFBEB8A5)
     val ink = tone(0xFF29271D, 0xFFF7F1E0)
-    val accent = tone(0xFF3F6338, 0xFFAACD97)
-    val accentContainer = tone(0xFFDCE8CA, 0xFF34482C)
+    val accent = palette?.accent ?: tone(0xFF3F6338, 0xFFAACD97)
+    val accentContainer = palette?.container ?: tone(0xFFDCE8CA, 0xFF34482C)
+    val onAccent = palette?.onAccent ?: background
+    val onAccentContainer = palette?.onContainer ?: ink
 
     val margin = dimension(20, 16, 12).dp
     val gap = dimension(12, 10, 8).dp

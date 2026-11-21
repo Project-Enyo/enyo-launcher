@@ -296,10 +296,10 @@ private fun TorchCard(state: QuickSnapshot, modifier: Modifier, toggle: () -> Un
             horizontalArrangement = Arrangement.spacedBy(tokens.gap)
         ) {
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.torch), style = tokens.state)
+                Text(stringResource(R.string.torch), style = tokens.state, color = if (on) tokens.onAccentContainer else tokens.ink)
                 if (state.torchFailed) Text(stringResource(R.string.torch_failed), style = tokens.secondary, maxLines = 1)
             }
-            Text(checked, style = tokens.secondary)
+            Text(checked, style = tokens.secondary, color = if (on) tokens.onAccentContainer else tokens.quiet)
         }
     }
 }
@@ -434,7 +434,7 @@ private fun MediaCover(
         contentAlignment = Alignment.Center
     ) {
         val artwork = media?.artwork
-        if (artwork == null) EnyoGlyph(Glyph.Music, Modifier.size(tokens.appGlyphSize), color = tokens.accent)
+        if (artwork == null) EnyoGlyph(Glyph.Music, Modifier.size(tokens.appGlyphSize), color = tokens.onAccentContainer)
         else Image(
             bitmap = remember(artwork) { artwork.asImageBitmap() },
             contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop
@@ -468,7 +468,7 @@ private fun MediaButton(
         modifier = Modifier.size(tokens.mediaControlSize),
         colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = tokens.accentContainer)
     ) {
-        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.accent, description = stringResource(label))
+        EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), color = tokens.onAccentContainer, description = stringResource(label))
     } else IconButton(onClick = { transport(action) }, modifier = Modifier.size(tokens.mediaControlSize)) {
         EnyoGlyph(glyph, Modifier.size(tokens.mediaControlGlyph), description = stringResource(label))
     }

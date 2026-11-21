@@ -2,5 +2,4 @@
     <color name="today_widget_surface">#EEE9DB</color>
     <color name="today_widget_text">#29271D</color>
     <color name="today_widget_quiet">#5B5749</color>
-    <color name="today_widget_accent">#3F6338</color>
 </resources>

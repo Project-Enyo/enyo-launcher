@@ -86,7 +86,7 @@ class EnyoActivity : ComponentActivity() {
             val dark = isSystemInDarkTheme()
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val size = resolveCardSize(maxWidth, maxHeight)
-                val tokens = remember(dark, size) { Tokens(dark, size) }
+                val tokens = rememberTokens(dark, size)
                 val appearance = remember { appearancePreferences.data }
                 val prefs by appearance.collectAsState(null)
                 val brandIcons by EnyoNotificationService.brandIcons.collectAsState()
@@ -94,11 +94,15 @@ class EnyoActivity : ComponentActivity() {
                     val base = if (dark) darkColorScheme() else lightColorScheme()
                     base.copy(
                         primary = tokens.accent,
-                        onPrimary = tokens.background,
+                        onPrimary = tokens.onAccent,
                         primaryContainer = tokens.accentContainer,
-                        onPrimaryContainer = tokens.ink,
+                        onPrimaryContainer = tokens.onAccentContainer,
                         secondary = tokens.accent,
+                        onSecondary = tokens.onAccent,
+                        secondaryContainer = tokens.accentContainer,
+                        onSecondaryContainer = tokens.onAccentContainer,
                         tertiary = tokens.accent,
+                        onTertiary = tokens.onAccent,
                         background = tokens.background,
                         onBackground = tokens.ink,
                         surface = tokens.surface,

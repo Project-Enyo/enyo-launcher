@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -118,7 +119,9 @@ private fun renderTodayWidget(
                     }
                     if (expandedBattery) {
                         icon(Glyph.Battery)
-                        views.setImageViewBitmap(R.id.widget_icon, batteryWidgetImage(context, dark, level.toFloat() / scale))
+                        val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
+                        views.setColorStateList(R.id.widget_icon, "setImageTintList", null)
+                        views.setImageViewBitmap(R.id.widget_icon, batteryWidgetImage(context, tokens, level.toFloat() / scale))
                         views.setViewLayoutWidth(R.id.widget_icon, 92f, android.util.TypedValue.COMPLEX_UNIT_DIP)
                         views.setViewLayoutHeight(R.id.widget_icon, 46f, android.util.TypedValue.COMPLEX_UNIT_DIP)
                     }
@@ -138,6 +141,8 @@ private fun renderTodayWidget(
                 val reading = latestWeather.takeIf { hasAccess }
                 icon(if (hasAccess) Glyph.Location else Glyph.LocationOff,
                     if (hasAccess) R.string.weather_location_on else R.string.weather_location_off)
+                val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
+                views.setColorStateList(R.id.widget_icon, "setImageTintList", ColorStateList.valueOf(tokens.accent.toArgb()))
                 if (reading == null) {
                     views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 12f)
                     value(context.getString(if (hasAccess) latestWeatherStatus else R.string.weather_location_prompt))
@@ -158,13 +163,12 @@ private fun renderTodayWidget(
     manager.updateAppWidget(id, views)
 }
 
-private fun batteryWidgetImage(context: Context, dark: Boolean, level: Float): android.graphics.Bitmap {
+private fun batteryWidgetImage(context: Context, tokens: Tokens, level: Float): android.graphics.Bitmap {
     val density = context.resources.displayMetrics.density
     val bitmap = android.graphics.Bitmap.createBitmap(
         (92 * density).toInt(), (46 * density).toInt(), android.graphics.Bitmap.Config.ARGB_8888
     )
     val canvas = android.graphics.Canvas(bitmap)
-    val tokens = Tokens(dark, CardSize.CompactHeight)
     val w = bitmap.width / 24f
     val h = bitmap.height / 12f
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {

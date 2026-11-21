@@ -156,7 +156,7 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 val dark = isSystemInDarkTheme()
-                val tokens = remember(dark) { Tokens(dark, size) }
+                val tokens = rememberTokens(dark, size)
                 CompositionLocalProvider(LocalTokens provides tokens) {
                     OverlayCard(entry, close = ::dismiss) {
                         if (!keyguard.isKeyguardLocked) {

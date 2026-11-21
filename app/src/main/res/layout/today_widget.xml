@@ -43,6 +43,5 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:scaleType="centerInside"
-        android:tint="@color/today_widget_accent"
         android:visibility="gone" />
 </LinearLayout>

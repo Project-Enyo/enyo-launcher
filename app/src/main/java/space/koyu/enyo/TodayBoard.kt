@@ -84,7 +84,7 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     val battery = rememberBattery()
     val connection = rememberConnection()
 
-    LaunchedEffect(visible, battery) { if (visible) publishTodayWidget(context, TodayWidget.Battery) }
+    LaunchedEffect(visible, battery, tokens.accent, tokens.accentContainer) { if (visible) publishTodayWidget(context, TodayWidget.Battery) }
     LaunchedEffect(visible, event, calendarAllowed) { if (visible) publishTodayWidget(context, TodayWidget.Calendar, event) }
     LaunchedEffect(visible, connection) { if (visible) publishTodayWidget(context, TodayWidget.Network) }
 
