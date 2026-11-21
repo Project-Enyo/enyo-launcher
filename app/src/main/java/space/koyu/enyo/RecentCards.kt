@@ -12,8 +12,13 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -30,6 +35,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -393,10 +399,32 @@ private fun CardTile(
     }
     var displacement by remember { mutableStateOf(Offset.Zero) }
     var dragging by remember { mutableStateOf(false) }
-    var start by remember { mutableStateOf(Offset.Zero) }
     var position by remember { mutableStateOf(Rect.Zero) }
+    var settling by remember { mutableStateOf(false) }
+    var exitProgress by remember { mutableFloatStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    fun settle(remove: Boolean, height: Float) {
+        settling = true
+        scope.launch {
+            val initial = displacement
+            val end = if (remove) -(position.bottom + height * tokens.recentDismissFraction) else 0f
+            val animation: androidx.compose.animation.core.AnimationSpec<Float> = if (remove) tween(tokens.recentExitMillis, easing = FastOutSlowInEasing)
+            else spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy)
+            animate(initialValue = 0f, targetValue = 1f, animationSpec = animation) { value, _ ->
+                val fraction = value.coerceIn(0f, 1f)
+                displacement = Offset(initial.x * (1f - fraction), initial.y + (end - initial.y) * fraction)
+                if (remove) exitProgress = fraction
+            }
+            if (remove) dismiss()
+            else {
+                dragging = false
+                settling = false
+                displacement = Offset.Zero
+            }
+        }
+    }
     val dropCard by rememberUpdatedState(drop)
-    val removeCard by rememberUpdatedState(dismiss)
+    val settleCard by rememberUpdatedState<(Boolean, Float) -> Unit>(::settle)
     Surface(
         onClick = activate,
         modifier = modifier
@@ -408,43 +436,60 @@ private fun CardTile(
                 }
             }
             .pointerInput(entry.component) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        start = position.topLeft + offset
-                        dragging = true
-                    },
-                    onDragEnd = {
-                        dropCard(start + displacement)
-                        dragging = false
-                        displacement = Offset.Zero
-                    },
-                    onDragCancel = { dragging = false; displacement = Offset.Zero }
-                ) { change, delta ->
-                    change.consume()
-                    displacement += delta
-                }
-            }
-            .pointerInput(entry.component) {
-                detectVerticalDragGestures(
-                    onDragStart = { dragging = true },
-                    onDragEnd = {
-                        if (displacement.y < -size.height * tokens.recentDismissFraction) removeCard()
-                        dragging = false
-                        displacement = Offset.Zero
-                    },
-                    onDragCancel = { dragging = false; displacement = Offset.Zero }
-                ) { change, delta ->
-                    change.consume()
-                    displacement += Offset(0f, delta)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (settling) return@awaitEachGesture
+                    val origin = position.topLeft + down.position
+                    var latest = down.position
+                    val movedVertically = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        while (true) {
+                            val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                                .firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                            if (change.isConsumed || !change.pressed) return@withTimeoutOrNull false
+                            latest = change.position
+                            val delta = latest - down.position
+                            if (delta.getDistance() > viewConfiguration.touchSlop) {
+                                if (abs(delta.x) > abs(delta.y)) return@withTimeoutOrNull false
+                                change.consume()
+                                return@withTimeoutOrNull true
+                            }
+                        }
+                        @Suppress("UNREACHABLE_CODE")
+                        false
+                    }
+                    if (movedVertically == false) return@awaitEachGesture
+                    val stackDrag = movedVertically == null
+                    dragging = true
+                    val initial = latest - down.position
+                    displacement = if (stackDrag) initial else Offset(0f, initial.y)
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                            .firstOrNull { it.id == down.id }
+                        if (change == null || change.isConsumed) {
+                            settleCard(false, size.height.toFloat())
+                            break
+                        }
+                        val delta = change.position - down.position
+                        displacement = if (stackDrag) delta else Offset(0f, delta.y)
+                        change.consume()
+                        if (!change.pressed) {
+                            if (stackDrag) {
+                                if (delta.getDistance() > viewConfiguration.touchSlop) dropCard(origin + delta)
+                                settleCard(false, size.height.toFloat())
+                            } else {
+                                val remove = delta.y < -size.height * tokens.recentDismissFraction
+                                settleCard(remove, size.height.toFloat())
+                            }
+                            break
+                        }
+                    }
                 }
             }
             .graphicsLayer {
-                rotationZ = if (dragging) 0f else rotation
+                rotationZ = rotation
                 translationX = displacement.x
                 translationY = displacement.y
-                if (dragging && displacement.y < 0f && displacement.x == 0f) {
-                    alpha = (1f - abs(displacement.y) / size.height).coerceAtLeast(tokens.hoverOpacity)
-                }
+                alpha = 1f - exitProgress
             }
             .cardInput(activate = activate)
             .semantics { customActions = actions },

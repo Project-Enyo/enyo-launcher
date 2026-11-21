@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
 
-internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, McDonalds, Dhl, Transit, TikTok }
+internal enum class Glyph { Today, Apps, Cards, Inbox, Quick, Search, Settings, Messages, Calculator, Folder, Camera, Audio, Dhl, Transit }
 
 private data class IconKey(
     val component: android.content.ComponentName,
@@ -41,6 +41,10 @@ private data class IconKey(
     val density: Int,
     val original: Boolean,
     val color: Int
+)
+
+private val fullColorBrands = setOf(
+    "de.mcdonalds.mcdonaldsinfoapp", "com.zhiliaoapp.musically", "com.zhiliaoapp.musically.go"
 )
 
 private val iconCache = object : LruCache<IconKey, Bitmap>(16 * 1024 * 1024) {
@@ -57,14 +61,13 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
     val component = app.componentName
     val size = with(density) { tokens.iconSize.roundToPx() }
     val originalSize = (160 * density.density).roundToInt()
+    val brand = component.packageName in fullColorBrands
     val dedicated = when (component.packageName) {
         "com.android.settings" -> Glyph.Settings
         "com.android.calculator2" -> Glyph.Calculator
         "com.android.documentsui", "com.google.android.documentsui" -> Glyph.Folder
         "app.grapheneos.camera" -> Glyph.Camera
-        "de.mcdonalds.mcdonaldsinfoapp" -> Glyph.McDonalds
         "de.dhl.paket" -> Glyph.Dhl
-        "com.zhiliaoapp.musically", "com.zhiliaoapp.musically.go" -> Glyph.TikTok
         transitPackage -> Glyph.Transit
         else -> null
     }
@@ -73,7 +76,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
         value = if (!originals && dedicated != null) null else withContext(iconDispatcher) {
             iconCache.get(key) ?: runCatching {
                 val source = app.getIcon(originalSize).mutate()
-                val monochrome = if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
+                val monochrome = if (!originals && !brand && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
                     source.monochrome?.mutate()?.apply { setTint(tokens.ink.toArgb()) }
                 } else null
                 val foreground = if (!originals && source is AdaptiveIconDrawable) source.foreground?.mutate() else null
@@ -83,7 +86,7 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier) {
                     monochrome != null || foreground != null -> (size * tokens.iconMonoPadding).roundToInt()
                     else -> (size * tokens.iconPadding).roundToInt()
                 }
-                if (!originals && monochrome == null) {
+                if (!originals && !brand && monochrome == null) {
                     drawable.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(tokens.iconSaturation) })
                 }
                 Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
@@ -240,17 +243,6 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 drawPath(path, color, style = Stroke(stroke))
             }
             Glyph.Camera -> { box(.12f, .32f, .88f, .79f); circle(.50f, .55f, .15f); line(.32f, .22f, .62f, .22f) }
-            Glyph.McDonalds -> {
-                val arches = Path().apply {
-                    val left = point(.15f, .80f)
-                    moveTo(left.x, left.y)
-                    quadraticTo(point(.23f, .18f).x, point(.23f, .18f).y, point(.34f, .24f).x, point(.34f, .24f).y)
-                    quadraticTo(point(.44f, .30f).x, point(.44f, .30f).y, point(.50f, .66f).x, point(.50f, .66f).y)
-                    quadraticTo(point(.56f, .30f).x, point(.56f, .30f).y, point(.66f, .24f).x, point(.66f, .24f).y)
-                    quadraticTo(point(.77f, .18f).x, point(.77f, .18f).y, point(.85f, .80f).x, point(.85f, .80f).y)
-                }
-                drawPath(arches, color, style = Stroke(stroke * 1.5f, cap = StrokeCap.Round))
-            }
             Glyph.Dhl -> {
                 box(.36f, .24f, .89f, .76f)
                 line(.61f, .25f, .61f, .48f)
@@ -265,17 +257,6 @@ internal fun EnyoGlyph(glyph: Glyph, modifier: Modifier = Modifier, color: Color
                 line(.63f, .74f, .72f, .87f)
                 circle(.37f, .61f, .05f, true)
                 circle(.63f, .61f, .05f, true)
-            }
-            Glyph.TikTok -> {
-                val stem = Path().apply {
-                    val top = point(.54f, .20f)
-                    moveTo(top.x, top.y)
-                    lineTo(point(.54f, .68f).x, point(.54f, .68f).y)
-                    moveTo(top.x, top.y)
-                    quadraticTo(point(.60f, .43f).x, point(.60f, .43f).y, point(.84f, .43f).x, point(.84f, .43f).y)
-                }
-                drawPath(stem, color, style = Stroke(stroke * 1.7f, cap = StrokeCap.Round))
-                circle(.39f, .70f, .15f, true)
             }
             Glyph.Audio -> { line(.43f, .23f, .43f, .71f); line(.43f, .23f, .78f, .18f); circle(.30f, .72f, .13f, true) }
         }
