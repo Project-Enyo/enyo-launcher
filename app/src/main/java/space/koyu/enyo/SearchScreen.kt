@@ -112,7 +112,12 @@ internal fun SearchOnboarding() {
         AlertDialog(
             onDismissRequest = { dismiss() },
             title = { Text(stringResource(R.string.contacts_permission)) },
-            text = { Text(stringResource(R.string.contacts_reason)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(LocalTokens.current.gap)) {
+                    Text(stringResource(R.string.contacts_reason))
+                    Text(stringResource(R.string.battery_discovery))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { permission.launch(Manifest.permission.READ_CONTACTS) }) {
                     Text(stringResource(R.string.contacts_permission))
@@ -375,6 +380,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int) {
             }
             Text(stringResource(R.string.contacts_reason), style = tokens.secondary)
             SearchButton(R.string.contacts_permission) { permission.launch(Manifest.permission.READ_CONTACTS) }
+            Text(stringResource(R.string.battery_discovery), style = tokens.secondary)
             SearchButton(R.string.calendar_permission) { permission.launch(Manifest.permission.READ_CALENDAR) }
             SearchButton(R.string.notification_access) {
                 context.launchSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))

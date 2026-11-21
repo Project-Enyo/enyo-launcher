@@ -82,4 +82,5 @@
     <string name="cards_capture_permission">Set up card previews</string>
     <string name="cards_capture_service">Enyo card previews</string>
     <string name="cards_capture_description">Allows Enyo to save a local thumbnail when you open an app through Enyo. Secure windows cannot be captured.</string>
+    <string name="battery_discovery">If your device delays updates after sleep, consider allowing Enyo to run in the background in Android battery settings.</string>
 </resources>

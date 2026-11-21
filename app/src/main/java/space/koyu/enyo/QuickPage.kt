@@ -1,10 +1,15 @@
 package space.koyu.enyo
 
+import android.app.KeyguardManager
 import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.SystemClock
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.compose.foundation.Image
@@ -28,6 +33,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -57,10 +63,40 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
             if (next != null) this.next = focus[next]
         }
     val target = with(LocalDensity.current) { tokens.cover.roundToPx() }
-    DisposableEffect(lifecycle, model, target) {
+    DisposableEffect(lifecycle, model, target, context) {
+        val power = context.getSystemService(PowerManager::class.java)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        fun ready() = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            power.isInteractive && !keyguard.isDeviceLocked
+        var reconnectOnResume = false
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        reconnectOnResume = true
+                        model.stop()
+                    }
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                        if (ready()) {
+                            model.reconnect(target)
+                            reconnectOnResume = false
+                        } else reconnectOnResume = true
+                    }
+                }
+            }
+        }
+        val signals = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        ContextCompat.registerReceiver(context, receiver, signals, ContextCompat.RECEIVER_NOT_EXPORTED)
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> model.start(target)
+                Lifecycle.Event.ON_RESUME -> if (ready()) {
+                    if (reconnectOnResume) model.reconnect(target) else model.start(target)
+                    reconnectOnResume = false
+                }
                 Lifecycle.Event.ON_PAUSE -> model.stop()
                 else -> Unit
             }
@@ -68,6 +104,7 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester) {
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            context.unregisterReceiver(receiver)
             model.stop()
         }
     }

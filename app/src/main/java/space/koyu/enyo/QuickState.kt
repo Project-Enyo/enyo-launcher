@@ -17,6 +17,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.ConnectivityManager
@@ -27,6 +28,7 @@ import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +102,8 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
     private var sessions = emptyList<MediaController>()
     private var selected: MediaController? = null
     private var observingMedia = false
+    private var mediaRecovery: Job? = null
+    private var recoveringToken: MediaSession.Token? = null
 
     private val network = object : ConnectivityManager.NetworkCallback() {
         override fun onLost(network: Network) { main.post { if (running) refreshNetwork() } }
@@ -165,6 +169,9 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
         running = false
         polling?.cancel()
         torchError?.cancel()
+        mediaRecovery?.cancel()
+        mediaRecovery = null
+        recoveringToken = null
         runCatching { connectivity.unregisterNetworkCallback(network) }
         audio.unregisterAudioDeviceCallback(audioDevices)
         if (flashId != null) camera.unregisterTorchCallback(torch)
@@ -173,6 +180,11 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
         observingMedia = false
         attachSessions(emptyList())
         snapshot.update { it.copy(torch = null, torchFailed = false, media = null) }
+    }
+
+    fun reconnect(target: Int) {
+        stop()
+        start(target)
     }
 
     private fun refreshNetwork() = readNetwork(connectivity.getNetworkCapabilities(connectivity.activeNetwork))
@@ -304,6 +316,16 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
     private fun publishMedia(readMetadata: Boolean) {
         val controller = selected ?: return
         val playback = controller.playbackState
+        if (playback == null) {
+            snapshot.update { it.copy(media = null) }
+            recoverPausedConnection(controller.sessionToken)
+            return
+        }
+        if (recoveringToken == controller.sessionToken) {
+            mediaRecovery?.cancel()
+            mediaRecovery = null
+            recoveringToken = null
+        }
         val metadata = if (readMetadata) controller.metadata else null
         val old = snapshot.value.media
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: old?.duration ?: 0L
@@ -338,6 +360,21 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
             }
         }
         snapshot.update { it.copy(media = MediaSnapshot(title, artist, artwork, playback, duration)) }
+    }
+
+    private fun recoverPausedConnection(token: MediaSession.Token) {
+        if (!running || recoveringToken == token) return
+        mediaRecovery?.cancel()
+        recoveringToken = token
+        mediaRecovery = viewModelScope.launch {
+            delay(650)
+            if (running && selected?.sessionToken == token && selected?.playbackState == null) {
+                runCatching { NotificationListenerService.requestRebind(listener) }
+                if (observingMedia) mediaManager.removeOnActiveSessionsChangedListener(mediaSessions)
+                observingMedia = false
+                refreshMedia()
+            }
+        }
     }
 
     fun transport(action: Long) {
