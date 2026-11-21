@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PreviewGrid(openPanel: () -> Unit) {
+internal fun PreviewGrid(openPanel: () -> Unit, embedded: Boolean = false) {
     val tokens = LocalTokens.current
     var volume by rememberSaveable { mutableFloatStateOf(0.45f) }
     var brightness by rememberSaveable { mutableFloatStateOf(0.65f) }
@@ -23,10 +23,10 @@ internal fun PreviewGrid(openPanel: () -> Unit) {
     BoxWithConstraints(
         Modifier.fillMaxSize()
             .background(tokens.background)
-            .safeDrawingPadding()
-            .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+            .then(if (embedded) Modifier else Modifier.safeDrawingPadding())
+            .then(if (embedded) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility))
             .padding(horizontal = tokens.margin)
-            .padding(top = tokens.margin, bottom = tokens.bottomClearance)
+            .padding(top = tokens.margin, bottom = if (embedded) tokens.margin else tokens.bottomClearance)
     ) {
         val tiny = tokens.size == CardSize.Tiny
         val compact = tokens.size == CardSize.CompactHeight

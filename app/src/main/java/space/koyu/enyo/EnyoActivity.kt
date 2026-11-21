@@ -29,6 +29,22 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 
 class EnyoActivity : ComponentActivity() {
+    private var launcherTyping: ((Int) -> Boolean)? = null
+    private var homeSequence by mutableIntStateOf(0)
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && !event.isCtrlPressed &&
+            !event.isAltPressed && !event.isMetaPressed &&
+            launcherTyping?.invoke(event.unicodeChar) == true
+        ) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) homeSequence++
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -38,7 +54,7 @@ class EnyoActivity : ComponentActivity() {
                 val size = resolveCardSize(maxWidth, maxHeight)
                 val tokens = remember(dark, size) { Tokens(dark, size) }
                 CompositionLocalProvider(LocalTokens provides tokens) {
-                    PreviewGrid(::openInternetPanel)
+                    LauncherScreen(::openInternetPanel, homeSequence) { launcherTyping = it }
                 }
             }
         }
