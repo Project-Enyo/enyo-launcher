@@ -346,14 +346,21 @@ internal fun SearchScreen(
             if (input.isNotBlank()) {
                 val showMessages = command == null && messagesLabel.contains(input, ignoreCase = true)
                 if (appResults.isNotEmpty() || showMessages) item { SearchSection(R.string.apps) }
-                if (showMessages) item { SearchButton(R.string.messages, openMessages) }
+                if (showMessages) item {
+                    AppSearchResult(
+                        label = messagesLabel,
+                        icon = { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.iconSize), color = tokens.onAccentContainer) },
+                        open = openMessages
+                    )
+                }
                 items(appResults, key = { it.componentName.flattenToString() }) { app ->
                     val consolidated = app.componentName.packageName == transitPackage
-                    Surface(shape = RoundedCornerShape(tokens.radius), color = tokens.surface) {
-                        LibraryRow(app, label = if (consolidated) transitLabel else app.label.toString()) {
-                            record(input)
-                            if (consolidated) openTransit() else openApp(app)
-                        }
+                    AppSearchResult(
+                        label = if (consolidated) transitLabel else app.label.toString(),
+                        icon = { AppIcon(app) }
+                    ) {
+                        record(input)
+                        if (consolidated) openTransit() else openApp(app)
                     }
                 }
                 if (command?.first in listOf(null, Command.Settings)) {
@@ -436,6 +443,18 @@ internal fun SearchScreen(
                 SearchButton(R.string.continue_action) { confirmation = null; open(action.intent) }
             }
         }
+    }
+}
+
+@Composable
+private fun AppSearchResult(label: String, icon: @Composable () -> Unit, open: () -> Unit) {
+    val tokens = LocalTokens.current
+    Surface(
+        shape = RoundedCornerShape(tokens.radius),
+        color = tokens.widgetSurface,
+        contentColor = tokens.onAccentContainer
+    ) {
+        LibraryRow(label, icon, open)
     }
 }
 

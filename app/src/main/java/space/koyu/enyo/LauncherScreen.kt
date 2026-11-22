@@ -363,7 +363,7 @@ internal fun LauncherScreen(
 private val pageGlyphs = listOf(Glyph.Today, Glyph.Apps, Glyph.Cards, Glyph.Inbox, Glyph.Quick)
 
 @Composable
-internal fun LibraryRow(app: LauncherActivityInfo, label: String = app.label.toString(), onClick: () -> Unit) {
+internal fun LibraryRow(label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
     val tokens = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = tokens.touch).appPress(onClick)
@@ -371,8 +371,8 @@ internal fun LibraryRow(app: LauncherActivityInfo, label: String = app.label.toS
         horizontalArrangement = Arrangement.spacedBy(tokens.padding),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AppIcon(app)
-        Text(label, style = tokens.state, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        icon()
+        Text(label, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 

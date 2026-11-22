@@ -96,7 +96,8 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
             val payload = entry.noticePayload()
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
-                color = tokens.surface,
+                color = tokens.widgetSurface,
+                contentColor = tokens.onAccentContainer,
                 shape = RoundedCornerShape(tokens.sheetRadius),
                 shadowElevation = tokens.elevation[1]
             ) {
@@ -108,7 +109,7 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
                 ) {
                     EnyoGlyph(if (group.messaging) Glyph.Messages else Glyph.Inbox, color = tokens.accent)
                     Column(Modifier.weight(1f)) {
-                        Text(label, style = tokens.state, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(label, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         payload.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         payload.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
@@ -121,13 +122,14 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
         val title = if (group.messaging) stringResource(R.string.messages) else stringResource(R.string.inbox)
         Surface(
             modifier = Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
-            color = tokens.surface,
+            color = tokens.widgetSurface,
+            contentColor = tokens.onAccentContainer,
             shape = RoundedCornerShape(tokens.sheetRadius),
             shadowElevation = tokens.elevation[2]
         ) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(start = tokens.padding), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = tokens.state)
+                    Text(title, Modifier.weight(1f), style = tokens.state, color = tokens.onAccentContainer)
                     val label = stringResource(R.string.back)
                     Box(Modifier.size(tokens.touch).appPress({ expanded = null })
                         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {

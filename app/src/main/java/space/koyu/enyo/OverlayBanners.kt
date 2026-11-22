@@ -223,7 +223,12 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, open: (
     val group = entry.noticeGroup()
     val title = if (group.messaging) stringResource(R.string.messages) else sourceLabel(context, entry.packageName)
     val text = entry.noticePayload()
-    Surface(color = tokens.surface, shape = RoundedCornerShape(tokens.sheetRadius), shadowElevation = tokens.elevation[2]) {
+    Surface(
+        color = tokens.widgetSurface,
+        contentColor = tokens.onAccentContainer,
+        shape = RoundedCornerShape(tokens.sheetRadius),
+        shadowElevation = tokens.elevation[2]
+    ) {
         Row(
             Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.padding(tokens.padding),
             horizontalArrangement = Arrangement.spacedBy(tokens.gap),
@@ -231,7 +236,7 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, open: (
         ) {
             EnyoGlyph(if (group.messaging) Glyph.Messages else Glyph.Inbox, color = tokens.accent)
             Column(Modifier.weight(1f).heightIn(min = tokens.touch).appPress(open)) {
-                Text(title, style = tokens.state, maxLines = 1)
+                Text(title, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1)
                 text.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 text.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }

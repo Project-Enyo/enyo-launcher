@@ -50,7 +50,8 @@ internal fun EnyoSheet(title: String, close: () -> Unit, content: @Composable Co
                             alpha = arrival.value
                         },
                     shape = RoundedCornerShape(tokens.sheetRadius),
-                    color = tokens.surface,
+                    color = tokens.widgetSurface,
+                    contentColor = tokens.onAccentContainer,
                     shadowElevation = tokens.elevation.last()
                 ) {
                     Column(
@@ -58,7 +59,7 @@ internal fun EnyoSheet(title: String, close: () -> Unit, content: @Composable Co
                         verticalArrangement = Arrangement.spacedBy(tokens.gap)
                     ) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(title, Modifier.weight(1f).semantics { heading() }, style = tokens.state)
+                            Text(title, Modifier.weight(1f).semantics { heading() }, style = tokens.state, color = tokens.onAccentContainer)
                             val label = androidx.compose.ui.res.stringResource(R.string.back)
                             androidx.compose.material3.IconButton(
                                 onClick = close,
