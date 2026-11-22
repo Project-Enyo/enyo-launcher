@@ -205,7 +205,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 2
+        const val schemaVersion = 3
 
         @Volatile private var instance: MessageArchive? = null
         fun get(context: Context): MessageArchive =
@@ -283,6 +283,35 @@ internal class MessageArchive private constructor(private val context: Context) 
         private fun migrate(db: SupportSQLiteDatabase, from: Int) {
             if (from < 1) createSchema(db)
             if (from < 2) BeeperDuplicates.createSchema(db)
+            if (from in 1..2) dropStatusNotices(db)
+        }
+
+        /**
+         * Removes notices stored before they were told apart from chat messages: Discord's upload
+         * progress, which has no MessagingStyle and so landed under a title-only identity, and Anura's
+         * incoming and missed call notices in English and German.
+         */
+        private fun dropStatusNotices(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """DELETE FROM messages WHERE package = 'com.discord' AND identity_id IN
+                   (SELECT id FROM identities WHERE package = 'com.discord' AND key LIKE 'name:%')
+                   AND (text LIKE '%upload%' OR text LIKE '%hochlad%' OR text LIKE '%hochgelad%'
+                       OR sender_name LIKE '%upload%' OR sender_name LIKE '%hochlad%' OR sender_name LIKE '%hochgelad%')"""
+            )
+            db.execSQL(
+                """DELETE FROM messages WHERE package IN ('space.koyu.apollo', 'space.koyu.apollo.mini') AND
+                   (text IN ('Anura call', 'Anura Anruf', 'Group call', 'Gruppenanruf')
+                       OR sender_name IN ('Missed call', 'Verpasster Anruf'))"""
+            )
+            val packages = "('com.discord', 'space.koyu.apollo', 'space.koyu.apollo.mini')"
+            db.execSQL("DELETE FROM conversations WHERE package IN $packages AND id NOT IN (SELECT conversation_id FROM messages)")
+            db.execSQL(
+                """DELETE FROM identities WHERE package IN $packages AND key LIKE 'name:%'
+                   AND id NOT IN (SELECT identity_id FROM messages WHERE identity_id IS NOT NULL)
+                   AND id NOT IN (SELECT identity_id FROM conversations WHERE identity_id IS NOT NULL)"""
+            )
+            db.execSQL("DELETE FROM people WHERE id NOT IN (SELECT person_id FROM identities WHERE person_id IS NOT NULL)")
+            db.execSQL("UPDATE conversations SET last_at = COALESCE((SELECT MAX(posted_at) FROM messages WHERE conversation_id = conversations.id), 0)")
         }
     }
 }
