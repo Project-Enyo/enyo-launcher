@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -339,6 +340,63 @@ internal fun SearchScreen(
             else Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.number, null))
         )
     }
+    val showMessages = input.isNotBlank() && command == null && messagesLabel.contains(input, ignoreCase = true)
+    val settingsResults = if (input.isNotBlank() && command?.first in listOf(null, Command.Settings)) settingsDestinations.filter {
+        context.getString(it.label).contains(term, ignoreCase = true)
+    } else emptyList()
+    val calendar = command?.first == Command.Calendar && term.isNotBlank()
+    val web = command?.first in listOf(null, Command.Web) && term.isNotBlank()
+    // One action hands the query to the default assistant; the choice itself lives in Settings.
+    val assistant = defaultOption?.takeIf { active }
+    fun launchResult(app: LauncherActivityInfo) {
+        record(input)
+        if (app.componentName.packageName == transitPackage) openTransit() else openApp(app)
+    }
+    fun openHit(hit: MessageHit) {
+        record(input)
+        ArchiveData.requestedThread.value = hit.thread
+        openInbox()
+    }
+    fun openEvent(event: CalendarHit) {
+        record(input)
+        open(Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end))
+    }
+    fun prepareEvent() {
+        confirmation = Confirmation(term, Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI)
+            .putExtra(CalendarContract.Events.TITLE, term))
+    }
+    fun ask(option: InstalledAssistant) {
+        record(input)
+        val recipient = option.textShare
+        val shared = recipient != null && openIntent(
+            assistantTextShare().setComponent(recipient).putExtra(Intent.EXTRA_TEXT, input)
+        )
+        if (!shared) {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
+            open(option.launch)
+        }
+    }
+    fun searchWeb() {
+        val uri = Uri.parse("https://duckduckgo.com/").buildUpon().appendQueryParameter("q", term).build()
+        record(input)
+        open(Intent(Intent.ACTION_VIEW, uri))
+    }
+    // Submitting runs the topmost result, in the order the list shows them.
+    val firstResult: (() -> Unit)? = if (input.isBlank()) null else when {
+        showMessages -> openMessages
+        appResults.isNotEmpty() -> appResults.first().let { app -> { launchResult(app) } }
+        settingsResults.isNotEmpty() -> settingsResults.first().let { destination -> { open(Intent(destination.action)) } }
+        contacts.isNotEmpty() -> contacts.first().let { contact -> { reachContact(contact, command?.first == Command.Message) } }
+        messageHits.isNotEmpty() -> messageHits.first().let { hit -> { openHit(hit) } }
+        events.isNotEmpty() -> events.first().let { event -> { openEvent(event) } }
+        calendar -> ::prepareEvent
+        assistant != null -> { { ask(assistant) } }
+        web -> ::searchWeb
+        else -> null
+    }
     Column(
         // Pads for the keyboard's final height once, instead of relaying out search on every keyboard animation frame.
         Modifier.fillMaxSize().windowInsetsPadding(
@@ -370,7 +428,8 @@ internal fun SearchScreen(
                     enabled = active,
                     singleLine = true,
                     textStyle = tokens.state.copy(color = tokens.onAccentContainer),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { firstResult?.invoke() }),
                     cursorBrush = SolidColor(tokens.accent),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus)
                         .onFocusChanged { fieldFocused = it.isFocused }
@@ -417,7 +476,6 @@ internal fun SearchScreen(
                 }
             }
             if (input.isNotBlank()) {
-                val showMessages = command == null && messagesLabel.contains(input, ignoreCase = true)
                 if (appResults.isNotEmpty() || showMessages) item {
                     SettingsPanel(stringResource(R.string.apps)) {
                         if (showMessages) ListRow(
@@ -429,25 +487,17 @@ internal fun SearchScreen(
                                 val consolidated = app.componentName.packageName == transitPackage
                                 ListRow(
                                     if (consolidated) transitLabel else app.label.toString(),
-                                    Modifier.appPress({
-                                        record(input)
-                                        if (consolidated) openTransit() else openApp(app)
-                                    }),
+                                    Modifier.appPress({ launchResult(app) }),
                                     leading = { AppIcon(app, displaySize = tokens.listAvatar) }
                                 )
                             }
                         }
                     }
                 }
-                if (command?.first in listOf(null, Command.Settings)) {
-                    val results = settingsDestinations.filter {
-                        context.getString(it.label).contains(term, ignoreCase = true)
-                    }
-                    if (results.isNotEmpty()) item {
-                        SettingsPanel(stringResource(R.string.android_settings)) {
-                            results.forEach { destination ->
-                                SettingsAction(stringResource(destination.label), Glyph.Settings) { open(Intent(destination.action)) }
-                            }
+                if (settingsResults.isNotEmpty()) item {
+                    SettingsPanel(stringResource(R.string.android_settings)) {
+                        settingsResults.forEach { destination ->
+                            SettingsAction(stringResource(destination.label), Glyph.Settings) { open(Intent(destination.action)) }
                         }
                     }
                 }
@@ -478,11 +528,7 @@ internal fun SearchScreen(
                             val app = apps.firstOrNull { it.componentName.packageName == hit.message.packageName }
                             ListRow(
                                 hit.threadName,
-                                Modifier.appPress({
-                                    record(input)
-                                    ArchiveData.requestedThread.value = hit.thread
-                                    openInbox()
-                                }),
+                                Modifier.appPress({ openHit(hit) }),
                                 summary = listOfNotNull(hit.message.sender?.takeIf { !hit.message.outgoing && it != hit.threadName }, hit.message.text).joinToString(": "),
                                 summaryLines = 2,
                                 leading = { if (app != null) AppIcon(app, displaySize = tokens.listAvatar) else EnyoGlyph(Glyph.Message, color = tokens.quiet) }
@@ -506,25 +552,13 @@ internal fun SearchScreen(
                             SettingsAction(
                                 event.title.ifBlank { stringResource(R.string.calendar_untitled) }, Glyph.Calendar,
                                 summary = listOfNotNull(time, event.location).joinToString(" · ")
-                            ) {
-                                record(input)
-                                open(Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
-                                    .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
-                                    .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end))
-                            }
+                            ) { openEvent(event) }
                         }
                     }
                 }
-                val calendar = command?.first == Command.Calendar && term.isNotBlank()
-                val web = command?.first in listOf(null, Command.Web) && term.isNotBlank()
-                // One action hands the query to the default assistant; the choice itself lives in Settings.
-                val assistant = defaultOption?.takeIf { active }
                 if (calendar) item {
                     ListCard {
-                        SettingsAction(stringResource(R.string.calendar_prepare), Glyph.Calendar, summary = term) {
-                            confirmation = Confirmation(term, Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI)
-                                .putExtra(CalendarContract.Events.TITLE, term))
-                        }
+                        SettingsAction(stringResource(R.string.calendar_prepare), Glyph.Calendar, summary = term) { prepareEvent() }
                     }
                 }
                 if (assistant != null || web) item {
@@ -533,18 +567,7 @@ internal fun SearchScreen(
                             val name = stringResource(assistant.assistant.label)
                             ListRow(
                                 stringResource(R.string.assistant_ask, name),
-                                Modifier.appPress({
-                                    record(input)
-                                    val recipient = assistant.textShare
-                                    val shared = recipient != null && openIntent(
-                                        assistantTextShare().setComponent(recipient).putExtra(Intent.EXTRA_TEXT, input)
-                                    )
-                                    if (!shared) {
-                                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                                        clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
-                                        open(assistant.launch)
-                                    }
-                                }),
+                                Modifier.appPress({ ask(assistant) }),
                                 summary = input,
                                 summaryLines = 1,
                                 leading = {
@@ -556,11 +579,7 @@ internal fun SearchScreen(
                                 trailing = { EnyoGlyph(Glyph.Sparkles, color = tokens.accent) }
                             )
                         }
-                        if (web) SettingsAction(stringResource(R.string.web_search), Glyph.World, summary = term) {
-                            val uri = Uri.parse("https://duckduckgo.com/").buildUpon().appendQueryParameter("q", term).build()
-                            record(input)
-                            open(Intent(Intent.ACTION_VIEW, uri))
-                        }
+                        if (web) SettingsAction(stringResource(R.string.web_search), Glyph.World, summary = term) { searchWeb() }
                     }
                 }
             }
