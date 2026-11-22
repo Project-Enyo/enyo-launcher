@@ -18,6 +18,23 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 
+/**
+ * Shared frame for every settings surface: one background, the safe drawing insets, and the page
+ * margin handed to the scrolling content. The optional footer stays pinned below the content.
+ */
+@Composable
+internal fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    footer: (@Composable () -> Unit)? = null,
+    content: @Composable (PaddingValues) -> Unit
+) {
+    val tokens = LocalTokens.current
+    Column(Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding().then(modifier)) {
+        Box(Modifier.weight(1f)) { content(PaddingValues(tokens.margin)) }
+        footer?.let { Box(Modifier.padding(horizontal = tokens.margin).padding(bottom = tokens.margin)) { it() } }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsPanel(title: String?, content: @Composable ColumnScope.() -> Unit) {

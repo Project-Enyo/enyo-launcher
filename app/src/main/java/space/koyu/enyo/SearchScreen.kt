@@ -492,9 +492,9 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
     val hasHistory by remember(store) { store.data.map { !it[searchHistory].isNullOrBlank() } }.collectAsState(false)
     var confirmClearHistory by remember { mutableStateOf(false) }
-    LazyColumn(
-        Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding(),
-        contentPadding = PaddingValues(tokens.margin),
+    SettingsScreen { padding -> LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = padding,
         verticalArrangement = Arrangement.spacedBy(tokens.gap)
     ) {
         item { SettingsHeading(stringResource(R.string.preferences), back) }
@@ -536,7 +536,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                     Glyph.Settings, setup)
             }
         }
-    }
+    } }
     if (confirmClearHistory) {
         EnyoSheet(stringResource(R.string.search_history_clear), { confirmClearHistory = false }) {
             Text(stringResource(R.string.search_history_clear_message), style = tokens.secondary)

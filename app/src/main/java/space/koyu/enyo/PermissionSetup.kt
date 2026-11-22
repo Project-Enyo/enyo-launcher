@@ -76,44 +76,45 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
             )
         }
     }
-    WallpaperBackdrop {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(tokens.margin)) {
-            SettingsHeading(stringResource(if (firstRun) R.string.setup_welcome else R.string.setup_title),
-                if (firstRun) null else close)
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                item { SettingsPanel(null) { Text(stringResource(R.string.setup_intro), style = tokens.secondary) } }
-                item { OverlayPreference(recommended = true) }
-                steps.forEach { step ->
-                    item(key = step.title) {
-                        SettingsPanel(null) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                            ) {
-                                Text(stringResource(step.title), Modifier.weight(1f), style = tokens.state)
-                                if (step.enabled) Text(stringResource(R.string.setup_enabled), style = tokens.label)
-                            }
-                            Text(stringResource(step.detail), style = tokens.secondary)
-                            if (!step.enabled) {
-                                SettingsLink(stringResource(R.string.setup_configure), glyph = Glyph.Settings, open = step.request)
-                            }
+    SettingsScreen(footer = if (firstRun) {
+        {
+            androidx.compose.material3.Surface(
+                color = tokens.accentContainer, shape = androidx.compose.foundation.shape.RoundedCornerShape(tokens.radius),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SettingsLink(stringResource(R.string.setup_finish), glyph = Glyph.Forward, open = close)
+            }
+        }
+    } else null) { padding ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            item {
+                SettingsHeading(stringResource(if (firstRun) R.string.setup_welcome else R.string.setup_title),
+                    if (firstRun) null else close)
+            }
+            item { SettingsPanel(null) { Text(stringResource(R.string.setup_intro), style = tokens.secondary) } }
+            item { OverlayPreference(recommended = true) }
+            steps.forEach { step ->
+                item(key = step.title) {
+                    SettingsPanel(null) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(step.title), Modifier.weight(1f), style = tokens.state)
+                            if (step.enabled) Text(stringResource(R.string.setup_enabled), style = tokens.label)
+                        }
+                        Text(stringResource(step.detail), style = tokens.secondary)
+                        if (!step.enabled) {
+                            SettingsLink(stringResource(R.string.setup_configure), glyph = Glyph.Settings, open = step.request)
                         }
                     }
                 }
-                item {
-                    SettingsPanel(null) { Text(stringResource(R.string.battery_discovery), style = tokens.secondary) }
-                }
-                if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
             }
-            if (firstRun) {
-                androidx.compose.material3.Surface(
-                    color = tokens.accentContainer, shape = androidx.compose.foundation.shape.RoundedCornerShape(tokens.radius),
-                    modifier = Modifier.fillMaxWidth().padding(top = tokens.gap)
-                ) {
-                    SettingsLink(stringResource(R.string.setup_finish), glyph = Glyph.Forward, open = close)
-                }
+            item {
+                SettingsPanel(null) { Text(stringResource(R.string.battery_discovery), style = tokens.secondary) }
             }
+            if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
         }
     }
 }

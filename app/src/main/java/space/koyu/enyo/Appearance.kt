@@ -236,11 +236,11 @@ internal fun AppearanceScreen(back: () -> Unit) {
     val clearDeletion = if (deletion == null) Modifier else Modifier.pointerInput(Unit) {
         detectTapGestures { deletion = null }
     }
-    LazyVerticalGrid(
+    SettingsScreen(clearDeletion) { padding -> LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding().then(clearDeletion),
+        modifier = Modifier.fillMaxSize(),
         state = grid,
-        contentPadding = PaddingValues(tokens.margin),
+        contentPadding = padding,
         horizontalArrangement = Arrangement.spacedBy(tokens.gap),
         verticalArrangement = Arrangement.spacedBy(tokens.padding)
     ) {
@@ -356,7 +356,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) { EnyoGlyph(Glyph.Plus, Modifier.size(tokens.appGlyphSize)) }
         }
-    }
+    } }
     gallery.firstOrNull { it.id == targetId }?.let { wallpaper ->
         EnyoSheet(stringResource(R.string.wallpaper_apply_android), { targetId = null }) {
             Text(stringResource(wallpaper.label), style = tokens.secondary)
