@@ -80,7 +80,7 @@ internal fun InboxPage(
                 Modifier.padding(horizontal = tokens.margin)
                     .padding(top = if (providers.isNotEmpty()) tokens.margin * 2 else tokens.gap)
                     .semantics { heading() },
-                style = tokens.state
+                style = tokens.settingsTitle
             )
         }
         if (messages.isEmpty() && others.isEmpty()) {
