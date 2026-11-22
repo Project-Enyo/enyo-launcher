@@ -93,6 +93,7 @@ private fun ColumnScope.RunningTaskList() {
     var busy by remember { mutableStateOf(true) }
     var unavailable by remember { mutableStateOf(false) }
     var closeFailed by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<RunningTask?>(null) }
     val foreground = foregroundCycle()
     suspend fun refresh(service: ITaskBridge) {
@@ -108,7 +109,7 @@ private fun ColumnScope.RunningTaskList() {
     }
     DisposableEffect(context) {
         val args = Shizuku.UserServiceArgs(ComponentName(context, EnyoTaskService::class.java))
-            .processNameSuffix("tasks").daemon(false).version(1)
+            .processNameSuffix("tasks").daemon(false).version(2)
         var active = true
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -146,6 +147,7 @@ private fun ColumnScope.RunningTaskList() {
         }
     }
     when {
+        closing -> Text(stringResource(R.string.running_tasks_closing), style = tokens.secondary)
         busy -> Text(stringResource(R.string.running_tasks_loading), style = tokens.secondary)
         unavailable -> Text(stringResource(R.string.running_tasks_unavailable), style = tokens.secondary)
         tasks.isEmpty() -> Text(stringResource(R.string.running_tasks_empty), style = tokens.secondary)
@@ -155,15 +157,16 @@ private fun ColumnScope.RunningTaskList() {
         Text(stringResource(R.string.running_tasks_confirm, sourceLabel(context, task.component.packageName)))
         Row {
             TextButton(onClick = { selected = null }) { Text(stringResource(R.string.back)) }
-            TextButton(enabled = !busy, onClick = {
+            TextButton(enabled = !busy && !closing, onClick = {
                 val service = bridge ?: return@TextButton
                 selected = null
-                busy = true
+                closing = true
                 scope.launch {
                     closeFailed = !withContext(Dispatchers.IO) {
                         runCatching { service.closeTask(task.id, task.component.flattenToString()) }.getOrDefault(false)
                     }
                     refresh(service)
+                    closing = false
                 }
             }) { Text(stringResource(R.string.running_tasks_close)) }
         }
@@ -178,7 +181,7 @@ private fun ColumnScope.RunningTaskList() {
                 }
                 val close = stringResource(R.string.running_tasks_close_named, label)
                 IconButton(
-                    enabled = !busy && selected == null,
+                    enabled = !busy && !closing && selected == null,
                     onClick = { closeFailed = false; selected = task },
                     modifier = Modifier.semantics { contentDescription = close }
                 ) { EnyoGlyph(Glyph.Close) }

@@ -209,4 +209,5 @@
     <string name="running_tasks_confirm">Close the Android task for %1$s?</string>
     <string name="running_tasks_close_named">Close task for %1$s</string>
     <string name="running_task_number">Task %1$d</string>
+    <string name="running_tasks_closing">Closing Android task…</string>
 </resources>

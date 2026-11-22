@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Binder
 import android.os.Process
+import android.os.SystemClock
 import android.os.UserHandle
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
@@ -27,10 +28,20 @@ class EnyoTaskService(context: Context) : ITaskBridge.Stub() {
     override fun closeTask(id: Int, component: String): Boolean {
         checkOwner()
         val expected = ComponentName.unflattenFromString(component) ?: return false
-        if (tasks()?.get(id) != expected) return false
+        val before = tasks() ?: return false
+        val actual = before[id] ?: return true
+        if (actual != expected) return false
         if (activityCommand("stack", "remove", id.toString()) == null) return false
-        val remaining = tasks() ?: return false
-        return id !in remaining
+
+        val deadline = SystemClock.elapsedRealtime() + closeConfirmationMillis
+        do {
+            val remaining = tasks()
+            if (remaining != null && id !in remaining) return true
+            val wait = deadline - SystemClock.elapsedRealtime()
+            if (wait <= 0) break
+            SystemClock.sleep(minOf(wait, closePollMillis))
+        } while (true)
+        return false
     }
 
     private fun checkOwner() {
@@ -85,6 +96,8 @@ class EnyoTaskService(context: Context) : ITaskBridge.Stub() {
 
     private companion object {
         const val shellUid = 2000
+        const val closeConfirmationMillis = 2000L
+        const val closePollMillis = 150L
         const val maxOutput = 256 * 1024
         val leaf = Regex("""  taskId=(\d+): ([\w.$]+/[\w.$]+)(?: bounds=\S+)? userId=0 visible=(?:true|false)(?: topActivity=.*)?""")
     }

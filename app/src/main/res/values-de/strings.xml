@@ -209,4 +209,5 @@
     <string name="running_tasks_confirm">Android Aktivität für %1$s schließen?</string>
     <string name="running_tasks_close_named">Aktivität für %1$s schließen</string>
     <string name="running_task_number">Aktivität %1$d</string>
+    <string name="running_tasks_closing">Android Aktivität wird geschlossen…</string>
 </resources>
