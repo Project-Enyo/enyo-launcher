@@ -60,7 +60,7 @@ internal class MessageArchive private constructor(private val context: Context) 
      * in it is a confident duplicate of a Beeper message, so its Enyo banner can be skipped.
      */
     fun capture(entry: StatusBarNotification, stored: (Boolean) -> Unit = {}) {
-        if (entry.user != Process.myUserHandle() || Messenger.of(entry.packageName) == null) { stored(false); return }
+        if (entry.user != Process.myUserHandle() || !entry.isMessagingNotice()) { stored(false); return }
         if (entry.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) { stored(false); return }
         val captured = runCatching { CapturedNotice.from(context, entry) }.getOrNull() ?: run { stored(false); return }
         writes.launch {

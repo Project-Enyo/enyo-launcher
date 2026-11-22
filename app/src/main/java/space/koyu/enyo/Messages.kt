@@ -39,8 +39,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 
-internal fun StatusBarNotification.isMessagingNotice() =
-    packageName in messagingPackages && notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
+/**
+ * A chat message from a messaging app. Uploads, calls, and other status notices those apps post
+ * (Discord's upload progress, Anura's ringing and ongoing calls) stay ordinary notifications.
+ */
+internal fun StatusBarNotification.isMessagingNotice(): Boolean {
+    if (packageName !in messagingPackages) return false
+    val note = notification
+    if (note.flags and (Notification.FLAG_GROUP_SUMMARY or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0) return false
+    if (note.category in nonChatCategories) return false
+    if (note.extras.getInt(Notification.EXTRA_PROGRESS_MAX) > 0 || note.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)) return false
+    val channel = note.channelId.orEmpty()
+    return nonChatChannels.none { channel.contains(it, ignoreCase = true) }
+}
+
+private val nonChatCategories = setOf(
+    Notification.CATEGORY_CALL, Notification.CATEGORY_MISSED_CALL, Notification.CATEGORY_PROGRESS,
+    Notification.CATEGORY_SERVICE, Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_STATUS,
+    Notification.CATEGORY_SYSTEM, Notification.CATEGORY_ERROR, Notification.CATEGORY_LOCATION_SHARING,
+    Notification.CATEGORY_STOPWATCH
+)
+
+/** Channel names of transfer and call notices; Discord posts uploads on NOTIFICATION_CHANNEL_UPLOAD. */
+private val nonChatChannels = listOf("upload", "filetransfer", "call")
 
 @Composable
 internal fun InboxPage(
@@ -61,7 +82,9 @@ internal fun InboxPage(
     else if (group != null) entries.filter { it.noticeGroup() == group }
     else entries
     val messages = entriesVisible.filter { it.isMessagingNotice() }
-    val others = entriesVisible.filterNot { it.isMessagingNotice() || it.packageName in messagingPackages }
+    val others = entriesVisible.filterNot {
+        it.isMessagingNotice() || (it.packageName in messagingPackages && it.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0)
+    }
     fun open(entry: StatusBarNotification) {
         failed = false
         if (entry.openFromForeground(context)) return

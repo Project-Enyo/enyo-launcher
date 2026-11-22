@@ -21,19 +21,19 @@ class EnyoNotificationService : NotificationListenerService() {
         refresh()
         // Messages still shown in the shade are archived once more; known ones are recognized and skipped.
         val archive = MessageArchive.get(this)
-        entries.value.filter { it.packageName in messagingPackages }.forEach(archive::capture)
+        entries.value.filter { it.isMessagingNotice() }.forEach(archive::capture)
     }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val previous = entries.value.firstOrNull { it.key == sbn.key }
         refresh()
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
-            if (sbn.packageName in messagingPackages) MessageArchive.get(this).capture(sbn)
+            if (sbn.isMessagingNotice()) MessageArchive.get(this).capture(sbn)
             return
         }
         val current = entries.value.firstOrNull { it.key == sbn.key }
         val announce = current != null && current.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
             (previous == null || previous.noticePayload() != current.noticePayload())
-        if (sbn.packageName !in messagingPackages) {
+        if (!sbn.isMessagingNotice()) {
             if (announce) arrivals.tryEmit(current!!)
             return
         }
