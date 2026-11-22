@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Enyo grants these to any app that asks; unknown permissions are ignored when Enyo is missing. -->
+    <uses-permission android:name="space.koyu.enyo.permission.UNIFIED_INBOX" />
+    <uses-permission android:name="space.koyu.enyo.debug.permission.UNIFIED_INBOX" />
+    <queries>
+        <package android:name="space.koyu.enyo" />
+        <package android:name="space.koyu.enyo.debug" />
+    </queries>
+</manifest>

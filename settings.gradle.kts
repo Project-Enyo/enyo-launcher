@@ -13,3 +13,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Enyo"
 include(":app")
+include(":inbox")
