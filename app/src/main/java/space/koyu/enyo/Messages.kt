@@ -78,7 +78,7 @@ internal fun InboxPage(
             Text(
                 stringResource(R.string.inbox_notifications_heading),
                 Modifier.padding(horizontal = tokens.margin)
-                    .padding(top = if (providers.isNotEmpty()) tokens.margin else tokens.gap)
+                    .padding(top = if (providers.isNotEmpty()) tokens.margin * 2 else tokens.gap)
                     .semantics { heading() },
                 style = tokens.state
             )
