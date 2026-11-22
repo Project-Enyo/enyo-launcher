@@ -207,4 +207,5 @@
     <string name="search_history_clear_message">Alle in Enyo gespeicherten Suchen löschen?</string>
     <string name="assistant_share_query">Anfrage mit %1$s teilen</string>
     <string name="inbox_notifications_heading">Nachrichten</string>
+    <string name="inbox_conversation_shortcut">%1$s in %2$s</string>
 </resources>

@@ -8,7 +8,10 @@ import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.os.Bundle
 import android.service.notification.StatusBarNotification
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -18,11 +21,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal val messagingPackages = setOf(
     "space.koyu.apollo.mini", "space.koyu.apollo", "org.telegram.messenger", "com.whatsapp",
@@ -47,7 +58,8 @@ internal fun InboxPage(
     var draft by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
     val labels = remember(apps) { apps.associate { it.componentName.packageName to it.label.toString() } }
-    val entriesVisible = if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) emptyList()
+    val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+    val entriesVisible = if (locked) emptyList()
     else if (group != null) entries.filter { it.noticeGroup() == group }
     else entries
     val messages = entriesVisible.filter { it.isMessagingNotice() }
@@ -62,7 +74,10 @@ internal fun InboxPage(
     }
     Column(Modifier.fillMaxSize()) {
         if (group == null) {
-            if (providers.isNotEmpty()) LazyRow(
+            val recent by EnyoNotificationService.recentConversations.collectAsState()
+            val conversations = if (locked) emptyList() else recent
+            val hasShortcuts = providers.isNotEmpty() || conversations.isNotEmpty()
+            if (hasShortcuts) LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = tokens.margin),
                 contentPadding = PaddingValues(horizontal = tokens.margin),
                 horizontalArrangement = Arrangement.spacedBy(tokens.margin)
@@ -70,21 +85,31 @@ internal fun InboxPage(
                 items(providers, key = { it.componentName.flattenToString() }) { app ->
                     val name = labels.getValue(app.componentName.packageName)
                     Box(
-                        Modifier.size(tokens.iconSize).appPress({ openApp(app) })
+                        Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
                             .semantics { contentDescription = name },
                         contentAlignment = Alignment.Center
                     ) { AppIcon(app, label = name) }
+                }
+                items(conversations, key = { it.key }) { conversation ->
+                    val provider = providers.firstOrNull { it.componentName.packageName == conversation.packageName }
+                    val providerName = labels[conversation.packageName] ?: sourceLabel(context, conversation.packageName)
+                    ConversationBubble(conversation, providerName) {
+                        if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return@ConversationBubble
+                        if (runCatching { conversation.open?.send() != null }.getOrDefault(false)) return@ConversationBubble
+                        if (provider != null) openApp(provider) else failed = true
+                    }
                 }
             }
             Text(
                 stringResource(R.string.inbox_notifications_heading),
                 Modifier.padding(horizontal = tokens.margin)
-                    .padding(top = if (providers.isNotEmpty()) tokens.margin * 2 else tokens.gap)
+                    .padding(top = if (hasShortcuts) tokens.margin * 2 else tokens.gap)
                     .semantics { heading() },
                 style = tokens.settingsTitle
             )
         }
         if (messages.isEmpty() && others.isEmpty()) {
+            if (failed) Text(stringResource(R.string.action_unavailable), Modifier.padding(tokens.margin), style = tokens.secondary)
             Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
                 WorkspaceEmptyState(R.string.inbox_empty)
             }
@@ -136,6 +161,31 @@ internal fun InboxPage(
     }
     LaunchedEffect(replying) {
         if (replying == null) { draftEntry = null; draft = "" }
+    }
+}
+
+@Composable
+private fun ConversationBubble(conversation: RecentConversation, provider: String, open: () -> Unit) {
+    val tokens = LocalTokens.current
+    val context = LocalContext.current
+    val size = with(LocalDensity.current) { tokens.iconSize.roundToPx().coerceAtLeast(1) }
+    val avatar by produceState<ImageBitmap?>(null, conversation.avatar, context, size) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { conversation.avatar?.loadDrawable(context)?.toBitmap(size, size)?.asImageBitmap() }.getOrNull()
+        }
+    }
+    val label = stringResource(R.string.inbox_conversation_shortcut, conversation.name, provider)
+    Box(
+        Modifier.size(tokens.iconSize).clip(CircleShape).background(tokens.accentContainer)
+            .appPress(open).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) {
+        val image = avatar
+        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else {
+            val initial = conversation.name.codePoints().findFirst().orElse('?'.code)
+            Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
+        }
     }
 }
 
