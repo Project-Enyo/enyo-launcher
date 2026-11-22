@@ -247,4 +247,8 @@
     <string name="duplicate_question">Same message through Beeper and %1$s?</string>
     <string name="duplicate_keep">Keep both</string>
     <string name="duplicate_merge">Merge</string>
+    <string name="backup_category_messages">Messages</string>
+    <string name="backup_category_links">Person links</string>
+    <string name="backup_category_settings">Settings</string>
+    <string name="backup_category_layout">Launcher layout</string>
 </resources>

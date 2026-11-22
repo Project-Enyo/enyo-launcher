@@ -34,4 +34,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("net.zetetic:sqlcipher-android:4.20.0")
     implementation("androidx.sqlite:sqlite:2.7.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 }

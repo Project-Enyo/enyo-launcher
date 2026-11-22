@@ -287,6 +287,20 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
     /** Saves a whole arrangement after a move or resize. */
     fun commit(next: List<WidgetPlacement>) = save(next)
 
+    /**
+     * Applies a backed up arrangement to Enyo's own widgets by kind. Third party widgets need a new
+     * binding on each device, so they keep their place. Overlaps wait for the next free spot.
+     */
+    fun restoreKindLayout(raw: String) {
+        val saved = decode(raw).filter { it.kind != null && it.placed }.associateBy { it.kind }
+        var next = placements.map { current ->
+            saved[current.kind]?.let { current.copy(x = it.x, y = it.y, columns = it.columns, rows = it.rows, legacy = false) } ?: current
+        }
+        next = next.map { item -> if (next.any { it.id != item.id && it.placed && item.placed && it.overlaps(item) && it.kind == null }) item.copy(x = -1, y = -1) else item }
+        save(next)
+        grid?.let { arrange(it, emptySet()) }
+    }
+
     private fun complete(widget: WidgetPlacement) {
         val spec = grid
         val spot = spec?.let { placements.firstFit(widget.columns, widget.rows, it) }
