@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import android.service.notification.StatusBarNotification
 import android.util.AtomicFile
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,7 +51,11 @@ internal data class ModelAsset(val repository: String, val path: String, val nam
 private val downloadLocks = ModelDownloadKind.entries.associateWith { Mutex() }
 private const val downloadChannel = "model_download"
 private const val modelKind = "model_kind"
-private const val percentKey = "percent"
+private const val progressKey = "download_progress"
+private const val progressMax = 10_000
+private const val progressIntervalMillis = 2_000L
+
+private fun downloadPercent(progress: Int): Double = progress * 100.0 / progressMax
 
 internal fun StatusBarNotification.isModelDownload(packageName: String): Boolean =
     this.packageName == packageName && notification.channelId == downloadChannel
@@ -65,7 +70,7 @@ internal fun StatusBarNotification.modelDownloadProgress(packageName: String): F
 internal class ModelDownloadState(
     val active: Boolean,
     val failed: Boolean,
-    val percent: Int?,
+    val progress: Int?,
     val start: () -> Unit,
     val cancel: () -> Unit
 )
@@ -78,7 +83,7 @@ internal fun modelDownloadState(kind: ModelDownloadKind): ModelDownloadState {
     val current = work.firstOrNull { !it.state.isFinished } ?: work.firstOrNull()
     val active = current?.state?.isFinished == false
     val failed = current?.state == WorkInfo.State.FAILED
-    val percent = current?.progress?.getInt(percentKey, -1)?.takeIf { it >= 0 }
+    val progress = current?.progress?.getInt(progressKey, -1)?.takeIf { it >= 0 }
     val enqueue: () -> Unit = {
         manager.enqueueUniqueWork(kind.workName, ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
@@ -86,7 +91,7 @@ internal fun modelDownloadState(kind: ModelDownloadKind): ModelDownloadState {
                 .setInputData(workDataOf(modelKind to kind.name)).build())
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { enqueue() }
-    return ModelDownloadState(active, failed, percent, start = {
+    return ModelDownloadState(active, failed, progress, start = {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) permission.launch(Manifest.permission.POST_NOTIFICATIONS) else enqueue()
@@ -96,7 +101,7 @@ internal fun modelDownloadState(kind: ModelDownloadKind): ModelDownloadState {
 @Composable
 internal fun ModelDownloadStatus(kind: ModelDownloadKind, state: ModelDownloadState) {
     if (state.active) SettingsAction(stringResource(R.string.model_download_cancel), Glyph.Close,
-        summary = state.percent?.let { stringResource(R.string.model_download_percent, it) }
+        summary = state.progress?.let { stringResource(R.string.model_download_percent, downloadPercent(it)) }
             ?: stringResource(kind.title), run = state.cancel)
     else if (state.failed) ListNote(stringResource(R.string.model_download_failed))
 }
@@ -117,8 +122,8 @@ class ModelDownloadWorker(context: Context, parameters: WorkerParameters) : Coro
         fun notification(progress: Int) = NotificationCompat.Builder(context, downloadChannel)
             .setSmallIcon(R.drawable.tabler_cloud_upload)
             .setContentTitle(context.getString(kind.title))
-            .setContentText(context.getString(R.string.model_download_percent, progress))
-            .setProgress(100, progress, false)
+            .setContentText(context.getString(R.string.model_download_percent, downloadPercent(progress)))
+            .setProgress(progressMax, progress, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
@@ -127,7 +132,7 @@ class ModelDownloadWorker(context: Context, parameters: WorkerParameters) : Coro
             .build()
         manager.createNotificationChannel(NotificationChannel(downloadChannel,
             context.getString(R.string.model_download_channel), NotificationManager.IMPORTANCE_LOW))
-        var last = -5
+        var lastUpdate: Long? = null
         return try {
             try {
                 setForeground(ForegroundInfo(kind.notificationId, notification(0), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
@@ -136,11 +141,13 @@ class ModelDownloadWorker(context: Context, parameters: WorkerParameters) : Coro
             } catch (_: IllegalStateException) {
                 // A queued job can start after the launcher leaves the foreground.
             }
-            val progress: suspend (Int) -> Unit = { percent ->
-                if (percent >= last + 5 || percent == 100) {
-                    last = percent
-                    setProgress(workDataOf(percentKey to percent))
-                    runCatching { manager.notify(kind.notificationId, notification(percent)) }
+            val progress: suspend (Int) -> Unit = { downloaded ->
+                val now = SystemClock.elapsedRealtime()
+                val previous = lastUpdate
+                if (previous == null || now - previous >= progressIntervalMillis || downloaded == progressMax) {
+                    lastUpdate = now
+                    setProgress(workDataOf(progressKey to downloaded))
+                    runCatching { manager.notify(kind.notificationId, notification(downloaded)) }
                 }
             }
             progress(0)
@@ -188,7 +195,7 @@ internal suspend fun downloadModels(folder: File, assets: List<ModelAsset>, repo
                                 check(size <= asset.bytes)
                                 digest.update(buffer, 0, count)
                                 output.write(buffer, 0, count)
-                                report(((completed + size) * 100 / total).toInt().coerceAtMost(99))
+                                report(((completed + size) * progressMax / total).toInt().coerceAtMost(progressMax - 1))
                             }
                             check(size == asset.bytes && digest.digest().joinToString("") { "%02x".format(it) } == asset.sha256)
                             atomic.finishWrite(output)
@@ -203,5 +210,5 @@ internal suspend fun downloadModels(folder: File, assets: List<ModelAsset>, repo
             }
             completed += asset.bytes
         }
-        report(100)
+        report(progressMax)
     }

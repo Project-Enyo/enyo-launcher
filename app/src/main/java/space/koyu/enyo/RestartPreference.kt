@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -35,7 +36,8 @@ internal fun RestartPreference() {
     val view = LocalView.current
     val tokens = LocalTokens.current
     val scope = rememberCoroutineScope()
-    var remaining by remember { mutableIntStateOf(restartHoldSeconds) }
+    var remaining by remember { mutableStateOf<Int?>(null) }
+    val seconds = remaining ?: restartHoldSeconds
     val restartLabel = stringResource(R.string.restart_title)
     ListRow(
         restartLabel,
@@ -44,6 +46,7 @@ internal fun RestartPreference() {
             .pointerInput(context, view) {
                 awaitEachGesture {
                     awaitFirstDown()
+                    remaining = restartHoldSeconds
                     val countdown = scope.launch {
                         for (left in restartHoldSeconds downTo 1) {
                             remaining = left
@@ -57,13 +60,13 @@ internal fun RestartPreference() {
                         waitForUpOrCancellation()
                     } finally {
                         countdown.cancel()
-                        remaining = restartHoldSeconds
+                        remaining = null
                     }
                 }
             },
-        summary = pluralStringResource(R.plurals.restart_summary, remaining, remaining),
+        summary = pluralStringResource(R.plurals.restart_summary, seconds, seconds),
         leading = { EnyoGlyph(Glyph.Bomb, color = tokens.danger) },
-        foreground = tokens.danger
+        foreground = if (remaining != null) tokens.danger else Color.Unspecified
     )
 }
 

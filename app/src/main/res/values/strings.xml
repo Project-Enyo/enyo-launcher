@@ -383,7 +383,7 @@
     <string name="local_ai_download_summary">Install Qwen3 0.6B (347 MB) and select Local AI as your assistant.</string>
     <string name="local_ai_downloading">Downloading the chat model</string>
     <string name="model_download_channel">Model downloads</string>
-    <string name="model_download_percent">%1$d%% downloaded</string>
+    <string name="model_download_percent">%1$.1f%% downloaded</string>
     <string name="model_download_cancel">Cancel download</string>
     <string name="model_download_failed">The model download failed. Try again.</string>
 </resources>
