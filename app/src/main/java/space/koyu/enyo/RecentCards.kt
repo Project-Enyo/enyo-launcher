@@ -408,18 +408,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
             val availableHeight = maxHeight
             val sidePadding = (maxWidth - cardWidth) / 2
             SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
-            if (groups.isEmpty()) Surface(
-                color = tokens.widgetSurface,
-                shape = RoundedCornerShape(tokens.radius),
-                shadowElevation = tokens.elevation[0]
-            ) {
-                Text(
-                    stringResource(R.string.cards_empty),
-                    Modifier.padding(horizontal = tokens.padding, vertical = tokens.gap),
-                    style = tokens.state.copy(color = tokens.onAccentContainer),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            } else LazyRow(
+            if (groups.isEmpty()) WorkspaceEmptyState(R.string.cards_empty) else LazyRow(
                 modifier = Modifier.fillMaxSize().onGloballyPositioned { carouselBounds = it.boundsInRoot() },
                 state = scroll,
                 userScrollEnabled = canScroll && lifted == null,
@@ -592,6 +581,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 ) { CardFace(drag.card, drag.image) }
             }
         }
+        RunningTasksAction()
         if (Build.VERSION.SDK_INT >= 34 && !enabled) {
             TextButton(onClick = { context.launchSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                 Text(stringResource(R.string.cards_capture_permission), color = tokens.ink)

@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -52,8 +53,11 @@ internal fun InboxPage(
         val provider = apps.firstOrNull { it.componentName.packageName == entry.packageName }
         if (provider == null) failed = true else openApp(provider)
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
-        if (entriesVisible.isEmpty()) item { Text(stringResource(R.string.inbox_empty), style = tokens.secondary) }
+    if (messages.isEmpty() && others.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
+            WorkspaceEmptyState(R.string.inbox_empty)
+        }
+    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
         if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
         if (messages.isNotEmpty()) {
             if (group == null) item {
