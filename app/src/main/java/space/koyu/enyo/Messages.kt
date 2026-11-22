@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -110,61 +111,54 @@ internal fun InboxPage(
         }
     }
     openThread?.let { thread -> ThreadScreen(thread, launchers, openApp) { openThread = null } }
-    Column(Modifier.fillMaxSize()) {
+    val visibleThreads = if (group == null && !locked) threads else emptyList()
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = tokens.margin, end = tokens.margin, bottom = tokens.margin, top = if (group == null) tokens.gap else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(tokens.gap)
+    ) {
+        if (failed) item { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
         if (group == null) {
+            // Messages: recent people and messengers, then every conversation.
+            item(key = "messages_heading") { InboxHeading(stringResource(R.string.messages), first = true) }
             val conversations = if (locked) emptyList() else heads
-            val hasShortcuts = providers.isNotEmpty() || conversations.isNotEmpty()
-            if (hasShortcuts) LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(top = tokens.margin),
-                contentPadding = PaddingValues(horizontal = tokens.margin),
-                horizontalArrangement = Arrangement.spacedBy(tokens.margin)
-            ) {
-                // Chat heads: the most recent people across every messenger, from the archive.
-                items(conversations, key = { it.ref.toString() }) { head ->
-                    ChatHead(head, open = { openThread = head.ref }, person = { personFlyout = head })
-                }
-                items(providers, key = { it.componentName.flattenToString() }) { app ->
-                    val name = labels.getValue(app.componentName.packageName)
-                    Box(
-                        Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
-                            .semantics { contentDescription = name },
-                        contentAlignment = Alignment.Center
-                    ) { AppIcon(app, label = name) }
+            if (providers.isNotEmpty() || conversations.isNotEmpty()) item(key = "heads") {
+                LazyRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.margin)
+                ) {
+                    // Chat heads: the most recent people across every messenger, from the archive.
+                    items(conversations, key = { it.ref.toString() }) { head ->
+                        ChatHead(head, open = { openThread = head.ref }, person = { personFlyout = head })
+                    }
+                    items(providers, key = { it.componentName.flattenToString() }) { app ->
+                        val name = labels.getValue(app.componentName.packageName)
+                        Box(
+                            Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
+                                .semantics { contentDescription = name },
+                            contentAlignment = Alignment.Center
+                        ) { AppIcon(app, label = name) }
+                    }
                 }
             }
-            Text(
-                stringResource(R.string.inbox_notifications_heading),
-                Modifier.padding(horizontal = tokens.margin)
-                    .padding(top = if (hasShortcuts) tokens.margin else tokens.gap, bottom = tokens.gap)
-                    .semantics { heading() },
-                style = tokens.settingsTitle
-            )
-        }
-        val visibleThreads = if (group == null && !locked) threads else emptyList()
-        val nothing = visibleThreads.isEmpty() && messages.isEmpty() && others.isEmpty()
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = tokens.margin, end = tokens.margin, bottom = tokens.margin),
-            verticalArrangement = Arrangement.spacedBy(tokens.gap)
-        ) {
-            if (failed) item { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
-            if (group == null && !listening) item { ListCard { ListNote(stringResource(R.string.archive_access_missing)) } }
+            if (!listening) item { ListCard { ListNote(stringResource(R.string.archive_access_missing)) } }
             if (visibleThreads.isNotEmpty()) item(key = "threads") {
-                SettingsPanel(stringResource(R.string.inbox_conversations)) {
+                ListCard {
                     val shown = if (allThreads) visibleThreads else visibleThreads.take(tokens.inboxThreadPreview)
                     shown.forEach { summary -> key(summary.ref.toString()) { ThreadRow(summary, launchers, person = { personFlyout = summary }) { openThread = summary.ref } } }
                     if (!allThreads && visibleThreads.size > shown.size) {
                         SettingsAction(stringResource(R.string.inbox_show_all, visibleThreads.size), Glyph.Messages) { allThreads = true }
                     }
                 }
+            } else if (listening && !locked) item(key = "no_threads") { ListCard { ListNote(stringResource(R.string.inbox_no_messages)) } }
+            // Organizer: to-dos and notes, private while the phone is locked.
+            if (!locked) {
+                item(key = "organizer_heading") { InboxHeading(stringResource(R.string.inbox_organizer)) }
+                item(key = "notes") { NotesSection() }
             }
-            if (group == null && nothing) item(key = "empty") {
-                Box(Modifier.fillMaxWidth().padding(vertical = tokens.margin), contentAlignment = Alignment.Center) {
-                    WorkspaceEmptyState(R.string.inbox_empty)
-                }
-            }
-            // Notes and to-dos sit below the messages, and stay private while the phone is locked.
-            if (group == null && !locked) item(key = "notes") { NotesSection() }
+            item(key = "notifications_heading") { InboxHeading(stringResource(R.string.inbox_notifications_heading)) }
+            if (others.isEmpty()) item(key = "no_notifications") { ListCard { ListNote(stringResource(R.string.inbox_no_notifications)) } }
+        }
             // The unified list already holds messaging notifications, so their own card stays in the banner tray only.
             if (group != null && messages.isNotEmpty()) item(key = "messages") {
                 ListCard {
@@ -208,7 +202,6 @@ internal fun InboxPage(
                     }
                 }
             }
-        }
     }
     val replying = messages.firstOrNull { it.key == draftEntry && it.notification.replyAction() != null }
     if (replying != null) NotificationReplySheet(
@@ -219,6 +212,16 @@ internal fun InboxPage(
     LaunchedEffect(replying) {
         if (replying == null) draftEntry = null
     }
+}
+
+/** A top level Inbox section title; sections are Messages, Organizer and Notifications. */
+@Composable
+private fun InboxHeading(text: String, first: Boolean = false) {
+    val tokens = LocalTokens.current
+    Text(
+        text, Modifier.fillMaxWidth().padding(start = tokens.gap / 2, top = if (first) 0.dp else tokens.margin).semantics { heading() },
+        style = tokens.state.copy(color = tokens.ink)
+    )
 }
 
 /** Card header: the source icon and name, the count, and an optional collapse chevron. */

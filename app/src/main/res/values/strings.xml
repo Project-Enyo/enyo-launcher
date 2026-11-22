@@ -316,4 +316,7 @@
     <string name="push_channel">Push connection</string>
     <string name="push_running">Push notifications are active</string>
     <string name="push_running_detail">Delivering for %1$d apps</string>
+    <string name="inbox_organizer">Organizer</string>
+    <string name="inbox_no_messages">No messages yet. Chats appear here as they arrive.</string>
+    <string name="inbox_no_notifications">No notifications</string>
 </resources>

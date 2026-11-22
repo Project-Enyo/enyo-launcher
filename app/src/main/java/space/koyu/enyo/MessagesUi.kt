@@ -75,10 +75,13 @@ internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.uni
 @Composable
 internal fun ChatHead(summary: ThreadSummary, open: () -> Unit, person: () -> Unit) {
     val tokens = LocalTokens.current
-    Box(Modifier.size(tokens.iconSize).clip(CircleShape).appPress(open, person).semantics { contentDescription = summary.name }) {
-        PersonAvatar(summary, tokens.iconSize)
+    // The dot sits on the avatar's edge, outside its clip, with a ring in the page color.
+    Box(Modifier.size(tokens.iconSize).semantics(mergeDescendants = true) { contentDescription = summary.name }) {
+        Box(Modifier.fillMaxSize().clip(CircleShape).appPress(open, person)) { PersonAvatar(summary, tokens.iconSize) }
         if (summary.unread > 0) Box(
-            Modifier.align(Alignment.TopEnd).size(tokens.unreadDot).clip(CircleShape).background(tokens.accent)
+            Modifier.align(Alignment.TopEnd).offset(x = tokens.unreadDot / 4, y = -tokens.unreadDot / 4)
+                .size(tokens.unreadDot + tokens.focusStroke * 2).clip(CircleShape).background(tokens.settingsBackground)
+                .padding(tokens.focusStroke).clip(CircleShape).background(tokens.accent)
         )
     }
 }

@@ -206,7 +206,7 @@
     <string name="search_history_clear">Suchverlauf löschen</string>
     <string name="search_history_clear_message">Alle in Enyo gespeicherten Suchen löschen?</string>
     <string name="assistant_share_query">Anfrage mit %1$s teilen</string>
-    <string name="inbox_notifications_heading">Nachrichten</string>
+    <string name="inbox_notifications_heading">Benachrichtigungen</string>
     <string name="inbox_conversation_shortcut">%1$s in %2$s</string>
     <string name="settings_system">System</string>
     <string name="settings_banners">Banner</string>
@@ -316,4 +316,7 @@
     <string name="push_channel">Push-Verbindung</string>
     <string name="push_running">Push-Benachrichtigungen sind aktiv</string>
     <string name="push_running_detail">Zustellung für %1$d Apps</string>
+    <string name="inbox_organizer">Organisation</string>
+    <string name="inbox_no_messages">Noch keine Nachrichten. Chats erscheinen hier, sobald sie ankommen.</string>
+    <string name="inbox_no_notifications">Keine Benachrichtigungen</string>
 </resources>
