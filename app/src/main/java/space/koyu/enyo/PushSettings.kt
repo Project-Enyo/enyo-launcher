@@ -54,7 +54,7 @@ internal fun PushPreference() {
                 stringResource(R.string.push_notification_permission),
                 summary = stringResource(R.string.push_notification_permission_summary),
                 leading = { EnyoGlyph(Glyph.Bell, color = tokens.accent) },
-                trailing = { PillButton(stringResource(R.string.running_tasks_allow), filled = true) {
+                trailing = { PillButton(stringResource(R.string.push_allow), filled = true) {
                     request.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 } }
             )
@@ -65,7 +65,7 @@ internal fun PushPreference() {
                 }),
                 summary = stringResource(R.string.push_battery_summary),
                 leading = { EnyoGlyph(Glyph.Battery, color = tokens.accent) },
-                trailing = { PillButton(stringResource(R.string.running_tasks_allow), filled = true) {
+                trailing = { PillButton(stringResource(R.string.push_allow), filled = true) {
                     context.launchSafely(PushDistributor.unrestrictIntent(context).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                 } }
             )
