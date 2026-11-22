@@ -422,7 +422,7 @@ private fun Context.openMediaPlayer(media: MediaSnapshot): Boolean {
 
     val intent = runCatching { packageManager.getLaunchIntentForPackage(media.packageName) }.getOrNull()
     if (intent != null && launchSafely(intent)) return true
-    return media.sessionActivity?.let { runCatching { it.send() }.isSuccess } == true
+    return media.sessionActivity?.sendFromForeground(this) == true
 }
 
 @Composable

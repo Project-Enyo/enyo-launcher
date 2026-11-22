@@ -136,7 +136,29 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val wallpaperDeleteBubble = 26.dp
     val todayWidgetHeight = dimension(144, 112, 108, 112).dp
     val notificationTrayHeight = dimension(240, 210, 180, 148).dp
-    val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
+    val settingsTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = ink)
+    val rowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = onAccentContainer)
+    val rowSummary = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, color = quiet)
+    val pillLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    val listRowHeight = 56.dp
+    val listRowPadding = 8.dp
+    val listLeading = 40.dp
+    val listCardInset = 6.dp
+    val listLabelGap = 6.dp
+    val listAvatar = 40.dp
+    val pillHeight = 34.dp
+    val disabledOpacity = 0.38f
+    val noticeAppIcon = 24.dp
+    val todayCellMinimum = 88.dp
+    val todayColumnsMinimum = 4
+    val todayColumnsMaximum = 6
+    val todayRemoveZone = 72.dp
+    val todayHandleReach = 28.dp
+    val todayHandle = 16.dp
+    val todayLiftScale = 1.04f
+    val widgetPreview = 64.dp
+    val widgetPickerHeight = 420.dp
+    val noticeDismissGlyph = 18.dp
     val folderMaxHeight = 300.dp
     val dockHoldMillis = 500L
     val controlHoldMillis = 250L

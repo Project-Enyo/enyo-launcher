@@ -208,4 +208,17 @@
     <string name="assistant_share_query">Anfrage mit %1$s teilen</string>
     <string name="inbox_notifications_heading">Nachrichten</string>
     <string name="inbox_conversation_shortcut">%1$s in %2$s</string>
+    <string name="settings_system">System</string>
+    <string name="settings_banners">Banner</string>
+    <string name="settings_cards">Karten</string>
+    <string name="assistant_ask">%1$s fragen</string>
+    <string name="notice_open_failed">Diese Benachrichtigung konnte nicht geöffnet werden</string>
+    <string name="setup_permissions">Berechtigungen</string>
+    <string name="widget_no_room">Kein Platz für dieses Widget auf Heute</string>
+    <string name="widget_drop_remove">Entfernen</string>
+    <string name="today_hint">Gedrückt halten, um Widgets hinzuzufügen</string>
+    <string name="widget_menu_widgets">Widgets</string>
+    <string name="widget_size">%1$d × %2$d</string>
+    <string name="widget_resize">Größe ändern</string>
+    <string name="search_web_section">Internetsuche</string>
 </resources>

@@ -73,15 +73,17 @@ internal fun OverlayPreference(recommended: Boolean = false) {
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (Settings.canDrawOverlays(context)) scope.launch { store.edit { it[systemBanners] = true } }
     }
-    SettingsPanel(if (recommended) stringResource(R.string.overlay_recommended) else null) {
-        Text(stringResource(R.string.overlay_privacy), style = tokens.secondary)
-        SettingsToggle(stringResource(R.string.overlay_enable), enabled && allowed) { next ->
+    SettingsPanel(stringResource(if (recommended) R.string.overlay_recommended else R.string.settings_banners)) {
+        SettingsToggle(
+            stringResource(R.string.overlay_enable), enabled && allowed,
+            summary = stringResource(R.string.overlay_privacy), glyph = Glyph.Bell
+        ) { next ->
             if (!next || allowed) scope.launch { store.edit { it[systemBanners] = next } }
             else runCatching {
                 permission.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.fromParts("package", context.packageName, null)))
             }.onFailure { error = true }
         }
-        if (error) Text(stringResource(R.string.action_unavailable), style = tokens.secondary)
+        if (error) ListNote(stringResource(R.string.action_unavailable))
     }
 }
 
@@ -160,8 +162,7 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
                 CompositionLocalProvider(LocalTokens provides tokens) {
                     OverlayCard(entry, close = ::dismiss) {
                         if (!keyguard.isKeyguardLocked) {
-                            val action = entry.notification.contentIntent
-                            val sent = action != null && runCatching { action.send() }.isSuccess
+                            val sent = entry.openFromForeground(context)
                             if (!sent) context.launchSafely(Intent(context, EnyoActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }

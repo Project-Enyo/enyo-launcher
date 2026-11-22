@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -78,11 +79,8 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
     }
     SettingsScreen(footer = if (firstRun) {
         {
-            androidx.compose.material3.Surface(
-                color = tokens.accentContainer, shape = androidx.compose.foundation.shape.RoundedCornerShape(tokens.radius),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SettingsLink(stringResource(R.string.setup_finish), glyph = Glyph.Forward, open = close)
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                PillButton(stringResource(R.string.setup_finish), filled = true, onClick = close)
             }
         }
     } else null) { padding ->
@@ -91,30 +89,25 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
                 SettingsHeading(stringResource(if (firstRun) R.string.setup_welcome else R.string.setup_title),
                     if (firstRun) null else close)
             }
-            item { SettingsPanel(null) { Text(stringResource(R.string.setup_intro), style = tokens.secondary) } }
-            item { OverlayPreference(recommended = true) }
-            steps.forEach { step ->
-                item(key = step.title) {
-                    SettingsPanel(null) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                        ) {
-                            Text(stringResource(step.title), Modifier.weight(1f), style = tokens.state)
-                            if (step.enabled) Text(stringResource(R.string.setup_enabled), style = tokens.label)
-                        }
-                        Text(stringResource(step.detail), style = tokens.secondary)
-                        if (!step.enabled) {
-                            SettingsLink(stringResource(R.string.setup_configure), glyph = Glyph.Settings, open = step.request)
-                        }
+            item { ListCard { ListNote(stringResource(R.string.setup_intro)) } }
+            item {
+                SettingsPanel(stringResource(R.string.setup_permissions)) {
+                    steps.forEach { step ->
+                        ListRow(
+                            stringResource(step.title),
+                            summary = stringResource(step.detail),
+                            summaryLines = 4,
+                            trailing = {
+                                if (step.enabled) Text(stringResource(R.string.setup_enabled), style = tokens.label.copy(color = tokens.accent))
+                                else PillButton(stringResource(R.string.setup_configure), onClick = step.request)
+                            }
+                        )
                     }
                 }
             }
-            item {
-                SettingsPanel(null) { Text(stringResource(R.string.battery_discovery), style = tokens.secondary) }
-            }
-            if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
+            item { OverlayPreference(recommended = true) }
+            item { ListCard { ListNote(stringResource(R.string.battery_discovery)) } }
+            if (failed) item { ListNote(stringResource(R.string.action_unavailable)) }
         }
     }
 }

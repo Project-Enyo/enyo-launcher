@@ -64,16 +64,19 @@ internal fun TaskClosePreference() {
     val access = rememberTaskAccess()
     if (!access.available) return
     var failed by remember { mutableStateOf(false) }
-    SettingsPanel(stringResource(R.string.task_close_title)) {
-        Text(stringResource(R.string.task_close_description), style = LocalTokens.current.secondary)
-        if (access.granted) {
-            Text(stringResource(R.string.setup_enabled), style = LocalTokens.current.label)
-        } else {
-            TextButton(onClick = {
-                failed = runCatching { Shizuku.requestPermission(taskPermissionRequest) }.isFailure
-            }) { Text(stringResource(R.string.running_tasks_allow)) }
-            if (failed) Text(stringResource(R.string.action_unavailable))
-        }
+    SettingsPanel(stringResource(R.string.settings_cards)) {
+        ListRow(
+            stringResource(R.string.task_close_title),
+            summary = stringResource(R.string.task_close_description),
+            leading = { EnyoGlyph(Glyph.Cards, color = LocalTokens.current.onAccentContainer) },
+            trailing = {
+                if (access.granted) Text(stringResource(R.string.setup_enabled), style = LocalTokens.current.label)
+                else PillButton(stringResource(R.string.running_tasks_allow)) {
+                    failed = runCatching { Shizuku.requestPermission(taskPermissionRequest) }.isFailure
+                }
+            }
+        )
+        if (failed) ListNote(stringResource(R.string.action_unavailable))
     }
 }
 

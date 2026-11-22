@@ -125,3 +125,27 @@ private fun StatusBarNotification.isBackgroundNotice(): Boolean {
 }
 
 internal val brandedNotificationApps = setOf("com.zhiliaoapp.musically", "com.zhiliaoapp.musically.go")
+
+/**
+ * Sends an intent created by another app with Enyo's foreground visibility. Since Android 14 a
+ * notification creator in the background may not start activities by itself, and the sender must
+ * opt in, as the system shade does. Without this, opening a notification is silently blocked.
+ */
+internal fun PendingIntent.sendFromForeground(context: android.content.Context): Boolean {
+    val options = android.app.ActivityOptions.makeBasic().apply {
+        if (android.os.Build.VERSION.SDK_INT >= 36) {
+            setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE)
+        } else if (android.os.Build.VERSION.SDK_INT >= 34) {
+            @Suppress("DEPRECATION")
+            setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+        }
+    }.toBundle()
+    return runCatching { send(context, 0, null, null, null, null, options) }.isSuccess
+}
+
+/** Opens a notification like the shade does, including auto cancel when the app asks for it. */
+internal fun StatusBarNotification.openFromForeground(context: android.content.Context): Boolean {
+    val sent = notification.contentIntent?.sendFromForeground(context) == true
+    if (sent && notification.flags and Notification.FLAG_AUTO_CANCEL != 0) EnyoNotificationService.dismiss(key)
+    return sent
+}

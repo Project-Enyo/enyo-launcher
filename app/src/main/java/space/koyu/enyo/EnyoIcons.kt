@@ -66,6 +66,17 @@ internal enum class Glyph(val drawable: Int) {
     Pause(R.drawable.tabler_player_pause),
     PreviousTrack(R.drawable.tabler_player_skip_back),
     NextTrack(R.drawable.tabler_player_skip_forward),
+    Photo(R.drawable.tabler_photo),
+    Trash(R.drawable.tabler_trash),
+    History(R.drawable.tabler_history),
+    Sparkles(R.drawable.tabler_sparkles),
+    Phone(R.drawable.tabler_phone),
+    Message(R.drawable.tabler_message),
+    World(R.drawable.tabler_world),
+    Calendar(R.drawable.tabler_calendar),
+    Bell(R.drawable.tabler_bell),
+    Widgets(R.drawable.tabler_layout_grid),
+    Clock(R.drawable.tabler_clock),
 }
 
 private data class IconKey(

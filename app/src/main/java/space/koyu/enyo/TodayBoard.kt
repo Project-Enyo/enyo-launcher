@@ -46,16 +46,6 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     val wide by remember(preferences) {
         preferences.data.map { it[widgetWidths]?.split(',')?.toSet() ?: default }
     }.collectAsState(default)
-    fun resizeToday(widget: TodayWidget, expand: Boolean) {
-        scope.launch {
-            preferences.edit { values ->
-                val current = values[widgetWidths]?.split(',')?.filter(String::isNotBlank)?.toSet() ?: default
-                values[widgetWidths] = (if (expand) current + widget.name else current - widget.name).joinToString(",")
-            }
-        }
-    }
-    val columns = if (tokens.size == CardSize.Tiny) 1 else 2
-    var editing by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
     LaunchedEffect(visible, board.providers) {
         if (visible && board.providers.isNotEmpty()) board.migrateDefaults(prompt = false)
@@ -89,107 +79,14 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     LaunchedEffect(visible, event, calendarAllowed, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Calendar, event) }
     LaunchedEffect(visible, connection, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Network) }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        val availableHeight = constraints.maxHeight
-        val rowHeight = with(density) { tokens.cardHeight.roundToPx().coerceAtLeast(1) }
-        val cellWidth = (maxWidth - tokens.margin * 2 - if (columns > 1) tokens.gap else 0.dp) / columns
-        val cellWidthPx = with(density) { cellWidth.roundToPx() }
-        val hosted = board.placements.associateBy { it.kind }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(columns), modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(tokens.margin),
-            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-            verticalArrangement = Arrangement.spacedBy(tokens.gap)
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { picker = true }, enabled = !board.adding) {
-                        Text(stringResource(R.string.widget_add), style = tokens.secondary)
-                    }
-                    val label = stringResource(if (editing) R.string.widget_done else R.string.widget_edit)
-                    Box(
-                        Modifier.heightIn(min = tokens.touch).appPress({ editing = !editing })
-                            .padding(horizontal = tokens.gap),
-                        contentAlignment = Alignment.Center
-                    ) { Text(label, style = tokens.secondary) }
-                }
-            }
-            if (board.migrated.size < TodayWidget.entries.size) item(span = { GridItemSpan(maxLineSpan) }) {
-                TextButton(onClick = { board.migrateDefaults(prompt = true) }, enabled = !board.adding) {
-                    Text(stringResource(R.string.widget_convert_defaults), style = tokens.secondary)
-                }
-            }
-            TodayWidget.entries.filter { it != TodayWidget.Calendar || calendarAllowed }.forEach { widget ->
-                val placement = hosted[widget] ?: return@forEach
-                val full = columns == 1 || widget.name in wide
-                item(key = widget.name, span = { GridItemSpan(if (full) maxLineSpan else 1) }) {
-                    Column {
-                        HostedWidget(board, placement, board.info(placement.id), tokens.todayWidgetHeight)
-                        if (editing) {
-                            WidgetEditActions(
-                                remove = { board.remove(placement) },
-                                resizeWidth = if (columns > 1) ({ resizeToday(widget, !full) }) else null,
-                                wide = full
-                            )
-                        }
-                    }
-                }
-            }
-            for (widget in board.placements.filter { it.kind == null }) {
-                val info = board.info(widget.id)
-                val isEnyoWidget = info != null && TodayWidget.entries.any { it.component(context) == info.provider }
-                val minimumWidth = info?.let {
-                    if (it.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0 && it.minResizeWidth > 0)
-                        it.minResizeWidth else it.minWidth
-                } ?: 0
-                val full = columns == 1 || widget.columns == 2 || minimumWidth > cellWidthPx
-                val rows = info?.widgetRows(rowHeight, availableHeight, widget.rows) ?: widget.rows
-                item(key = widget.id, span = { GridItemSpan(if (full) maxLineSpan else 1) }) {
-                    Column {
-                        HostedWidget(board, widget, info, if (isEnyoWidget) tokens.todayWidgetHeight else tokens.cardHeight * rows)
-                        if (editing) {
-                            val canChangeWidth = columns > 1 && minimumWidth <= cellWidthPx &&
-                                info != null && info.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0
-                            val canChangeHeight = !isEnyoWidget && info != null && info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0
-                            WidgetEditActions(
-                                remove = { board.remove(widget) },
-                                resizeWidth = if (canChangeWidth) ({ board.resize(widget, columns = if (full) 1 else 2) }) else null,
-                                wide = full,
-                                grow = if (canChangeHeight && info?.widgetRows(rowHeight, availableHeight, rows + 1) != rows)
-                                    ({ board.resize(widget, rows = rows + 1) }) else null,
-                                shrink = if (canChangeHeight && info?.widgetRows(rowHeight, availableHeight, rows - 1) != rows)
-                                    ({ board.resize(widget, rows = rows - 1) }) else null,
-                                configure = if (info?.configure != null) ({ board.configure(widget) }) else null
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WidgetEditActions(
-    remove: () -> Unit,
-    resizeWidth: (() -> Unit)?,
-    wide: Boolean,
-    grow: (() -> Unit)? = null,
-    shrink: (() -> Unit)? = null,
-    configure: (() -> Unit)? = null
-) {
-    Row {
-        if (resizeWidth != null) TextButton(onClick = resizeWidth) {
-            Text(stringResource(if (wide) R.string.widget_shrink else R.string.widget_expand))
-        }
-        TextButton(onClick = remove) { Text(stringResource(R.string.widget_remove)) }
-    }
-    if (grow != null || shrink != null || configure != null) Row {
-        if (grow != null) TextButton(onClick = grow) { Text(stringResource(R.string.widget_grow)) }
-        if (shrink != null) TextButton(onClick = shrink) { Text(stringResource(R.string.widget_reduce)) }
-        if (configure != null) TextButton(onClick = configure) { Text(stringResource(R.string.widget_configure)) }
-    }
+    // The saved width choice of Enyo's own widgets only seeds the one time conversion to the cell grid.
+    WidgetGrid(
+        board,
+        hidden = { it.kind == TodayWidget.Calendar && !calendarAllowed },
+        wideKinds = wide,
+        openPicker = { picker = true },
+        convertDefaults = if (board.migrated.size < TodayWidget.entries.size) ({ board.migrateDefaults(prompt = true) }) else null
+    )
 }
 
 private data class BatteryReading(val level: Float, val charging: Boolean)

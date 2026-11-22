@@ -19,6 +19,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import android.text.format.DateUtils
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,13 +68,18 @@ internal fun InboxPage(
     val messages = entriesVisible.filter { it.isMessagingNotice() }
     val others = entriesVisible.filterNot { it.isMessagingNotice() || it.packageName in messagingPackages }
     fun open(entry: StatusBarNotification) {
-        if (runCatching { entry.notification.contentIntent?.send() != null }.getOrDefault(false)) return
+        failed = false
+        if (entry.openFromForeground(context)) return
         val provider = apps.firstOrNull { it.componentName.packageName == entry.packageName }
         if (provider == null) failed = true else openApp(provider)
+    }
+    fun dismiss(entry: StatusBarNotification) {
+        failed = !EnyoNotificationService.dismiss(entry.key)
     }
     val providers = remember(apps) {
         apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
     }
+    val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
     Column(Modifier.fillMaxSize()) {
         if (group == null) {
             val recent by EnyoNotificationService.recentConversations.collectAsState()
@@ -87,7 +95,7 @@ internal fun InboxPage(
                     val providerName = labels[conversation.packageName] ?: sourceLabel(context, conversation.packageName)
                     ConversationBubble(conversation, providerName) {
                         if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return@ConversationBubble
-                        if (runCatching { conversation.open?.send() != null }.getOrDefault(false)) return@ConversationBubble
+                        if (conversation.open?.sendFromForeground(context) == true) return@ConversationBubble
                         if (provider != null) openApp(provider) else failed = true
                     }
                 }
@@ -103,35 +111,62 @@ internal fun InboxPage(
             Text(
                 stringResource(R.string.inbox_notifications_heading),
                 Modifier.padding(horizontal = tokens.margin)
-                    .padding(top = if (hasShortcuts) tokens.margin * 2 else tokens.gap)
+                    .padding(top = if (hasShortcuts) tokens.margin else tokens.gap, bottom = tokens.gap)
                     .semantics { heading() },
                 style = tokens.settingsTitle
             )
         }
         if (messages.isEmpty() && others.isEmpty()) {
-            if (failed) Text(stringResource(R.string.action_unavailable), Modifier.padding(tokens.margin), style = tokens.secondary)
+            if (failed) Box(Modifier.padding(horizontal = tokens.margin)) { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
             Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
                 WorkspaceEmptyState(R.string.inbox_empty)
             }
-        } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
-            if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
-            if (messages.isNotEmpty()) {
-                if (group == null) item {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        EnyoGlyph(Glyph.Messages)
-                        Spacer(Modifier.width(tokens.gap))
-                        Text(stringResource(R.string.messages), style = tokens.state)
+        } else LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = tokens.margin, end = tokens.margin, bottom = tokens.margin),
+            verticalArrangement = Arrangement.spacedBy(tokens.gap)
+        ) {
+            if (failed) item { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
+            if (messages.isNotEmpty()) item(key = "messages") {
+                ListCard {
+                    NoticeGroupHeader(
+                        stringResource(R.string.messages), messages.size,
+                        icon = { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.noticeAppIcon), color = tokens.onAccentContainer) },
+                        expanded = if (group == null) expanded else null,
+                        toggle = { expanded = !expanded }
+                    )
+                    if (expanded) messages.forEach { entry ->
+                        NoticeItem(
+                            entry, labels[entry.packageName] ?: sourceLabel(context, entry.packageName),
+                            open = { open(entry) },
+                            reply = { draft = ""; draftEntry = entry.key },
+                            dismiss = { dismiss(entry) },
+                            runAction = { failed = !it.actionIntent.sendFromForeground(context) }
+                        )
                     }
-                }
-                if (expanded) items(messages, key = { it.key }) { entry ->
-                    NoticeRow(entry, labels[entry.packageName] ?: sourceLabel(context, entry.packageName),
-                        { open(entry) }, { draft = ""; draftEntry = entry.key }, { failed = !EnyoNotificationService.dismiss(entry.key) })
                 }
             }
             others.groupBy { it.packageName }.forEach { (source, notifications) ->
-                item { Text(labels[source] ?: sourceLabel(context, source), style = tokens.state) }
-                items(notifications, key = { it.key }) { entry ->
-                    NoticeRow(entry, null, { open(entry) }, null, { failed = !EnyoNotificationService.dismiss(entry.key) })
+                item(key = source) {
+                    ListCard {
+                        val app = launchers[source]
+                        NoticeGroupHeader(
+                            labels[source] ?: sourceLabel(context, source), notifications.size,
+                            icon = {
+                                if (app != null) AppIcon(app, displaySize = tokens.noticeAppIcon, label = labels[source])
+                                else EnyoGlyph(Glyph.Bell, Modifier.size(tokens.noticeAppIcon), color = tokens.onAccentContainer)
+                            }
+                        )
+                        notifications.forEach { entry ->
+                            NoticeItem(
+                                entry, null,
+                                open = { open(entry) },
+                                reply = null,
+                                dismiss = { dismiss(entry) },
+                                runAction = { failed = !it.actionIntent.sendFromForeground(context) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -144,19 +179,19 @@ internal fun InboxPage(
         val title = replying.notification.extras.getCharSequence(Notification.EXTRA_TITLE)
         if (!title.isNullOrBlank()) Text(title.toString(), style = tokens.secondary)
         OutlinedTextField(draft, { draft = it }, label = { Text(stringResource(R.string.message_reply)) })
-        TextButton(enabled = draft.isNotBlank(), onClick = {
-            val input = reply.remoteInputs.first { it.allowFreeFormInput }
-            runCatching {
-                val intent = Intent()
-                RemoteInput.addResultsToIntent(arrayOf(input), intent, Bundle().apply { putCharSequence(input.resultKey, draft) })
-                reply.actionIntent.send(context, 0, intent)
-            }.onSuccess {
-                draftEntry = null
-                draft = ""
-            }.onFailure { failed = true }
-        }) { Text(stringResource(R.string.message_send)) }
-        TextButton(onClick = { draftEntry = null; draft = ""; open(replying) }) {
-            Text(stringResource(R.string.message_open))
+        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            PillButton(stringResource(R.string.message_open)) { draftEntry = null; draft = ""; open(replying) }
+            PillButton(stringResource(R.string.message_send), filled = true, enabled = draft.isNotBlank()) {
+                val input = reply.remoteInputs.first { it.allowFreeFormInput }
+                runCatching {
+                    val intent = Intent()
+                    RemoteInput.addResultsToIntent(arrayOf(input), intent, Bundle().apply { putCharSequence(input.resultKey, draft) })
+                    reply.actionIntent.send(context, 0, intent)
+                }.onSuccess {
+                    draftEntry = null
+                    draft = ""
+                }.onFailure { failed = true }
+            }
         }
     }
     LaunchedEffect(replying) {
@@ -189,37 +224,79 @@ private fun ConversationBubble(conversation: RecentConversation, provider: Strin
     }
 }
 
+/** Card header: the source icon and name, the count, and an optional collapse chevron. */
 @Composable
-private fun NoticeRow(
+private fun NoticeGroupHeader(
+    title: String,
+    count: Int,
+    icon: @Composable () -> Unit,
+    expanded: Boolean? = null,
+    toggle: () -> Unit = {}
+) {
+    val tokens = LocalTokens.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = tokens.touch)
+            .then(if (expanded != null) Modifier.appPress(toggle) else Modifier)
+            .padding(horizontal = tokens.padding),
+        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(tokens.noticeAppIcon).clip(CircleShape), contentAlignment = Alignment.Center) { icon() }
+        Text(title, Modifier.weight(1f), style = tokens.label.copy(color = tokens.onAccentContainer), maxLines = 1)
+        if (count > 1) Text(count.toString(), style = tokens.label)
+        if (expanded != null) EnyoGlyph(
+            Glyph.Forward,
+            Modifier.size(tokens.chevronSize * 1.5f).graphicsLayer { rotationZ = if (expanded) 90f else 0f },
+            color = tokens.quiet
+        )
+    }
+}
+
+/** One notification: tap to open, a dismiss button, and the reply and app actions below. */
+@Composable
+private fun NoticeItem(
     entry: StatusBarNotification,
     provider: String?,
     open: () -> Unit,
     reply: (() -> Unit)?,
-    dismiss: () -> Unit
+    dismiss: () -> Unit,
+    runAction: (Notification.Action) -> Unit
 ) {
     val tokens = LocalTokens.current
     val note = entry.notification
     val messages = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(note)?.messages }.getOrNull()
     val latest = messages?.lastOrNull()
-    val title = latest?.person?.name ?: note.extras.getCharSequence(Notification.EXTRA_TITLE)
-    val body = latest?.text ?: note.extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: note.extras.getCharSequence(Notification.EXTRA_TEXT)
-    Column(Modifier.fillMaxWidth().padding(vertical = tokens.gap)) {
-        provider?.let { Text(it, style = tokens.label) }
-        if (!title.isNullOrBlank()) Text(title.toString(), style = tokens.state)
-        if (!body.isNullOrBlank()) Text(body.toString(), style = tokens.secondary)
-        Row {
-            if (provider != null || note.contentIntent != null) TextButton(onClick = open) {
-                Text(stringResource(R.string.message_open))
+    val title = (latest?.person?.name ?: note.extras.getCharSequence(Notification.EXTRA_TITLE))?.toString()
+    val body = (latest?.text ?: note.extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: note.extras.getCharSequence(Notification.EXTRA_TEXT))?.toString()
+    val time = remember(entry.postTime) {
+        DateUtils.getRelativeTimeSpanString(entry.postTime, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE).toString()
+    }
+    val dismissLabel = stringResource(R.string.notice_dismiss)
+    val replyAction = if (reply != null) note.replyAction() else null
+    val actions = note.actions.orEmpty().filter { it.remoteInputs.isNullOrEmpty() && it.actionIntent != null }.take(2)
+    Column(Modifier.fillMaxWidth().appPress(open).padding(start = tokens.padding, end = tokens.gap, top = tokens.gap / 2, bottom = tokens.gap)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(top = tokens.gap / 2)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        listOfNotNull(provider, title?.takeIf { it.isNotBlank() }).joinToString(" · ").ifEmpty { time },
+                        Modifier.weight(1f, fill = false), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Text("  $time", style = tokens.rowSummary, maxLines = 1)
+                }
+                if (!body.isNullOrBlank()) Text(body, style = tokens.rowSummary, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            if (reply != null && note.replyAction() != null) TextButton(onClick = reply) {
-                Text(stringResource(R.string.message_reply))
-            }
-            if (entry.isClearable) TextButton(onClick = dismiss) {
-                Text(stringResource(R.string.notice_dismiss))
-            }
+            if (entry.isClearable) Box(
+                Modifier.size(tokens.touch).clip(CircleShape).appPress(dismiss).semantics { contentDescription = dismissLabel },
+                contentAlignment = Alignment.Center
+            ) { EnyoGlyph(Glyph.Close, Modifier.size(tokens.noticeDismissGlyph), color = tokens.quiet) }
         }
-        if (provider == null) note.actions.orEmpty().firstOrNull { it.remoteInputs.isNullOrEmpty() }?.let { action ->
-            TextButton(onClick = { runCatching { action.actionIntent.send() } }) { Text(action.title.toString()) }
+        if (replyAction != null || actions.isNotEmpty()) Row(
+            Modifier.padding(top = tokens.gap),
+            horizontalArrangement = Arrangement.spacedBy(tokens.gap)
+        ) {
+            if (replyAction != null) PillButton(stringResource(R.string.message_reply), filled = true) { reply?.invoke() }
+            actions.forEach { action -> PillButton(action.title.toString()) { runAction(action) } }
         }
     }
 }
