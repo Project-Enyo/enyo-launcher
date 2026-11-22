@@ -367,7 +367,7 @@ internal fun LibraryRow(label: String, icon: @Composable () -> Unit, onClick: ()
     val tokens = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = tokens.touch).appPress(onClick)
-            .padding(horizontal = tokens.padding, vertical = tokens.gap),
+            .padding(tokens.gap),
         horizontalArrangement = Arrangement.spacedBy(tokens.padding),
         verticalAlignment = Alignment.CenterVertically
     ) {

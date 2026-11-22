@@ -450,7 +450,7 @@ internal fun SearchScreen(
 private fun AppSearchResult(label: String, icon: @Composable () -> Unit, open: () -> Unit) {
     val tokens = LocalTokens.current
     Surface(
-        shape = RoundedCornerShape(tokens.iconRadius),
+        shape = RoundedCornerShape(tokens.iconRadius + tokens.gap),
         color = tokens.widgetSurface,
         contentColor = tokens.onAccentContainer
     ) {
