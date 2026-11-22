@@ -69,7 +69,7 @@ internal data class WidgetPlacement(
 }
 
 /** The measured Today grid: cell counts and cell size in pixels. */
-internal data class WidgetGridSpec(val columns: Int, val rows: Int, val cellWidth: Int, val cellHeight: Int)
+internal data class WidgetGridSpec(val columns: Int, val rows: Int, val cellWidth: Int, val cellHeight: Int, val visibleRows: Int = rows)
 
 /** First free spot for a span, scanning rows top to bottom like a home screen. */
 internal fun List<WidgetPlacement>.firstFit(columns: Int, rows: Int, grid: WidgetGridSpec): Pair<Int, Int>? {
@@ -234,13 +234,13 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
     /** Cell span for a new widget, from its target cells or its minimum size in the measured grid. */
     private fun spanFor(provider: AppWidgetProviderInfo, kind: TodayWidget?): Pair<Int, Int> {
         val spec = grid ?: return 2 to 1
-        if (kind != null) return (if (kind.startsWide) spec.columns else (spec.columns / 2).coerceAtLeast(1)) to kind.startRows.coerceAtMost(spec.rows)
+        if (kind != null) return (if (kind.startsWide) spec.columns else (spec.columns / 2).coerceAtLeast(1)) to kind.startRows.coerceAtMost(spec.visibleRows)
         val columns = if (provider.targetCellWidth > 0) {
             kotlin.math.round(provider.targetCellWidth * spec.columns / launcherReferenceColumns.toFloat()).toInt()
         } else ceil(provider.minWidth.toFloat() / spec.cellWidth).toInt()
         val rows = if (provider.targetCellHeight > 0) provider.targetCellHeight
             else ceil(provider.minHeight.toFloat() / spec.cellHeight).toInt()
-        return columns.coerceIn(1, spec.columns) to rows.coerceIn(1, spec.rows)
+        return columns.coerceIn(1, spec.columns) to rows.coerceIn(1, spec.visibleRows)
     }
 
     /** The span a provider would take, for the picker. */
@@ -256,7 +256,9 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
         val minColumns = ceil(minWidth.toFloat() / spec.cellWidth).toInt().coerceIn(1, spec.columns)
         val minRows = ceil(minHeight.toFloat() / spec.cellHeight).toInt().coerceIn(1, spec.rows)
         val maxColumns = if (info.maxResizeWidth > 0) (info.maxResizeWidth / spec.cellWidth).coerceIn(minColumns, spec.columns) else spec.columns
-        val maxRows = if (info.maxResizeHeight > 0) (info.maxResizeHeight / spec.cellHeight).coerceIn(minRows, spec.rows) else spec.rows
+        // No widget grows taller than one screen of the scrolling grid.
+        val tallest = spec.visibleRows.coerceAtLeast(minRows)
+        val maxRows = if (info.maxResizeHeight > 0) (info.maxResizeHeight / spec.cellHeight).coerceIn(minRows, tallest) else tallest
         return SpanLimits(minColumns, maxColumns, minRows, maxRows, horizontal, vertical)
     }
 

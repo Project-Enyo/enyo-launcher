@@ -6,6 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -42,7 +45,8 @@ private data class WidgetDrag(val id: Int, val grab: Offset, val pointer: Offset
  * The Today workspace: widgets on a cell grid with Launcher3 mechanics. Touch and hold lifts a
  * widget, dragging snaps it to cells while other widgets make room, and dropping it on Remove
  * deletes it. After a drop, a resizable widget shows a frame whose handles snap its span to cells.
- * Touch and hold on empty space opens the widget menu.
+ * Touch and hold on empty space opens the widget menu. The grid grows downward with its widgets
+ * and scrolls, always keeping about a screen of free rows below the last widget.
  */
 @Composable
 internal fun WidgetGrid(
@@ -56,14 +60,17 @@ internal fun WidgetGrid(
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     var size by remember { mutableStateOf(IntSize.Zero) }
+    val scroll = rememberScrollState()
     val inset = with(density) { (tokens.gap / 2).roundToPx() }
     val minimumCell = with(density) { tokens.todayCellMinimum.roundToPx() }
-    val spec = remember(size, minimumCell) {
+    // Cells keep the size of a one screen grid; the row count follows the lowest widget.
+    val lowest = board.placements.filter { it.placed }.maxOfOrNull { it.y + it.rows } ?: 0
+    val spec = remember(size, minimumCell, lowest) {
         if (size.width <= 0 || size.height <= 0) null else {
             val columns = (size.width / minimumCell).coerceIn(tokens.todayColumnsMinimum, tokens.todayColumnsMaximum)
             val cellWidth = size.width / columns
-            val rows = (size.height / cellWidth.coerceAtLeast(1)).coerceAtLeast(1)
-            WidgetGridSpec(columns, rows, cellWidth, size.height / rows)
+            val screenRows = (size.height / cellWidth.coerceAtLeast(1)).coerceAtLeast(1)
+            WidgetGridSpec(columns, lowest + screenRows, cellWidth, size.height / screenRows, screenRows)
         }
     }
     LaunchedEffect(spec, board.placements, wideKinds) { spec?.let { board.arrange(it, wideKinds) } }
@@ -87,9 +94,39 @@ internal fun WidgetGrid(
         return Rect(frame.left, top, frame.right, top + actionHeight)
     }
 
+    // While a widget is dragged near the top or bottom edge, the page scrolls under it.
+    val edgeZone = with(density) { tokens.recentEdgeScrollZone.toPx() }
+    val edgeSpeed = with(density) { tokens.recentEdgeScrollSpeed.toPx() }
+    LaunchedEffect(drag != null) {
+        if (drag == null) return@LaunchedEffect
+        var previous = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val moving = drag ?: break
+            val onScreen = moving.pointer.y - scroll.value
+            val viewport = size.height.toFloat()
+            val up = ((edgeZone - onScreen) / edgeZone).coerceIn(0f, 1f).takeIf { onScreen > removeZone } ?: 0f
+            val down = ((onScreen - (viewport - edgeZone)) / edgeZone).coerceIn(0f, 1f)
+            val seconds = (now - previous).coerceAtMost(50_000_000L) / 1_000_000_000f
+            val moved = scroll.scrollBy((down * down - up * up) * edgeSpeed * seconds)
+            // The finger stays put on screen, so it now points at a different spot of the grid.
+            if (moved != 0f) drag = drag?.copy(pointer = moving.pointer + Offset(0f, moved))
+            previous = now
+        }
+    }
+
     Box(
         Modifier.fillMaxSize().padding(horizontal = tokens.margin - tokens.gap / 2)
             .onSizeChanged { size = it }
+    ) {
+    val contentRows = spec?.let { grid ->
+        val shown = (drag?.preview ?: resizePreview ?: committed).filter { it.placed && !hidden(it) }
+        maxOf(grid.visibleRows, (shown.maxOfOrNull { it.y + it.rows } ?: 0) + 1)
+    } ?: 0
+    Box(
+        Modifier.fillMaxWidth()
+            .verticalScroll(scroll, enabled = drag == null && resizing == null)
+            .height(with(density) { (contentRows * (spec?.cellHeight ?: 0)).toDp() }.coerceAtLeast(with(density) { size.height.toDp() }))
             .pointerInput(spec, handleReach, removeZone) {
                 val grid = spec ?: return@pointerInput
                 awaitEachGesture {
@@ -183,14 +220,14 @@ internal fun WidgetGrid(
                         val cellX = (topLeft.x / grid.cellWidth).roundToInt()
                         val cellY = (topLeft.y / grid.cellHeight).roundToInt()
                         // Over Remove there is no landing spot; elsewhere the last arrangement that fit stays shown.
-                        val preview = if (pointer.y < removeZone) null
+                        val preview = if (pointer.y - scroll.value < removeZone) null
                             else current.reflow(item.copy(x = cellX, y = cellY), grid) ?: drag?.preview
                         drag = drag?.copy(pointer = pointer, preview = preview)
                     }
                     val finished = drag
                     drag = null
                     when {
-                        finished != null && finished.pointer.y < removeZone && moved -> board.remove(item)
+                        finished != null && finished.pointer.y - scroll.value < removeZone && moved -> board.remove(item)
                         else -> {
                             finished?.preview?.let { if (it != current) board.commit(it) }
                             if (board.spanLimits(board.info(item.id), grid).resizable) resizing = item.id
@@ -203,7 +240,9 @@ internal fun WidgetGrid(
         val layout = drag?.preview ?: resizePreview ?: committed
         val visible = layout.filter { it.placed && !hidden(it) }
         if (visible.isEmpty() && drag == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { WorkspaceEmptyState(R.string.today_hint) }
+            Box(Modifier.fillMaxWidth().height(with(density) { size.height.toDp() }), contentAlignment = Alignment.Center) {
+                WorkspaceEmptyState(R.string.today_hint)
+            }
         }
         val removeLabel = stringResource(R.string.widget_remove)
         val resizeLabel = stringResource(R.string.widget_resize)
@@ -252,20 +291,6 @@ internal fun WidgetGrid(
                         with(density) { (landing.rows * grid.cellHeight - inset * 2).toDp() })
                     .border(tokens.focusStroke, tokens.accent.copy(alpha = tokens.hoverOpacity), RoundedCornerShape(tokens.radius))
             )
-            val over = moving.pointer.y < removeZone
-            Box(Modifier.fillMaxWidth().height(with(density) { removeZone.toDp() }), contentAlignment = Alignment.Center) {
-                Row(
-                    Modifier.graphicsLayer { shadowElevation = tokens.elevation.last().toPx(); shape = CircleShape; clip = true }
-                        .background(if (over) tokens.accent else tokens.accentContainer)
-                        .padding(horizontal = tokens.padding, vertical = tokens.gap),
-                    horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val color = if (over) tokens.onAccent else tokens.onAccentContainer
-                    EnyoGlyph(Glyph.Trash, Modifier.size(tokens.noticeAppIcon), color = color)
-                    Text(stringResource(R.string.widget_drop_remove), style = tokens.pillLabel.copy(color = color))
-                }
-            }
         }
         // Resize frame with snapping handles and the widget actions.
         resizingId?.let { id ->
@@ -322,6 +347,24 @@ internal fun WidgetGrid(
                         leadingIcon = { EnyoGlyph(Glyph.Today) },
                         onClick = { menu = null; convertDefaults() }
                     )
+                }
+            }
+        }
+    }
+    // Remove sits at the top of the screen, whatever part of the grid is scrolled into view.
+    drag?.let { moving ->
+            val over = moving.pointer.y - scroll.value < removeZone
+            Box(Modifier.fillMaxWidth().height(with(density) { removeZone.toDp() }), contentAlignment = Alignment.Center) {
+                Row(
+                    Modifier.graphicsLayer { shadowElevation = tokens.elevation.last().toPx(); shape = CircleShape; clip = true }
+                        .background(if (over) tokens.accent else tokens.accentContainer)
+                        .padding(horizontal = tokens.padding, vertical = tokens.gap),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val color = if (over) tokens.onAccent else tokens.onAccentContainer
+                    EnyoGlyph(Glyph.Trash, Modifier.size(tokens.noticeAppIcon), color = color)
+                    Text(stringResource(R.string.widget_drop_remove), style = tokens.pillLabel.copy(color = color))
                 }
             }
         }
