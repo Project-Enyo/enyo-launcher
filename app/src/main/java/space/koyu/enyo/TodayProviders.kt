@@ -29,7 +29,18 @@ abstract class TodayProvider : AppWidgetProvider() {
     internal abstract val kind: TodayWidget
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        if (kind != TodayWidget.Calendar) {
+        if (kind == TodayWidget.News) {
+            val result = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    NewsStore.load(context)
+                    ids.forEach { renderTodayWidget(context, manager, it, kind) }
+                    runCatching { NewsStore.refresh(context) }
+                } finally {
+                    result.finish()
+                }
+            }
+        } else if (kind != TodayWidget.Calendar) {
             ids.forEach { renderTodayWidget(context, manager, it, kind) }
         } else {
             val result = goAsync()
@@ -54,6 +65,7 @@ class CalendarWidget : TodayProvider() { override val kind get() = TodayWidget.C
 class WeatherAppWidget : TodayProvider() { override val kind get() = TodayWidget.Weather }
 class BatteryWidget : TodayProvider() { override val kind get() = TodayWidget.Battery }
 class InternetWidget : TodayProvider() { override val kind get() = TodayWidget.Network }
+class NewsWidget : TodayProvider() { override val kind get() = TodayWidget.News }
 
 internal fun nextTodayEvent(context: Context, start: Long): String? {
     if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) return null
@@ -79,6 +91,10 @@ private fun renderTodayWidget(
     kind: TodayWidget,
     event: String? = null
 ) {
+    if (kind == TodayWidget.News) {
+        manager.updateAppWidget(id, newsWidgetViews(context, id))
+        return
+    }
     val options = manager.getAppWidgetOptions(id)
     val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
     val expandedBattery = kind == TodayWidget.Battery && width >= 250
@@ -104,7 +120,7 @@ private fun renderTodayWidget(
             views.setContentDescription(R.id.widget_icon, description?.let(context::getString))
         }
         when (kind) {
-            TodayWidget.Clock -> Unit
+            TodayWidget.Clock, TodayWidget.News -> Unit
             TodayWidget.Calendar -> value(event ?: context.getString(
                 if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED)
                     R.string.calendar_empty else R.string.widget_calendar_unavailable
@@ -184,3 +200,47 @@ private fun batteryWidgetImage(context: Context, tokens: Tokens, level: Float): 
     }
     return bitmap
 }
+
+/** The headline list: the newest articles across feeds, each opening in Enyo's reader. */
+private fun newsWidgetViews(context: Context, id: Int): RemoteViews {
+    val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+    val tokens = Tokens(dark, CardSize.CompactHeight, systemPalette(context, dark))
+    val views = RemoteViews(context.packageName, R.layout.today_widget_news)
+    views.setColorStateList(R.id.widget_content, "setBackgroundTintList", ColorStateList.valueOf(tokens.widgetSurface.toArgb()))
+    views.setColorStateList(R.id.news_icon, "setImageTintList", ColorStateList.valueOf(tokens.accent.toArgb()))
+    val articles = NewsStore.articles.value.take(newsWidgetItems)
+    val feeds = NewsStore.feeds.value
+    views.setTextViewText(R.id.widget_title, feeds.joinToString(" · ") { it.title.ifBlank { android.net.Uri.parse(it.url).host.orEmpty() } }
+        .ifBlank { context.getString(R.string.widget_news) })
+    views.setOnClickPendingIntent(R.id.news_header, context.newsPendingIntent(id, null))
+    if (articles.isEmpty()) {
+        views.setViewVisibility(R.id.news_list, View.GONE)
+        views.setViewVisibility(R.id.news_empty, View.VISIBLE)
+        views.setTextViewText(R.id.news_empty, context.getString(
+            if (feeds.isEmpty()) R.string.news_no_feeds else if (NewsStore.failed.value) R.string.news_failed else R.string.news_loading
+        ))
+        views.setOnClickPendingIntent(R.id.news_empty, context.newsPendingIntent(id, null))
+        return views
+    }
+    views.setViewVisibility(R.id.news_list, View.VISIBLE)
+    views.setViewVisibility(R.id.news_empty, View.GONE)
+    val now = System.currentTimeMillis()
+    val items = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(1).apply {
+        articles.forEach { article ->
+            val row = RemoteViews(context.packageName, R.layout.today_widget_news_item)
+            row.setTextViewText(R.id.news_item_title, article.title)
+            row.setTextColor(R.id.news_item_title, tokens.onAccentContainer.toArgb())
+            val time = if (article.publishedAt > 0) android.text.format.DateUtils.getRelativeTimeSpanString(
+                article.publishedAt, now, android.text.format.DateUtils.MINUTE_IN_MILLIS, android.text.format.DateUtils.FORMAT_ABBREV_RELATIVE
+            ) else null
+            row.setTextViewText(R.id.news_item_meta, listOfNotNull(article.source, time).joinToString(" · "))
+            row.setOnClickFillInIntent(R.id.news_item, Intent().putExtra(newsArticleExtra, article.id))
+            addItem(article.id.hashCode().toLong(), row)
+        }
+    }.build()
+    views.setRemoteAdapter(R.id.news_list, items)
+    views.setPendingIntentTemplate(R.id.news_list, context.newsTemplateIntent(id))
+    return views
+}
+
+private const val newsWidgetItems = 20

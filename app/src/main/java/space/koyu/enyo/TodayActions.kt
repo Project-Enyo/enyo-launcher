@@ -97,7 +97,7 @@ internal fun TodayActionSheet(kind: TodayWidget, openInternet: () -> Unit, close
             )),
             TodayActionItem(stringResource(R.string.today_new_event), Glyph.Plus, intents = listOf(Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI)))
         )
-        TodayWidget.Weather -> emptyList()
+        TodayWidget.Weather, TodayWidget.News -> emptyList()
     }
     EnyoSheet(stringResource(kind.title), close) {
         ListCard {

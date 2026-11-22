@@ -78,6 +78,13 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     LaunchedEffect(visible, battery, tokens.widgetSurface, tokens.accent) { if (visible) publishTodayWidget(context, TodayWidget.Battery) }
     LaunchedEffect(visible, event, calendarAllowed, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Calendar, event) }
     LaunchedEffect(visible, connection, tokens.widgetSurface) { if (visible) publishTodayWidget(context, TodayWidget.Network) }
+    LaunchedEffect(visible, tokens.widgetSurface) {
+        if (visible) {
+            NewsStore.load(context)
+            publishTodayWidget(context, TodayWidget.News)
+            NewsStore.refresh(context)
+        }
+    }
 
     // The saved width choice of Enyo's own widgets only seeds the one time conversion to the cell grid.
     WidgetGrid(

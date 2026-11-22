@@ -266,4 +266,18 @@
     <string name="today_mobile_settings">Mobilfunknetz</string>
     <string name="today_open_calendar">Kalender öffnen</string>
     <string name="today_new_event">Neuer Termin</string>
+    <string name="widget_news">Nachrichten</string>
+    <string name="news_refresh">Aktualisieren</string>
+    <string name="news_feeds">Feeds</string>
+    <string name="news_open_browser">Im Browser öffnen</string>
+    <string name="news_no_feeds">Noch keine Feeds. Füge einen hinzu, um hier Schlagzeilen zu sehen.</string>
+    <string name="news_loading">Schlagzeilen werden geladen …</string>
+    <string name="news_failed">Die Feeds konnten nicht geladen werden. Prüfe die Verbindung.</string>
+    <string name="news_empty">Gerade keine Artikel.</string>
+    <string name="news_no_text">Dieser Feed sendet nur eine Schlagzeile. Öffne den Artikel im Browser, um ihn zu lesen.</string>
+    <string name="news_remove">Entfernen</string>
+    <string name="news_feed_address">Feed-Adresse</string>
+    <string name="news_add">Hinzufügen</string>
+    <string name="news_adding">Wird hinzugefügt …</string>
+    <string name="news_add_failed">Unter dieser Adresse wurde kein RSS- oder Atom-Feed gefunden.</string>
 </resources>

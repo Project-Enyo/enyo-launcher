@@ -39,12 +39,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.ceil
 
-internal enum class TodayWidget(val title: Int, val provider: Class<out TodayProvider>, val startsWide: Boolean = false) {
+internal enum class TodayWidget(val title: Int, val provider: Class<out TodayProvider>, val startsWide: Boolean = false, val startRows: Int = 1) {
     Clock(R.string.widget_clock, ClockWidget::class.java, true),
     Calendar(R.string.widget_calendar, CalendarWidget::class.java, true),
     Weather(R.string.widget_weather, WeatherAppWidget::class.java),
     Battery(R.string.widget_battery, BatteryWidget::class.java),
-    Network(R.string.wireless, InternetWidget::class.java);
+    Network(R.string.wireless, InternetWidget::class.java),
+    News(R.string.widget_news, NewsWidget::class.java, true, 3);
 
     fun component(context: Context) = ComponentName(context, provider)
 }
@@ -232,7 +233,7 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
     /** Cell span for a new widget, from its target cells or its minimum size in the measured grid. */
     private fun spanFor(provider: AppWidgetProviderInfo, kind: TodayWidget?): Pair<Int, Int> {
         val spec = grid ?: return 2 to 1
-        if (kind != null) return (if (kind.startsWide) spec.columns else (spec.columns / 2).coerceAtLeast(1)) to 1
+        if (kind != null) return (if (kind.startsWide) spec.columns else (spec.columns / 2).coerceAtLeast(1)) to kind.startRows.coerceAtMost(spec.rows)
         val columns = if (provider.targetCellWidth > 0) {
             kotlin.math.round(provider.targetCellWidth * spec.columns / launcherReferenceColumns.toFloat()).toInt()
         } else ceil(provider.minWidth.toFloat() / spec.cellWidth).toInt()
@@ -301,8 +302,11 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
         grid?.let { arrange(it, emptySet()) }
     }
 
-    private fun complete(widget: WidgetPlacement) {
+    private fun complete(requested: WidgetPlacement) {
         val spec = grid
+        // A default widget that does not fit at its full height takes fewer rows rather than none.
+        val widget = if (spec == null || requested.kind == null) requested
+            else (requested.rows downTo 1).map { requested.copy(rows = it) }.firstOrNull { placements.firstFit(it.columns, it.rows, spec) != null } ?: requested
         val spot = spec?.let { placements.firstFit(widget.columns, widget.rows, it) }
         if (spec != null && spot == null) {
             discard(widget)

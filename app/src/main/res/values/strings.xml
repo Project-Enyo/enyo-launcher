@@ -266,4 +266,18 @@
     <string name="today_mobile_settings">Mobile network</string>
     <string name="today_open_calendar">Open calendar</string>
     <string name="today_new_event">New event</string>
+    <string name="widget_news">News</string>
+    <string name="news_refresh">Refresh</string>
+    <string name="news_feeds">Feeds</string>
+    <string name="news_open_browser">Open in browser</string>
+    <string name="news_no_feeds">No feeds yet. Add one to see headlines here.</string>
+    <string name="news_loading">Loading headlines…</string>
+    <string name="news_failed">The feeds couldn\'t be loaded. Check the connection.</string>
+    <string name="news_empty">No articles right now.</string>
+    <string name="news_no_text">This feed only sends a headline. Open the article in the browser to read it.</string>
+    <string name="news_remove">Remove</string>
+    <string name="news_feed_address">Feed address</string>
+    <string name="news_add">Add</string>
+    <string name="news_adding">Adding…</string>
+    <string name="news_add_failed">No RSS or Atom feed found at that address.</string>
 </resources>
