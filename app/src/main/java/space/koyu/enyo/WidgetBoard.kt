@@ -148,7 +148,8 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
 
     fun makeView(context: Context, widget: WidgetPlacement, info: AppWidgetProviderInfo) =
         host.createView(WidgetLaunchContext(context), widget.id, info).apply {
-            if (info.provider.packageName == context.packageName) setPadding(0, 0, 0, 0)
+            // AppWidgetHostView adds Android's default widget padding; the Today grid already spaces its cells.
+            setPadding(0, 0, 0, 0)
         }
 
     fun migrateDefaults(prompt: Boolean) {
@@ -447,8 +448,10 @@ internal fun HostedWidget(board: WidgetBoard, widget: WidgetPlacement, info: App
                     android.appwidget.AppWidgetHostView(context)
                 }
             },
-            modifier = Modifier.fillMaxSize(),
+            // Every widget shares the grid's corner radius, whatever shape its own background has.
+            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(tokens.radius)),
             update = { view ->
+                if (view.paddingLeft != 0 || view.paddingTop != 0 || view.paddingRight != 0 || view.paddingBottom != 0) view.setPadding(0, 0, 0, 0)
                 if (view.getTag(R.id.widget_content) != dimensions) {
                     view.setTag(R.id.widget_content, dimensions)
                     runCatching { view.updateAppWidgetSize(Bundle(), dimensions) }
