@@ -2,10 +2,12 @@ package space.koyu.enyo
 
 import android.content.pm.LauncherActivityInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.os.Build
+import android.util.AtomicFile
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -22,11 +24,17 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import java.io.File
+import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 internal val LocalOriginalIcons = staticCompositionLocalOf { false }
@@ -74,12 +82,64 @@ private val iconCache = object : LruCache<IconKey, androidx.compose.ui.graphics.
     override fun sizeOf(key: IconKey, value: androidx.compose.ui.graphics.ImageBitmap): Int = value.width * value.height * 4
 }
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-private val iconDispatcher = Dispatchers.Default.limitedParallelism(1)
+private val iconDispatcher = Dispatchers.IO.limitedParallelism(1)
+
+private object IconFiles {
+    private const val maxFiles = 512
+    private const val maxBytes = 32L * 1024 * 1024
+
+    private val writes = Channel<Pair<File, Bitmap>>(capacity = 24)
+    private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        var writesSinceTrim = 0
+        for ((file, bitmap) in writes) {
+            val directory = file.parentFile ?: continue
+            runCatching {
+                directory.mkdirs()
+                val atomic = AtomicFile(file)
+                val output = atomic.startWrite()
+                try {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                    atomic.finishWrite(output)
+                } catch (error: Exception) {
+                    atomic.failWrite(output)
+                    throw error
+                }
+                if (writesSinceTrim++ % 24 == 0) {
+                    var bytes = 0L
+                    directory.listFiles().orEmpty()
+                        .filter { it.extension == "png" }
+                        .sortedByDescending { it.lastModified() }
+                        .forEachIndexed { index, entry ->
+                            bytes += entry.length()
+                            if (index >= maxFiles || bytes > maxBytes) entry.delete()
+                        }
+                }
+            }
+        }
+    }
+
+    fun file(context: android.content.Context, key: IconKey): File? {
+        if (key.notificationSource != 0) return null
+        val digest = MessageDigest.getInstance("SHA-256").digest(key.toString().toByteArray())
+        val name = android.util.Base64.encodeToString(
+            digest, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+        )
+        return File(context.cacheDir, "launcher_icons_v1/$name.png")
+    }
+
+    fun read(file: File, size: Int): Bitmap? = BitmapFactory.decodeFile(
+        file.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.HARDWARE }
+    )?.takeIf { it.width == size && it.height == size }
+
+    fun write(file: File, bitmap: Bitmap) {
+        if (worker.isActive) writes.trySend(file to bitmap)
+    }
+}
 
 @Composable
 internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, displaySize: androidx.compose.ui.unit.Dp = LocalTokens.current.iconSize, label: String? = null) {
     val tokens = LocalTokens.current
-    val context = LocalContext.current
+    val context = LocalContext.current.applicationContext
     val density = LocalDensity.current
     val originals = LocalOriginalIcons.current
     val component = app.componentName
@@ -142,7 +202,8 @@ internal fun WarmAppIcons(apps: List<LauncherActivityInfo>) {
     val size = with(density) { tokens.iconSize.roundToPx() }
     val dpi = (160 * density.density).roundToInt()
     val color = if (originals) 0 else tokens.ink.toArgb()
-    LaunchedEffect(apps, size, dpi, originals, color) {
+    val catalog = remember(apps) { apps.map { it.componentName to it.applicationInfo.sourceDir } }
+    LaunchedEffect(catalog, size, dpi, originals, color) {
         withContext(iconDispatcher) {
             for (app in apps.take(iconCache.maxSize() / (size * size * 8))) {
                 currentCoroutineContext().ensureActive()
@@ -169,6 +230,11 @@ private fun renderIcon(
 ) = iconCache.get(key) ?: runCatching {
     val size = key.pixelSize
     val originals = key.original
+    val file = IconFiles.file(context, key)
+    file?.let { IconFiles.read(it, size) }?.let { saved ->
+        saved.prepareToDraw()
+        return@runCatching saved.asImageBitmap().also { iconCache.put(key, it) }
+    }
     val source = app.getIcon(key.density).mutate()
     val monochrome = mark?.loadDrawable(context)?.mutate() ?:
         if (!originals && Build.VERSION.SDK_INT >= 33 && source is AdaptiveIconDrawable) {
@@ -199,6 +265,7 @@ private fun renderIcon(
             extractLegacyForeground(it, padding, tokens.iconBackgroundTolerance)
         }
         it.prepareToDraw()
+        if (file != null) IconFiles.write(file, it)
     }.asImageBitmap().also { iconCache.put(key, it) }
 }.getOrNull()
 
