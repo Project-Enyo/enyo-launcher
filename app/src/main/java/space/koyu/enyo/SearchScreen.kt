@@ -63,7 +63,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -181,6 +183,13 @@ private val settingsDestinations = listOf(
 )
 
 private enum class Command { Call, Message, Calendar, Web, Settings }
+
+private val messageDraftPattern = Regex(
+    """(?:send (?:a |an )?(?:text |sms )?message to (.+?) (?:that|saying) (.+)|(?:sende|schicke) (?:eine )?nachricht an (.+?)[,:]? (?:dass|mit dem text) (.+))""",
+    RegexOption.IGNORE_CASE
+)
+private val draftPhonePattern = Regex("""[+\d][\d ().-]{2,}""")
+
 private data class Confirmation(val title: String, val intent: Intent)
 
 @Composable
@@ -238,6 +247,8 @@ internal fun SearchScreen(
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val scope = rememberCoroutineScope()
     val history by remember(store) { store.data.map { it[searchHistory].orEmpty() } }.collectAsState("")
+    val localReady = localAssistantReady()
+    var localPrompt by remember { mutableStateOf<String?>(null) }
     val defaultOption = installed.defaultOption(preferred)
     fun record(term: String) {
         if (term.isBlank()) return
@@ -259,8 +270,12 @@ internal fun SearchScreen(
         Command.Settings to stringResource(R.string.command_settings)
     )
     val input = query.text.trim()
-    val command = commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
-    val term = if (command == null) input else input.drop(command.second.length).trim()
+    val draft = remember(input) { messageDraftPattern.matchEntire(input) }
+    val recipient = draft?.groupValues?.let { it[1].ifBlank { it[3] }.trim() }
+    val draftBody = draft?.groupValues?.let { it[2].ifBlank { it[4] } }
+    val command = if (draft != null) commands.first { it.first == Command.Message }
+    else commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
+    val term = recipient ?: if (command == null) input else input.drop(command.second.length).trim()
     val transitLabel = stringResource(R.string.transit)
     val messagesLabel = stringResource(R.string.messages)
     val appResults by produceState(emptyList<LauncherActivityInfo>(), apps, input, command) {
@@ -273,6 +288,44 @@ internal fun SearchScreen(
             }
         }
     }
+    val folder = fileSearchSource()
+    val fileQuery = input.takeIf { active && command == null && it.length >= 2 }
+    val findFolder = folder
+    val fileKey = findFolder to fileQuery
+    val fileResults by key(fileKey) { produceState(emptyList<FileHit>()) {
+        value = emptyList()
+        if (fileQuery != null && findFolder != null) {
+            delay(250)
+            try {
+                findFiles(context, findFolder, fileQuery) { hits ->
+                    withContext(Dispatchers.Main) { value = hits }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                value = emptyList()
+            }
+        }
+    } }
+    val files = fileResults
+    val semanticEnabled = semanticSearchEnabled()
+    val indexRevision by remember(store) { store.data.map { it[semanticRevision] ?: 0 } }.collectAsState(0)
+    val semanticResults by key(fileKey, semanticEnabled) { produceState(emptyList<FileHit>(), indexRevision) {
+        value = emptyList()
+        if (semanticEnabled && fileQuery != null && findFolder != null && fileQuery.length >= 3) {
+            delay(700)
+            value = try {
+                semanticFileMatches(context, findFolder, fileQuery)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptyList()
+            } catch (_: LinkageError) {
+                emptyList()
+            }
+        }
+    } }
+    val relatedFiles = semanticResults.filter { hit -> files.none { it.file.uri == hit.file.uri } }
     val foreground = foregroundCycle()
     val events by produceState(emptyList<CalendarHit>(), term, foreground, command) {
         value = emptyList()
@@ -296,11 +349,11 @@ internal fun SearchScreen(
         if (term.isBlank() || command?.first !in listOf(null, Command.Call, Command.Message)) emptyList()
         else people.filter { it.name.contains(term, ignoreCase = true) }.take(10)
     }
-    val contacts by produceState(emptyList<Contact>(), term, foreground, command, people) {
-        value = emptyList()
+    val contactResults by produceState("" to emptyList<Contact>(), term, foreground, command, people) {
+        value = term to emptyList()
         if (term.isNotBlank() && command?.first in listOf(null, Command.Call, Command.Message)
             && context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-        ) value = withContext(Dispatchers.IO) {
+        ) value = term to withContext(Dispatchers.IO) {
             suspendCancellableCoroutine { continuation ->
                 val signal = CancellationSignal()
                 continuation.invokeOnCancellation { signal.cancel() }
@@ -329,6 +382,7 @@ internal fun SearchScreen(
             }
         }
     }
+    val contacts = contactResults.second.takeIf { contactResults.first == term }.orEmpty()
     var flyout by remember { mutableStateOf<ThreadSummary?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -363,7 +417,8 @@ internal fun SearchScreen(
     val calendar = command?.first == Command.Calendar && term.isNotBlank()
     val web = command?.first in listOf(null, Command.Web) && term.isNotBlank()
     // One action hands the query to the default assistant; the choice itself lives in Settings.
-    val assistant = defaultOption?.takeIf { active }
+    val useLocalAssistant = active && draft == null && localReady && preferred == localAssistantId
+    val assistant = defaultOption?.takeIf { active && draft == null && !useLocalAssistant && preferred != localAssistantId }
     fun launchResult(app: LauncherActivityInfo) {
         record(input)
         if (app.componentName.packageName == transitPackage) openTransit() else openApp(app)
@@ -400,8 +455,18 @@ internal fun SearchScreen(
         record(input)
         open(Intent(Intent.ACTION_VIEW, uri))
     }
+    fun openDraft(number: String) {
+        open(Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null)).putExtra("sms_body", draftBody))
+    }
+    val draftRecipients = when {
+        draft == null -> emptyList()
+        draftPhonePattern.matches(term) -> listOf(term to term)
+        else -> contacts.map { it.name.ifBlank { it.number } to it.number }
+    }
     // Submitting runs the topmost result, in the order the list shows them.
     val firstResult: (() -> Unit)? = if (input.isBlank()) null else when {
+        draftRecipients.isNotEmpty() -> { { openDraft(draftRecipients.first().second) } }
+        draft != null -> null
         showMessages -> openMessages
         appResults.isNotEmpty() -> appResults.first().let { app -> { launchResult(app) } }
         settingsResults.isNotEmpty() -> settingsResults.first().let { destination -> { open(Intent(destination.action)) } }
@@ -409,7 +474,10 @@ internal fun SearchScreen(
         archivePeople.isNotEmpty() -> archivePeople.first().let { person -> { record(input); flyout = person } }
         messageHits.isNotEmpty() -> messageHits.first().let { hit -> { openHit(hit) } }
         events.isNotEmpty() -> events.first().let { event -> { openEvent(event) } }
+        files.isNotEmpty() -> { { open(files.first().file.viewIntent()) } }
+        relatedFiles.isNotEmpty() -> { { open(relatedFiles.first().file.viewIntent()) } }
         calendar -> ::prepareEvent
+        useLocalAssistant -> { { localPrompt = input } }
         assistant != null -> { { ask(assistant) } }
         web -> ::searchWeb
         else -> null
@@ -492,7 +560,15 @@ internal fun SearchScreen(
                     SettingsAction(stringResource(R.string.search_history_clear), Glyph.Trash) { confirmClear = true }
                 }
             }
-            if (input.isNotBlank()) {
+            if (draft != null) item {
+                SettingsPanel(stringResource(R.string.search_message_draft)) {
+                    if (draftRecipients.isEmpty()) ListNote(stringResource(R.string.search_draft_no_recipient, term))
+                    draftRecipients.forEach { (name, number) ->
+                        SettingsAction(name, Glyph.Message, summary = draftBody) { openDraft(number) }
+                    }
+                }
+            }
+            if (input.isNotBlank() && draft == null) {
                 if (appResults.isNotEmpty() || showMessages) item {
                     SettingsPanel(stringResource(R.string.apps)) {
                         if (showMessages) ListRow(
@@ -587,13 +663,33 @@ internal fun SearchScreen(
                         }
                     }
                 }
+                if (files.isNotEmpty()) item {
+                    SettingsPanel(stringResource(R.string.search_files)) {
+                        files.forEach { hit ->
+                            SettingsAction(hit.file.name, Glyph.Folder, summary = hit.excerpt) {
+                                open(hit.file.viewIntent())
+                            }
+                        }
+                    }
+                }
+                if (relatedFiles.isNotEmpty()) item {
+                    SettingsPanel(stringResource(R.string.search_related_files)) {
+                        relatedFiles.forEach { hit ->
+                            SettingsAction(hit.file.name, if (hit.file.mime.startsWith("image/")) Glyph.Photo else Glyph.Folder) {
+                                open(hit.file.viewIntent())
+                            }
+                        }
+                    }
+                }
                 if (calendar) item {
                     ListCard {
                         SettingsAction(stringResource(R.string.calendar_prepare), Glyph.Calendar, summary = term) { prepareEvent() }
                     }
                 }
-                if (assistant != null || web) item {
+                if (useLocalAssistant || assistant != null || web) item {
                     SettingsPanel(stringResource(R.string.search_web_section)) {
+                        if (useLocalAssistant) SettingsAction(stringResource(R.string.local_ai), Glyph.Sparkles,
+                            summary = input) { localPrompt = input }
                         if (assistant != null) {
                             val name = stringResource(assistant.assistant.label)
                             ListRow(
@@ -616,6 +712,7 @@ internal fun SearchScreen(
             }
         }
     }
+    if (active) localPrompt?.let { AssistantChats.Chat(null, it) { localPrompt = null } }
     flyout?.let { person ->
         val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
         val inArchive = (person.ref as? ThreadRef.Person)?.id?.let { it >= 0 } == true
@@ -670,6 +767,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val store = context.searchPreferences
     val scope = rememberCoroutineScope()
     val installed = installedAssistants(packageCycle)
+    val localReady = localAssistantReady()
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
@@ -704,6 +802,8 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
         }
         item {
             SettingsPanel(stringResource(R.string.search)) {
+                SearchFolderPreference()
+                SemanticSearchPreference()
                 SettingsToggle(stringResource(R.string.search_history), historyOn, glyph = Glyph.History) { enabled ->
                     scope.launch {
                         store.edit {
@@ -717,9 +817,10 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                 }
             }
         }
-        if (installed.isNotEmpty()) item {
-            DefaultAssistantCard(installed, preferred) { option ->
-                scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } }
+        item { LocalAssistantPreference() }
+        if (installed.isNotEmpty() || localReady) item {
+            DefaultAssistantCard(installed, preferred, localReady) { assistant ->
+                scope.launch { store.edit { it[defaultAssistant] = assistant } }
             }
         }
         item {
@@ -733,7 +834,6 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
         item { PushPreference() }
         item { InboxHostPreference() }
         item { UpdatePreference() }
-        item { RestartPreference() }
         item {
             SettingsPanel(stringResource(R.string.settings_system)) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
@@ -741,6 +841,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                 SettingsLink(stringResource(R.string.android_settings), glyph = Glyph.Quick) {
                     context.launchSafely(Intent(Settings.ACTION_SETTINGS))
                 }
+                RestartPreference()
             }
         }
     } }
@@ -765,10 +866,12 @@ private fun List<InstalledAssistant>.defaultOption(preferred: String?): Installe
 private fun DefaultAssistantCard(
     installed: List<InstalledAssistant>,
     preferred: String?,
-    select: (InstalledAssistant) -> Unit
+    localReady: Boolean,
+    select: (String) -> Unit
 ) {
     val tokens = LocalTokens.current
-    val active = installed.defaultOption(preferred)
+    val localSelected = localReady && preferred == localAssistantId
+    val active = installed.defaultOption(preferred).takeUnless { preferred == localAssistantId }
     SettingsPanel(stringResource(R.string.default_assistant)) {
         if (preferred != null && installed.none { it.assistant.appId == preferred }) {
             Assistant.entries.firstOrNull { it.appId == preferred }?.let { previous ->
@@ -776,13 +879,18 @@ private fun DefaultAssistantCard(
             }
         }
         Column(Modifier.fillMaxWidth().selectableGroup()) {
+            if (localReady) ListRow(
+                stringResource(R.string.local_ai),
+                Modifier.selectable(selected = localSelected, role = Role.RadioButton) { select(localAssistantId) },
+                leading = { EnyoGlyph(Glyph.Sparkles) }
+            )
             installed.forEach { option ->
                 val selected = option == active
                 ListRow(
                     stringResource(option.assistant.label),
                     Modifier.selectable(
                         selected = selected, interactionSource = null, indication = null,
-                        role = Role.RadioButton, onClick = { select(option) }
+                        role = Role.RadioButton, onClick = { select(option.assistant.appId) }
                     ),
                     leading = {
                         Image(

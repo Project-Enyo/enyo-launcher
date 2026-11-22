@@ -7,16 +7,15 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -36,37 +35,36 @@ internal fun RestartPreference() {
     val view = LocalView.current
     val tokens = LocalTokens.current
     val scope = rememberCoroutineScope()
-    var remaining by remember { mutableStateOf<Int?>(null) }
+    var remaining by remember { mutableIntStateOf(restartHoldSeconds) }
     val restartLabel = stringResource(R.string.restart_title)
-    SettingsPanel(null) {
-        ListRow(
-            restartLabel,
-            Modifier
-                .semantics { onClick(restartLabel) { restartLauncher(context); true } }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        awaitFirstDown()
-                        var countdown: Job? = null
-                        countdown = scope.launch {
-                            for (left in restartHoldSeconds downTo 1) {
-                                remaining = left
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                delay(1_000)
-                            }
-                            remaining = 0
-                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                            restartLauncher(context)
+    ListRow(
+        restartLabel,
+        Modifier
+            .semantics { onClick(restartLabel) { restartLauncher(context); true } }
+            .pointerInput(context, view) {
+                awaitEachGesture {
+                    awaitFirstDown()
+                    val countdown = scope.launch {
+                        for (left in restartHoldSeconds downTo 1) {
+                            remaining = left
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            delay(1_000)
                         }
-                        waitForUpOrCancellation()
-                        countdown.cancel()
-                        remaining = null
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        restartLauncher(context)
                     }
-                },
-            summary = stringResource(R.string.restart_summary),
-            leading = { EnyoGlyph(Glyph.Refresh, color = if (remaining != null) tokens.danger else tokens.onAccentContainer) },
-            trailing = { remaining?.let { Text(it.toString(), style = tokens.state.copy(color = tokens.danger)) } }
-        )
-    }
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        countdown.cancel()
+                        remaining = restartHoldSeconds
+                    }
+                }
+            },
+        summary = pluralStringResource(R.plurals.restart_summary, remaining, remaining),
+        leading = { EnyoGlyph(Glyph.Bomb, color = tokens.danger) },
+        foreground = tokens.danger
+    )
 }
 
 private const val restartHoldSeconds = 3

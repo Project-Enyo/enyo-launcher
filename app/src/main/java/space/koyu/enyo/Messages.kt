@@ -3,7 +3,9 @@ package space.koyu.enyo
 import android.app.Notification
 import android.app.RemoteInput
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.os.Bundle
@@ -36,6 +38,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -77,7 +80,7 @@ internal fun InboxPage(
     var draftEntry by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
     val labels = remember(apps) { apps.associate { it.componentName.packageName to it.label.toString() } }
-    val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+    val locked = rememberInboxLocked()
     val entriesVisible = if (locked) emptyList()
     else if (group != null) entries.filter { it.noticeGroup() == group }
     else entries
@@ -104,13 +107,13 @@ internal fun InboxPage(
     var openThread by remember { mutableStateOf<ThreadRef?>(null) }
     var allThreads by remember { mutableStateOf(false) }
     var personFlyout by remember { mutableStateOf<ThreadSummary?>(null) }
-    personFlyout?.let { person -> ContactFlyout(person, launchers, openThread = { openThread = person.ref }) { personFlyout = null } }
+    if (!locked) personFlyout?.let { person -> ContactFlyout(person, launchers, openThread = { openThread = person.ref }) { personFlyout = null } }
     if (group == null) LaunchedEffect(Unit) {
         ArchiveData.requestedThread.collect { requested ->
             if (requested != null) { openThread = requested; ArchiveData.requestedThread.value = null }
         }
     }
-    openThread?.let { thread -> ThreadScreen(thread, launchers, openApp) { openThread = null } }
+    if (!locked) openThread?.let { thread -> ThreadScreen(thread, launchers, openApp) { openThread = null } }
     val visibleThreads = if (group == null && !locked) threads else emptyList()
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -123,21 +126,23 @@ internal fun InboxPage(
             item(key = "messages_heading") { InboxHeading(stringResource(R.string.messages), first = true) }
             val conversations = if (locked) emptyList() else heads
             if (providers.isNotEmpty() || conversations.isNotEmpty()) item(key = "heads") {
-                LazyRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(tokens.margin)
-                ) {
-                    // Chat heads: the most recent people across every messenger, from the archive.
-                    items(conversations, key = { it.ref.toString() }) { head ->
-                        ChatHead(head, open = { openThread = head.ref }, person = { personFlyout = head })
-                    }
-                    items(providers, key = { it.componentName.flattenToString() }) { app ->
-                        val name = labels.getValue(app.componentName.packageName)
-                        Box(
-                            Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
-                                .semantics { contentDescription = name },
-                            contentAlignment = Alignment.Center
-                        ) { AppIcon(app, label = name) }
+                key(conversations.isNotEmpty()) {
+                    LazyRow(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(tokens.margin)
+                    ) {
+                        // Chat heads: the most recent people across every messenger, from the archive.
+                        items(conversations, key = { it.ref.toString() }) { head ->
+                            ChatHead(head, open = { openThread = head.ref }, person = { personFlyout = head })
+                        }
+                        items(providers, key = { it.componentName.flattenToString() }) { app ->
+                            val name = labels.getValue(app.componentName.packageName)
+                            Box(
+                                Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
+                                    .semantics { contentDescription = name },
+                                contentAlignment = Alignment.Center
+                            ) { AppIcon(app, label = name) }
+                        }
                     }
                 }
             }
@@ -155,6 +160,7 @@ internal fun InboxPage(
             if (!locked) {
                 item(key = "organizer_heading") { InboxHeading(stringResource(R.string.inbox_organizer)) }
                 item(key = "notes") { NotesSection() }
+                item(key = "assistant_chats") { AssistantChats.Section() }
             }
             item(key = "notifications_heading") { InboxHeading(stringResource(R.string.inbox_notifications_heading)) }
             if (others.isEmpty()) item(key = "no_notifications") { ListCard { ListNote(stringResource(R.string.inbox_no_notifications)) } }
@@ -165,7 +171,7 @@ internal fun InboxPage(
                     NoticeGroupHeader(
                         stringResource(R.string.messages), messages.size,
                         icon = { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.noticeAppIcon), color = tokens.onAccentContainer) },
-                        expanded = if (group == null) expanded else null,
+                        expanded = null,
                         toggle = { expanded = !expanded }
                     )
                     if (expanded) messages.forEach { entry ->
@@ -214,9 +220,36 @@ internal fun InboxPage(
     }
 }
 
+@Composable
+private fun rememberInboxLocked(): Boolean {
+    val context = LocalContext.current
+    val keyguard = remember(context) { context.getSystemService(KeyguardManager::class.java) }
+    val foreground = foregroundCycle()
+    var locked by remember(keyguard) { mutableStateOf(keyguard.isKeyguardLocked) }
+    LaunchedEffect(foreground, keyguard) {
+        locked = keyguard.isKeyguardLocked
+    }
+    DisposableEffect(context, keyguard) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                locked = keyguard.isKeyguardLocked
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        locked = keyguard.isKeyguardLocked
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return locked
+}
+
 /** A top level Inbox section title; sections are Messages, Organizer and Notifications. */
 @Composable
-private fun InboxHeading(text: String, first: Boolean = false) {
+internal fun InboxHeading(text: String, first: Boolean = false) {
     val tokens = LocalTokens.current
     Text(
         text, Modifier.fillMaxWidth().padding(start = tokens.gap / 2, top = if (first) 0.dp else tokens.margin).semantics { heading() },

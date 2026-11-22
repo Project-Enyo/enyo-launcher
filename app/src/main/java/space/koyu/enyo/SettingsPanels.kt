@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -88,6 +89,7 @@ internal fun ListRow(
     summaryLines: Int = 3,
     enabled: Boolean = true,
     leading: (@Composable () -> Unit)? = null,
+    foreground: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
     trailing: (@Composable () -> Unit)? = null
 ) {
     val tokens = LocalTokens.current
@@ -100,11 +102,23 @@ internal fun ListRow(
     ) {
         if (leading != null) Box(Modifier.size(tokens.listLeading), contentAlignment = Alignment.Center) { leading() }
         Column(Modifier.weight(1f)) {
-            Text(title, style = tokens.rowTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (summary != null) Text(summary, style = tokens.rowSummary, maxLines = summaryLines, overflow = TextOverflow.Ellipsis)
+            Text(title, color = foreground, style = tokens.rowTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (summary != null) Text(summary, color = foreground, style = tokens.rowSummary, maxLines = summaryLines, overflow = TextOverflow.Ellipsis)
         }
         trailing?.invoke()
     }
+}
+
+@Composable
+internal fun PermissionRow(title: String, summary: String, granted: Boolean, configure: () -> Unit) {
+    val tokens = LocalTokens.current
+    ListRow(
+        title, summary = summary, summaryLines = 4,
+        trailing = {
+            if (granted) Text(stringResource(R.string.setup_enabled), style = tokens.label.copy(color = tokens.accent))
+            else PillButton(stringResource(R.string.setup_configure), onClick = configure)
+        }
+    )
 }
 
 /** Plain explanatory text inside a card, aligned with row titles. */

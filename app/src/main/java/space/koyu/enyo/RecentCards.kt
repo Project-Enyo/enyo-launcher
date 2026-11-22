@@ -274,12 +274,12 @@ internal class RecentStore private constructor(context: Context) {
                 val target = if (into.stack != null) current.filter { it.stack == into.stack } else listOf(into)
                 if (moving.size + target.size > maxStack) return@synchronized
                 val stack = into.stack ?: UUID.randomUUID().toString()
-                val joining = moving.mapTo(mutableSetOf()) { it.component } + into.component
-                // The moved cards go on top of the stack they join.
-                val rest = current.filterNot { it.component in joining }.toMutableList()
-                val anchor = rest.indexOfFirst { it.stack == stack }.takeIf { it >= 0 } ?: current.indexOf(into).coerceAtMost(rest.size)
-                val placed = moving.map { it.copy(stack = stack) } + (if (into.stack == null) listOf(into.copy(stack = stack)) else emptyList())
-                rest.addAll(anchor, placed)
+                val movingComponents = moving.mapTo(mutableSetOf()) { it.component }
+                val targetComponents = target.mapTo(mutableSetOf()) { it.component }
+                val rest = current.filterNot { it.component in movingComponents }.toMutableList()
+                val anchor = rest.indexOfFirst { it.component in targetComponents }
+                rest.removeAll { it.component in targetComponents }
+                rest.addAll(anchor, (moving + target).map { it.copy(stack = stack) })
                 persist(rest.withoutSingleStacks())
             }
         }

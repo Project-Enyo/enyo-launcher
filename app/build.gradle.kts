@@ -31,6 +31,11 @@ android {
             if (System.getenv("SIGNING_KEYSTORE") != null) signingConfig = signingConfigs.getByName("release")
         }
     }
+    packaging.jniLibs.excludes += setOf(
+        "lib/x86*/liblitertlm_jni.so",
+        "lib/x86*/libonnxruntime*.so",
+        "lib/armeabi-v7a/libonnxruntime*.so"
+    )
     buildFeatures {
         compose = true
         aidl = true
@@ -49,4 +54,6 @@ dependencies {
     implementation("net.zetetic:sqlcipher-android:4.20.0")
     implementation("androidx.sqlite:sqlite:2.7.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 }

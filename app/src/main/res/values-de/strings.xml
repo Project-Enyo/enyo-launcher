@@ -347,5 +347,36 @@
     <string name="update_no_apk">Diese Version enthält keine installierbare APK.</string>
     <string name="update_failed">Das Update ist fehlgeschlagen: %1$s</string>
     <string name="restart_title">Enyo neu starten</string>
-    <string name="restart_summary">3 Sekunden gedrückt halten.</string>
+    <plurals name="restart_summary">
+        <item quantity="one">%1$d Sekunde gedrückt halten.</item>
+        <item quantity="other">%1$d Sekunden gedrückt halten.</item>
+    </plurals>
+    <string name="search_message_draft">Nachrichtenentwurf</string>
+    <string name="search_draft_no_recipient">Kein Telefonkontakt passt zu %1$s.</string>
+    <string name="search_files">Dateien</string>
+    <string name="search_choose_folder">Ordner für die Suche auswählen</string>
+    <string name="search_remove_folder">Ordner aus der Suche entfernen</string>
+    <string name="local_ai">Lokale KI</string>
+    <string name="local_ai_unsupported">Lokale KI benötigt ein ARM64 Gerät mit mindestens 6 GB RAM.</string>
+    <string name="local_ai_import">Chatmodell importieren</string>
+    <string name="local_ai_summary">Wähle eine kompakte quantisierte LiteRT LM Modelldatei.</string>
+    <string name="local_ai_importing">Modell wird kopiert…</string>
+    <string name="local_ai_remove">Chatmodell entfernen</string>
+    <string name="local_ai_failed">Das lokale Modell konnte nicht verwendet werden.</string>
+    <string name="local_ai_conversations">KI Unterhaltungen</string>
+    <string name="local_ai_delete_chat">Unterhaltung löschen</string>
+    <string name="local_ai_no_chats">Keine gespeicherten Unterhaltungen.</string>
+    <string name="local_ai_working">Antwort wird erstellt…</string>
+    <string name="local_ai_prompt">Nachricht</string>
+    <string name="local_ai_send">Senden</string>
+    <string name="search_all_files">Zugriff auf alle Dateien</string>
+    <string name="search_all_files_granted">Enyo kann den gemeinsamen Speicher durchsuchen.</string>
+    <string name="search_all_files_summary">Erlaube Enyo in den Android Einstellungen, den gemeinsamen Speicher zu durchsuchen.</string>
+    <string name="search_related_files">Ähnliche Dateien</string>
+    <string name="search_semantic_enable">Dateisuche in natürlicher Sprache aktivieren</string>
+    <string name="search_semantic_summary">Lade etwa 178 MB an Modellen für die lokale Bildsuche und Dokumentsuche herunter.</string>
+    <string name="search_semantic_downloading">Suchmodelle werden heruntergeladen…</string>
+    <string name="search_semantic_refresh">Suchindex aktualisieren</string>
+    <string name="search_semantic_schedule">Enyo indexiert Dateien, wenn das Gerät lädt und nicht verwendet wird.</string>
+    <string name="search_semantic_disable">Suchmodelle und Suchindex entfernen</string>
 </resources>

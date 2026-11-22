@@ -5,8 +5,6 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Process
 import android.os.UserHandle
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -65,17 +63,9 @@ internal fun TaskClosePreference() {
     if (!access.available) return
     var failed by remember { mutableStateOf(false) }
     SettingsPanel(stringResource(R.string.settings_cards)) {
-        ListRow(
-            stringResource(R.string.task_close_title),
-            summary = stringResource(R.string.task_close_description),
-            leading = { EnyoGlyph(Glyph.Cards, color = LocalTokens.current.onAccentContainer) },
-            trailing = {
-                if (access.granted) Text(stringResource(R.string.setup_enabled), style = LocalTokens.current.label)
-                else PillButton(stringResource(R.string.running_tasks_allow)) {
-                    failed = runCatching { Shizuku.requestPermission(taskPermissionRequest) }.isFailure
-                }
-            }
-        )
+        PermissionRow(stringResource(R.string.task_close_title), stringResource(R.string.task_close_description), access.granted) {
+            failed = runCatching { Shizuku.requestPermission(taskPermissionRequest) }.isFailure
+        }
         if (failed) ListNote(stringResource(R.string.action_unavailable))
     }
 }

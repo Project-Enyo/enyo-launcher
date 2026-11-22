@@ -46,7 +46,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(databaseName)
             .callback(object : SupportSQLiteOpenHelper.Callback(schemaVersion) {
-                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db); createInboxSchema(db) }
+                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db); createInboxSchema(db); AssistantChats.createSchema(db); SemanticFiles.createSchema(db) }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = migrate(db, oldVersion)
                 override fun onConfigure(db: SupportSQLiteDatabase) { db.execSQL("PRAGMA foreign_keys = ON") }
             })
@@ -363,7 +363,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 5
+        const val schemaVersion = 7
         private const val sourceEchoWindow = 3 * 60_000L
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
@@ -459,6 +459,8 @@ internal class MessageArchive private constructor(private val context: Context) 
             if (from in 1..2) dropStatusNotices(db)
             if (from < 4) Notes.createSchema(db)
             if (from < 5) createInboxSchema(db)
+            if (from < 6) AssistantChats.createSchema(db)
+            if (from < 7) SemanticFiles.createSchema(db)
         }
 
         /**

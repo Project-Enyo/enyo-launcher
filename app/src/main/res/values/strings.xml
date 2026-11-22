@@ -347,5 +347,36 @@
     <string name="update_no_apk">This release has no APK to install.</string>
     <string name="update_failed">The update failed: %1$s</string>
     <string name="restart_title">Restart Enyo</string>
-    <string name="restart_summary">Touch and hold for 3 seconds.</string>
+    <plurals name="restart_summary">
+        <item quantity="one">Touch and hold for %1$d second.</item>
+        <item quantity="other">Touch and hold for %1$d seconds.</item>
+    </plurals>
+    <string name="search_message_draft">Message draft</string>
+    <string name="search_draft_no_recipient">No phone contact matches %1$s.</string>
+    <string name="search_files">Files</string>
+    <string name="search_choose_folder">Choose folder for search</string>
+    <string name="search_remove_folder">Remove folder from search</string>
+    <string name="local_ai">Local AI</string>
+    <string name="local_ai_unsupported">Local AI requires an ARM64 device with at least 6 GB of RAM.</string>
+    <string name="local_ai_import">Import chat model</string>
+    <string name="local_ai_summary">Choose a compact quantized LiteRT LM model file.</string>
+    <string name="local_ai_importing">Copying model…</string>
+    <string name="local_ai_remove">Remove chat model</string>
+    <string name="local_ai_failed">Could not use the local model.</string>
+    <string name="local_ai_conversations">AI conversations</string>
+    <string name="local_ai_delete_chat">Delete conversation</string>
+    <string name="local_ai_no_chats">No saved conversations.</string>
+    <string name="local_ai_working">Generating…</string>
+    <string name="local_ai_prompt">Message</string>
+    <string name="local_ai_send">Send</string>
+    <string name="search_all_files">All files access</string>
+    <string name="search_all_files_granted">Enyo can search shared storage.</string>
+    <string name="search_all_files_summary">Allow Enyo to search shared storage from Android Settings.</string>
+    <string name="search_related_files">Related files</string>
+    <string name="search_semantic_enable">Enable natural language file search</string>
+    <string name="search_semantic_summary">Download about 178 MB of models to search images and documents locally.</string>
+    <string name="search_semantic_downloading">Downloading search models…</string>
+    <string name="search_semantic_refresh">Refresh search index</string>
+    <string name="search_semantic_schedule">Enyo indexes files when the device is charging and idle.</string>
+    <string name="search_semantic_disable">Remove search models and index</string>
 </resources>

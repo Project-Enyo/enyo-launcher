@@ -93,15 +93,7 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
             item {
                 SettingsPanel(stringResource(R.string.setup_permissions)) {
                     steps.forEach { step ->
-                        ListRow(
-                            stringResource(step.title),
-                            summary = stringResource(step.detail),
-                            summaryLines = 4,
-                            trailing = {
-                                if (step.enabled) Text(stringResource(R.string.setup_enabled), style = tokens.label.copy(color = tokens.accent))
-                                else PillButton(stringResource(R.string.setup_configure), onClick = step.request)
-                            }
-                        )
+                        PermissionRow(stringResource(step.title), stringResource(step.detail), step.enabled, step.request)
                     }
                 }
             }

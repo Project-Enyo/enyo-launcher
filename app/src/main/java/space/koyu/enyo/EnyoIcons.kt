@@ -89,6 +89,7 @@ internal enum class Glyph(val drawable: Int) {
     Wifi(R.drawable.tabler_wifi),
     Alarm(R.drawable.tabler_alarm),
     Refresh(R.drawable.tabler_refresh),
+    Bomb(R.drawable.tabler_bomb),
     Pin(R.drawable.tabler_pin),
     Push(R.drawable.tabler_cloud_upload),
     Contact(R.drawable.tabler_address_book),
