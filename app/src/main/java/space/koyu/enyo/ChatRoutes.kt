@@ -17,9 +17,20 @@ internal data class ChatRoute(
     val uri: String?,
     val lastAt: Long,
     /** The chat's id in its app, when the app shares it through UnifiedInbox. */
-    val inboxId: String? = null
+    val inboxId: String?,
+    val conversationId: Long
 ) {
     val shortcutId get() = conversationKey.removePrefix("shortcut:").takeIf { conversationKey.startsWith("shortcut:") }
+}
+
+internal fun chatRouteLabel(context: Context, route: ChatRoute, routes: List<ChatRoute>, app: String): String {
+    val others = routes.filter { it.packageName == route.packageName }
+    if (others.size <= 1) return app
+    val detail = listOfNotNull(route.phone, route.name).firstOrNull { candidate ->
+        others.count { candidate == it.phone || candidate == it.name } == 1
+    }
+    return if (detail != null) "$app · $detail"
+    else context.getString(R.string.thread_route_number, app, others.indexOf(route) + 1)
 }
 
 /**

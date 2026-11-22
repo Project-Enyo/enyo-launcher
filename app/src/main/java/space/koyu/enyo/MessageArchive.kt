@@ -102,9 +102,24 @@ internal class MessageArchive private constructor(private val context: Context) 
     }
 
     fun write(block: (SupportSQLiteDatabase) -> Unit) {
+        writeResult({}, block)
+    }
+
+    fun <T> writeResult(finished: (T?) -> Unit, block: (SupportSQLiteDatabase) -> T) {
         writes.launch {
-            runCatching { db.beginTransaction(); try { block(db); db.setTransactionSuccessful() } finally { db.endTransaction() } }
+            val result = runCatching {
+                val database = db
+                database.beginTransaction()
+                try {
+                    val value = block(database)
+                    database.setTransactionSuccessful()
+                    value
+                } finally {
+                    database.endTransaction()
+                }
+            }.getOrNull()
             revision.value = System.nanoTime()
+            finished(result)
         }
     }
 
@@ -363,7 +378,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 7
+        const val schemaVersion = 8
         private const val sourceEchoWindow = 3 * 60_000L
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
@@ -424,6 +439,7 @@ internal class MessageArchive private constructor(private val context: Context) 
                 )"""
             )
             db.execSQL("CREATE INDEX messages_conversation ON messages(conversation_id, posted_at)")
+            createNotificationIndex(db)
             db.execSQL(
                 """CREATE TABLE suggestions (
                     identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
@@ -452,6 +468,10 @@ internal class MessageArchive private constructor(private val context: Context) 
             )
         }
 
+        private fun createNotificationIndex(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS messages_notification ON messages(notification_key, posted_at, id)")
+        }
+
         /** Each schema step runs once, in order, inside the open transaction. */
         private fun migrate(db: SupportSQLiteDatabase, from: Int) {
             if (from < 1) createSchema(db)
@@ -461,6 +481,7 @@ internal class MessageArchive private constructor(private val context: Context) 
             if (from < 5) createInboxSchema(db)
             if (from < 6) AssistantChats.createSchema(db)
             if (from < 7) SemanticFiles.createSchema(db)
+            if (from < 8) createNotificationIndex(db)
         }
 
         /**

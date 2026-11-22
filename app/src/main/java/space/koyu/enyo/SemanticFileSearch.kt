@@ -124,7 +124,7 @@ class SemanticFileIndexWorker(context: Context, parameters: WorkerParameters) : 
         val preferences = store.data.first()
         if (preferences[semanticEnabled] != true) return@withContext Result.success()
         val source = currentSearchSource(context, preferences[searchFolder]) ?: return@withContext Result.success()
-        if (!supportsLocalAssistant(context)) return@withContext Result.retry()
+        if (!canRunLocalModels(context)) return@withContext Result.retry()
         val archive = MessageArchive.get(context)
         val scan = UUID.randomUUID().toString()
         try {
@@ -189,7 +189,7 @@ class SemanticFileIndexWorker(context: Context, parameters: WorkerParameters) : 
 internal suspend fun semanticFileMatches(context: Context, source: String, query: String): List<FileHit> =
     withContext(Dispatchers.IO) {
         // File indexing only runs while idle. Skip semantic ranking if chat or indexing is still draining.
-        if (!localInference.tryLock()) return@withContext emptyList()
+        if (!canRunLocalModels(context) || !localInference.tryLock()) return@withContext emptyList()
         try {
             val archive = MessageArchive.get(context)
             SearchEmbeddings(modelDirectory(context)).use { encoder ->

@@ -6,18 +6,13 @@ import android.os.Build
 import android.util.AtomicFile
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,12 +51,14 @@ private const val maxModelBytes = 1_500_000_000L
 private const val maxPromptLength = 1200
 
 private fun modelFile(context: Context) = File(context.noBackupFilesDir, "assistant.litertlm")
-internal fun supportsLocalAssistant(context: Context): Boolean {
-    val memory = ActivityManager.MemoryInfo()
-    context.getSystemService(ActivityManager::class.java).getMemoryInfo(memory)
-    return "arm64-v8a" in Build.SUPPORTED_64_BIT_ABIS && !memory.lowMemory &&
-        memory.totalMem >= 5L * 1024 * 1024 * 1024
-}
+private fun memoryInfo(context: Context): ActivityManager.MemoryInfo =
+    ActivityManager.MemoryInfo().also { context.getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
+
+internal fun supportsLocalAssistant(context: Context): Boolean =
+    "arm64-v8a" in Build.SUPPORTED_64_BIT_ABIS && memoryInfo(context).totalMem >= 5L * 1024 * 1024 * 1024
+
+internal fun canRunLocalModels(context: Context): Boolean =
+    supportsLocalAssistant(context) && !memoryInfo(context).lowMemory
 
 private val recommendedAssistant = ModelAsset(
     "litert-community/Qwen3-0.6B-int4/resolve/01d8620f3233a158edc2aa2c84f5d5e3fa0c02c0/",
@@ -287,41 +284,36 @@ internal object AssistantChats {
                 }
             }
         }
-        EnyoSheet(stringResource(R.string.local_ai), close) {
+        val title = turns.firstOrNull()?.prompt?.lineSequence()?.firstOrNull()?.take(120)
+        val appName = stringResource(R.string.local_ai)
+        ConversationView(title ?: appName, appName, close) {
             val scroll = rememberLazyListState()
-            val count = (turns.size + if (pending != null) 1 else 0)
-            LaunchedEffect(count) { if (count > 0) scroll.scrollToItem(count - 1) }
-            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false), state = scroll,
+            val count = turns.size + if (pending != null) 1 else 0
+            LaunchedEffect(count) { if (count > 0) scroll.scrollToItem(0) }
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll, reverseLayout = true,
+                contentPadding = PaddingValues(tokens.margin),
                 verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                items(turns) { turn ->
-                    AssistantBubble(turn.prompt, true)
-                    AssistantBubble(turn.reply, false)
-                }
-                pending?.let { text -> item {
-                    AssistantBubble(text, true)
-                    AssistantBubble(partial.ifBlank { stringResource(R.string.local_ai_working) }, false)
+                pending?.let { text -> item(key = "pending") {
+                    Column(verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                        ConversationBubble(text, true)
+                        ConversationBubble(partial.ifBlank { stringResource(R.string.local_ai_working) }, false)
+                    }
                 } }
+                items(turns.asReversed()) { turn ->
+                    Column(verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                        ConversationBubble(turn.prompt, true)
+                        ConversationBubble(turn.reply, false)
+                    }
+                }
             }
-            if (failed) ListNote(stringResource(R.string.local_ai_failed))
-            if (ready && loaded) Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                OutlinedTextField(prompt, { prompt = it.take(maxPromptLength) }, Modifier.weight(1f),
-                    label = { Text(stringResource(R.string.local_ai_prompt)) }, maxLines = 4, enabled = pending == null)
-                PillButton(stringResource(R.string.local_ai_send), filled = true) { send() }
+            Column(Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                if (failed) Text(stringResource(R.string.local_ai_failed), style = tokens.caption, color = tokens.danger)
+                if (ready && loaded) MessageComposer(prompt, { prompt = it.take(maxPromptLength) },
+                    stringResource(R.string.local_ai_prompt), enabled = pending == null, send = ::send)
+                else if (loaded && !ready) ListNote(stringResource(R.string.local_ai_summary))
             }
-            else if (loaded && !ready) ListNote(stringResource(R.string.local_ai_summary))
         }
-    }
-}
-
-@Composable
-private fun AssistantBubble(text: String, outgoing: Boolean) {
-    val tokens = LocalTokens.current
-    Box(Modifier.fillMaxWidth().padding(vertical = tokens.gap / 2),
-        contentAlignment = if (outgoing) Alignment.CenterEnd else Alignment.CenterStart) {
-        Text(text, Modifier.fillMaxWidth(0.92f).clip(RoundedCornerShape(tokens.radius))
-            .background(if (outgoing) tokens.widgetTrack else tokens.widgetSurface).padding(tokens.padding),
-            style = tokens.body)
     }
 }
 
@@ -332,7 +324,7 @@ private suspend fun generateReply(
     update: (String) -> Unit
 ): String = withContext(Dispatchers.IO) {
     localInference.withLock {
-        check(supportsLocalAssistant(context))
+        check(canRunLocalModels(context))
         val engineConfig = EngineConfig(modelPath = modelFile(context).absolutePath,
             backend = Backend.CPU(threadCount = 2), maxNumTokens = 1280, cacheDir = context.cacheDir.absolutePath)
         val messages = history.takeLast(1).flatMap {

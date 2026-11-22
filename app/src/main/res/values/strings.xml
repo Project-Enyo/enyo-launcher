@@ -368,7 +368,6 @@
     <string name="local_ai_no_chats">No saved conversations.</string>
     <string name="local_ai_working">Generating…</string>
     <string name="local_ai_prompt">Message</string>
-    <string name="local_ai_send">Send</string>
     <string name="search_all_files">All files access</string>
     <string name="search_all_files_granted">Enyo can search shared storage.</string>
     <string name="search_all_files_summary">Allow Enyo to search shared storage from Android Settings.</string>
@@ -386,4 +385,5 @@
     <string name="model_download_percent">%1$.1f%% downloaded</string>
     <string name="model_download_cancel">Cancel download</string>
     <string name="model_download_failed">The model download failed. Try again.</string>
+    <string name="thread_route_number">%1$s conversation %2$d</string>
 </resources>

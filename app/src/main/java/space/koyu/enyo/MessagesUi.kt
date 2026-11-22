@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -97,21 +99,44 @@ internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.co
         summary.name, Modifier.appPress(open), summary = summary.preview, summaryLines = 2,
         leading = {
             val personLabel = stringResource(R.string.contact_details_of, summary.name)
-            Box(Modifier.clip(CircleShape).appPress(person).semantics { contentDescription = personLabel }) { PersonAvatar(summary, tokens.listAvatar) }
+            Box(Modifier.size(tokens.listAvatar).appPress(person).semantics { contentDescription = personLabel }) {
+                PersonAvatar(summary, tokens.listAvatar)
+                summary.packages.singleOrNull()?.let { pkg ->
+                    Box(Modifier.align(Alignment.BottomEnd).size(tokens.threadAppIcon + tokens.focusStroke * 2)
+                        .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke)) {
+                        ChatPlatformIcon(pkg, launchers[pkg])
+                    }
+                }
+            }
         },
         trailing = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
                 Text(time, style = tokens.rowSummary, maxLines = 1)
-                Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2), verticalAlignment = Alignment.CenterVertically) {
-                    summary.packages.take(3).forEach { pkg -> launchers[pkg]?.let { AppIcon(it, displaySize = tokens.threadAppIcon) } }
-                    if (summary.unread > 0) Box(
-                        Modifier.clip(CircleShape).background(tokens.accent).padding(horizontal = tokens.gap / 2),
-                        contentAlignment = Alignment.Center
-                    ) { Text(summary.unread.toString(), style = tokens.pillLabel.copy(color = tokens.onAccent)) }
-                }
+                if (summary.unread > 0) Box(
+                    Modifier.clip(CircleShape).background(tokens.accent).padding(horizontal = tokens.gap / 2),
+                    contentAlignment = Alignment.Center
+                ) { Text(summary.unread.toString(), style = tokens.pillLabel.copy(color = tokens.onAccent)) }
             }
         }
     )
+}
+
+@Composable
+private fun ChatPlatformIcon(packageName: String, launcher: android.content.pm.LauncherActivityInfo?) {
+    val context = LocalContext.current
+    val size = LocalTokens.current.threadAppIcon
+    if (launcher != null) AppIcon(launcher, displaySize = size, label = launcher.label.toString())
+    else {
+        val pixels = with(androidx.compose.ui.platform.LocalDensity.current) { size.roundToPx() }
+        val icon by produceState<ImageBitmap?>(null, packageName, pixels) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.packageManager.getApplicationIcon(packageName).toBitmap(pixels, pixels).asImageBitmap()
+                }.getOrNull()
+            }
+        }
+        icon?.let { Image(it, sourceLabel(context, packageName), Modifier.fillMaxSize().clip(CircleShape)) }
+    }
 }
 
 /**
@@ -130,6 +155,18 @@ internal fun ThreadScreen(
     val tokens = LocalTokens.current
     val summary = rememberArchive<ThreadSummary?>(null, thread) { ArchiveData.summary(it, thread) }
     val messages = rememberArchive(emptyList<ArchivedMessage>(), thread) { ArchiveData.messages(it, thread) }
+    var knownConversation by remember(thread) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(messages.lastOrNull()?.conversationId) {
+        messages.lastOrNull()?.conversationId?.let { knownConversation = it }
+    }
+    val replacement = rememberArchive<ThreadRef.Person?>(null, thread, summary, knownConversation) { ctx ->
+        val conversation = knownConversation
+        if (summary != null || thread !is ThreadRef.Person || conversation == null) null
+        else ArchiveData.replacementThread(ctx, thread, conversation)
+    }
+    LaunchedEffect(replacement) {
+        replacement?.let { target -> close(); ArchiveData.requestedThread.value = target }
+    }
     val personId = (thread as? ThreadRef.Person)?.id
     val identities = rememberArchive(emptyList<ThreadIdentity>(), personId) { if (personId == null) emptyList() else ArchiveData.identities(it, personId) }
     val suggestions = rememberArchive(emptyList<LinkSuggestion>(), personId) { if (personId == null) emptyList() else ArchiveData.suggestions(it, personId) }
@@ -142,34 +179,54 @@ internal fun ThreadScreen(
     var failed by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
         val contact = uri?.let { ArchiveData.contactOf(context, it) } ?: return@rememberLauncherForActivityResult
-        identities.forEach { ArchiveData.linkToContact(context, it.id, contact.lookup, contact.name) }
+        if (identities.isNotEmpty()) {
+            ArchiveData.linkToContact(context, identities.map { it.id }, contact.lookup, contact.name)
+            close()
+        }
     }
-    // Live notifications for this thread, newest first, one per app.
-    val keys = remember(messages) { messages.mapNotNull { it.notificationKey }.toSet() }
-    val live = remember(active, keys) {
-        active.filter { it.key in keys }.sortedByDescending { it.postTime }.distinctBy { it.packageName }
+    val archivedKeys = remember(messages) { messages.mapNotNull { it.notificationKey }.toSet() }
+    val activeKeys = remember(active, archivedKeys) { active.mapNotNull { it.key.takeIf(archivedKeys::contains) }.toSet() }
+    val notificationRoutes = rememberArchive(emptyMap<String, Long>(), activeKeys) {
+        ArchiveData.notificationConversations(it, activeKeys)
     }
-    val replies = live.mapNotNull { entry -> entry.notification.replyAction()?.let { entry to it } }
     val scope = rememberCoroutineScope()
     val label = { pkg: String -> launchers[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
 
     var accounts by remember { mutableStateOf(false) }
     var flyout by remember { mutableStateOf(false) }
     val routes = rememberArchive(emptyList<ChatRoute>(), thread) { ArchiveData.routes(it, thread) }
+    val liveByRoute = remember(active, routes, notificationRoutes) {
+        val byId = routes.associateBy { it.conversationId }
+        val shortcuts = routes.mapNotNull { route ->
+            route.shortcutId?.let { (route.packageName to it) to route }
+        }.toMap()
+        active.sortedByDescending { it.postTime }.mapNotNull { entry ->
+            val shortcut = entry.notification.shortcutId
+            val route = if (shortcut != null) shortcuts[entry.packageName to shortcut]
+            else byId[notificationRoutes[entry.key]]?.takeIf { it.packageName == entry.packageName }
+            route?.conversationId?.let { it to entry }
+        }.distinctBy { it.first }.toMap()
+    }
+    fun routeLabel(route: ChatRoute) = chatRouteLabel(context, route, routes, label(route.packageName))
+
     val connectors by InboxHost.connectors.collectAsState()
-    // Apps that share through UnifiedInbox reply directly; others through their current notification.
-    val targets = remember(routes, replies, connectors) {
-        val direct = routes.filter { it.inboxId != null && InboxHost.supports(context, it.packageName, InboxHost.featureReply) }
-            .distinctBy { it.packageName }.map { route ->
-                ReplyTarget(route.packageName, emptyList(), inboxId = route.inboxId)
+    val targets = remember(routes, liveByRoute, connectors) {
+        routes.mapNotNull { route ->
+            if (route.inboxId != null && InboxHost.supports(context, route.packageName, InboxHost.featureReply)) {
+                ReplyTarget(route, emptyList(), inboxId = route.inboxId)
+            } else liveByRoute[route.conversationId]?.let { entry ->
+                entry.notification.replyAction()?.let { action ->
+                    ReplyTarget(route, action.replyChoices(), inboxId = null, notification = entry to action)
+                }
             }
-        val notified = replies.map { (entry, action) -> ReplyTarget(entry.packageName, action.replyChoices(), inboxId = null, notification = entry to action) }
-        (direct + notified).distinctBy { it.packageName }
+        }
     }
     var pendingReplies by remember { mutableStateOf(setOf<String>()) }
     val failures by InboxHost.failedReplies.collectAsState()
     val replyFailure = failures.filterKeys { it in pendingReplies }.entries.lastOrNull()
-    var replyVia by remember(targets.map { it.packageName }) { mutableStateOf(targets.firstOrNull()?.packageName) }
+    var replyVia by remember { mutableStateOf<Long?>(null) }
+    val selected = if (replyVia == null) targets.firstOrNull()
+    else targets.firstOrNull { it.route.conversationId == replyVia }
     LaunchedEffect(thread, messages.lastOrNull()?.id, routes) {
         routes.filter { it.inboxId != null }.forEach { InboxHost.markRead(context, it.packageName, it.inboxId!!) }
     }
@@ -229,7 +286,8 @@ internal fun ThreadScreen(
                         Row(Modifier.padding(start = tokens.padding, end = tokens.padding, bottom = tokens.gap), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
                             PillButton(stringResource(R.string.thread_suggestion_no)) { ArchiveData.dismissSuggestion(context, suggestion) }
                             PillButton(stringResource(R.string.thread_suggestion_link), filled = true) {
-                                ArchiveData.linkToContact(context, suggestion.identityId, suggestion.lookup, suggestion.contactName)
+                                ArchiveData.linkToContact(context, listOf(suggestion.identityId), suggestion.lookup, suggestion.contactName)
+                                close()
                             }
                         }
                     }
@@ -268,21 +326,22 @@ internal fun ThreadScreen(
                 replyFailure?.let { (_, reason) ->
                     Text(listOfNotNull(stringResource(R.string.reply_failed_app), reason).joinToString(" "), style = tokens.caption)
                 }
-                if (targets.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                if (targets.size > 1 || (selected == null && targets.isNotEmpty())) Row(
+                    Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(tokens.gap)
+                ) {
                     targets.forEach { target ->
-                        PillButton(label(target.packageName), filled = replyVia == target.packageName) { replyVia = target.packageName }
+                        PillButton(routeLabel(target.route), filled = selected == target) { replyVia = target.route.conversationId }
                     }
                 }
-                val selected = targets.firstOrNull { it.packageName == replyVia }
-                if (selected != null) key(selected.packageName, selected.notification?.first?.key) {
+                if (selected != null) key(selected.route.conversationId, selected.notification?.first?.key) {
                     ReplyComposer(
-                        stringResource(R.string.thread_reply_hint, label(selected.packageName)),
+                        stringResource(R.string.thread_reply_hint, routeLabel(selected.route)),
                         selected.choices, autofocus = false
                     ) { text ->
                         val inboxId = selected.inboxId
                         val notification = selected.notification
                         val sent = when {
-                            inboxId != null -> InboxHost.reply(context, selected.packageName, inboxId, text)?.also { pendingReplies = pendingReplies + it } != null
+                            inboxId != null -> InboxHost.reply(context, selected.route.packageName, inboxId, text)?.also { pendingReplies = pendingReplies + it } != null
                             notification != null -> sendReply(context, notification.first, notification.second, text)
                                 .also { if (!it) notification.first.openFromForeground(context) }
                             else -> false
@@ -292,14 +351,14 @@ internal fun ThreadScreen(
                     }
                 } else Text(stringResource(R.string.thread_no_reply), style = tokens.caption)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                    val openable = (live.map { it.packageName } + summary?.packages.orEmpty()).distinct()
-                    openable.take(3).forEach { pkg ->
+                    routes.forEach { route ->
+                        PillButton(stringResource(R.string.thread_open_in, routeLabel(route))) {
+                            failed = !context.openChat(route, liveByRoute[route.conversationId])
+                        }
+                    }
+                    if (routes.isEmpty()) summary?.packages.orEmpty().forEach { pkg ->
                         PillButton(stringResource(R.string.thread_open_in, label(pkg))) {
-                            val entry = live.firstOrNull { it.packageName == pkg }
-                            val route = routes.firstOrNull { it.packageName == pkg }
-                            val opened = (route != null && context.openChat(route, entry)) || entry?.openFromForeground(context) == true ||
-                                launchers[pkg]?.let { openApp(it); true } == true
-                            failed = !opened
+                            failed = !(launchers[pkg]?.let { openApp(it); true } ?: context.launchNotifyingApp(pkg))
                         }
                     }
                 }
@@ -361,9 +420,8 @@ internal fun ThreadScreen(
                         other.name,
                         Modifier.appPress({
                             val target = (other.ref as ThreadRef.Person).id
-                            identities.forEach { ArchiveData.linkToPerson(context, it.id, target) }
+                            ArchiveData.mergePeople(context, personId, target)
                             merging = false
-                            ArchiveData.requestedThread.value = other.ref
                             close()
                         }),
                         summary = other.packages.joinToString(" · ") { label(it) },
@@ -401,7 +459,7 @@ private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boo
 
 /** Where a thread's reply goes: a UnifiedInbox connector, or the reply action of a live notification. */
 private data class ReplyTarget(
-    val packageName: String,
+    val route: ChatRoute,
     val choices: List<String>,
     val inboxId: String?,
     val notification: Pair<android.service.notification.StatusBarNotification, android.app.Notification.Action>? = null

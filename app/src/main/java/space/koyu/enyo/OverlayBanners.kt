@@ -268,6 +268,8 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, startRe
     val group = entry.noticeGroup()
     val title = if (group.messaging) stringResource(R.string.messages) else sourceLabel(context, entry.packageName)
     val text = entry.noticePayload()
+    val replyTitle = entry.notification.extras.getCharSequence(android.app.Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+        ?: text.sender ?: title
     Surface(
         color = tokens.widgetSurface,
         contentColor = tokens.onAccentContainer,
@@ -282,9 +284,14 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, startRe
         ) {
             EnyoGlyph(if (group.messaging) Glyph.Messages else Glyph.Inbox, color = tokens.accent)
             Column(Modifier.weight(1f).heightIn(min = tokens.touch).appPress(open)) {
-                Text(title, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1)
-                text.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                text.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                Text(if (replying) replyTitle else title, style = tokens.state, color = tokens.onAccentContainer,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (replying) {
+                    Text(sourceLabel(context, entry.packageName), style = tokens.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else {
+                    text.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    text.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                }
             }
             val label = stringResource(R.string.overlay_close)
             Box(
@@ -299,10 +306,14 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, startRe
         if (action != null && !replying) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
             PillButton(stringResource(R.string.message_reply), filled = true) { replying = true; startReply() }
         }
-        if (action != null && replying) ReplyComposer(
-            stringResource(R.string.thread_reply_hint, sourceLabel(context, entry.packageName)),
-            action.replyChoices(), autofocus = true
-        ) { reply -> sendReply(context, entry, action, reply).also { if (it) close() } }
+        if (action != null && replying) {
+            entry.recentLines(count = 1).lastOrNull()?.let { line ->
+                ConversationBubble(line.text, line.outgoing, line.sender?.takeUnless { line.outgoing || it == replyTitle }, maxLines = 3)
+            }
+            ReplyComposer(stringResource(R.string.message_reply), action.replyChoices(), autofocus = true) { reply ->
+                sendReply(context, entry, action, reply).also { if (it) close() }
+            }
+        }
         }
     }
 }

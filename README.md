@@ -8,6 +8,10 @@ Download the APK from [GitHub Releases](https://github.com/Project-Enyo/enyo-lau
 
 Turn on notification access to add supported conversations to Inbox. Messaging apps can also connect directly through [UnifiedInbox](https://github.com/Project-Enyo/UnifiedInbox). Enyo can act as a UnifiedPush distributor using an ntfy server.
 
+## Inbox
+
+When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Replies in a merged thread go through the conversation selected in the composer.
+
 ## Search
 
 Search covers apps, settings, contacts, calendar events, saved messages, and files. A query such as “Send a message to Alex that I’m on my way” can open an SMS draft with the recipient and message filled in. Review the draft and send it in your messaging app.

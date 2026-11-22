@@ -55,7 +55,7 @@ internal object ArchiveData {
         SELECT p.id, COALESCE(p.name, MAX(i.name)), p.contact_lookup,
             (SELECT i2.avatar FROM identities i2 WHERE i2.person_id = p.id AND i2.avatar IS NOT NULL LIMIT 1),
             (SELECT m2.text FROM messages m2 JOIN conversations c2 ON c2.id = m2.conversation_id JOIN identities i3 ON i3.id = c2.identity_id
-                WHERE i3.person_id = p.id AND c2.is_group = 0 AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC LIMIT 1),
+                WHERE i3.person_id = p.id AND c2.is_group = 0 AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC, m2.id DESC LIMIT 1),
             MAX(c.last_at),
             (SELECT COUNT(*) FROM messages m3 JOIN conversations c3 ON c3.id = m3.conversation_id JOIN identities i4 ON i4.id = c3.identity_id
                 WHERE i4.person_id = p.id AND c3.is_group = 0 AND m3.outgoing = 0 AND m3.duplicate_of IS NULL AND m3.posted_at > c3.read_at),
@@ -65,7 +65,7 @@ internal object ArchiveData {
 
     private const val groupSummary = """
         SELECT c.id, COALESCE(c.title, c.key), NULL, NULL,
-            (SELECT m2.text FROM messages m2 WHERE m2.conversation_id = c.id AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC LIMIT 1),
+            (SELECT m2.text FROM messages m2 WHERE m2.conversation_id = c.id AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC, m2.id DESC LIMIT 1),
             c.last_at,
             (SELECT COUNT(*) FROM messages m3 WHERE m3.conversation_id = c.id AND m3.outgoing = 0 AND m3.duplicate_of IS NULL AND m3.posted_at > c.read_at),
             c.package
@@ -103,9 +103,9 @@ internal object ArchiveData {
         val (sql, args) = when (thread) {
             is ThreadRef.Person -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
                 FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN identities i ON i.id = c.identity_id
-                WHERE i.person_id = ? AND c.is_group = 0 AND m.duplicate_of IS NULL ORDER BY m.posted_at""" to arrayOf<Any>(thread.id)
+                WHERE i.person_id = ? AND c.is_group = 0 AND m.duplicate_of IS NULL ORDER BY m.posted_at, m.id""" to arrayOf<Any>(thread.id)
             is ThreadRef.Group -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
-                FROM messages m WHERE m.conversation_id = ? AND m.duplicate_of IS NULL ORDER BY m.posted_at""" to arrayOf<Any>(thread.conversationId)
+                FROM messages m WHERE m.conversation_id = ? AND m.duplicate_of IS NULL ORDER BY m.posted_at, m.id""" to arrayOf<Any>(thread.conversationId)
         }
         db.query(sql, args).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.message()) } }
     }.orEmpty()
@@ -179,7 +179,14 @@ internal object ArchiveData {
     }
 
     fun deleteMessage(context: Context, id: Long) = MessageArchive.get(context).write { db ->
+        val conversation = db.query("SELECT conversation_id FROM messages WHERE id = ?", arrayOf(id))
+            .use { if (it.moveToFirst()) it.getLong(0) else null } ?: return@write
         db.execSQL("DELETE FROM messages WHERE id = ?", arrayOf(id))
+        db.execSQL("""
+            UPDATE conversations SET last_at = COALESCE(
+                (SELECT MAX(posted_at) FROM messages WHERE conversation_id = conversations.id), 0
+            ) WHERE id = ?
+        """, arrayOf(conversation))
     }
 
     /** Deletes the stored history of a thread; identities and links stay so new messages land in place. */
@@ -202,11 +209,15 @@ internal object ArchiveData {
         db.execSQL("DELETE FROM people")
     }
 
-    fun linkToContact(context: Context, identityId: Long, lookup: String, name: String?) =
-        MessageArchive.get(context).write { db -> PeopleResolver.linkToContact(db, identityId, lookup, name) }
+    fun linkToContact(context: Context, identities: List<Long>, lookup: String, name: String?) =
+        MessageArchive.get(context).writeResult({ id -> id?.let { requestedThread.value = ThreadRef.Person(it) } }) { db ->
+            if (identities.isEmpty()) null else PeopleResolver.linkToContact(db, identities, lookup, name)
+        }
 
-    fun linkToPerson(context: Context, identityId: Long, personId: Long) =
-        MessageArchive.get(context).write { db -> PeopleResolver.linkToPerson(db, identityId, personId) }
+    fun mergePeople(context: Context, from: Long, into: Long) =
+        MessageArchive.get(context).writeResult({ id -> id?.let { requestedThread.value = ThreadRef.Person(it) } }) { db ->
+            PeopleResolver.mergePeople(db, from, into)
+        }
 
     fun split(context: Context, identityId: Long) = MessageArchive.get(context).write { db -> PeopleResolver.split(db, identityId) }
 
@@ -254,21 +265,51 @@ internal object ArchiveData {
             ?.use { if (it.moveToFirst()) PeopleResolver.ContactMatch(it.getString(0), it.stringOrNull(1)) else null }
     }.getOrNull()
 
+    fun replacementThread(context: Context, previous: ThreadRef.Person, conversation: Long): ThreadRef.Person? =
+        MessageArchive.get(context).read { db ->
+            db.query("""
+                SELECT i.person_id FROM conversations c JOIN identities i ON i.id = c.identity_id
+                WHERE c.id = ? AND c.is_group = 0 AND i.person_id IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM people WHERE id = ?)
+            """, arrayOf(conversation, previous.id)).use {
+                if (it.moveToFirst()) ThreadRef.Person(it.getLong(0)) else null
+            }
+        }
+
+    /** A recurring notification key belongs to the most recent conversation that used it. */
+    fun notificationConversations(context: Context, keys: Set<String>): Map<String, Long> =
+        MessageArchive.get(context).read { db ->
+            buildMap {
+                keys.chunked(500).forEach { batch ->
+                    val placeholders = batch.joinToString(",") { "?" }
+                    db.query(
+                        "SELECT notification_key, conversation_id FROM messages WHERE notification_key IN ($placeholders) ORDER BY posted_at DESC, id DESC",
+                        batch.toTypedArray()
+                    ).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val key = cursor.getString(0)
+                            if (!containsKey(key)) put(key, cursor.getLong(1))
+                        }
+                    }
+                }
+            }
+        }.orEmpty()
+
     /** Every app conversation behind a thread, most recent first. */
     fun routes(context: Context, thread: ThreadRef): List<ChatRoute> = MessageArchive.get(context).read { db ->
         val (sql, arg) = when (thread) {
-            is ThreadRef.Person -> """SELECT c.package, c.key, i.key, COALESCE(i.name, c.title), i.phone, i.uri, c.last_at, ic.id
+            is ThreadRef.Person -> """SELECT c.package, c.key, i.key, COALESCE(i.name, c.title), i.phone, i.uri, c.last_at, ic.id, c.id
                 FROM conversations c JOIN identities i ON i.id = c.identity_id
                 LEFT JOIN inbox_conversations ic ON ic.package = c.package AND ic.key = c.key
                 WHERE i.person_id = ? AND c.is_group = 0 ORDER BY c.last_at DESC""" to thread.id
-            is ThreadRef.Group -> """SELECT c.package, c.key, NULL, c.title, NULL, NULL, c.last_at, ic.id FROM conversations c
+            is ThreadRef.Group -> """SELECT c.package, c.key, NULL, c.title, NULL, NULL, c.last_at, ic.id, c.id FROM conversations c
                 LEFT JOIN inbox_conversations ic ON ic.package = c.package AND ic.key = c.key WHERE c.id = ?""" to thread.conversationId
         }
         db.query(sql, arrayOf(arg)).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) add(ChatRoute(
                     cursor.getString(0), cursor.getString(1), cursor.stringOrNull(2), cursor.stringOrNull(3),
-                    cursor.stringOrNull(4), cursor.stringOrNull(5), cursor.getLong(6), cursor.stringOrNull(7)
+                    cursor.stringOrNull(4), cursor.stringOrNull(5), cursor.getLong(6), cursor.stringOrNull(7), cursor.getLong(8)
                 ))
             }
         }

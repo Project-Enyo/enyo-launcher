@@ -12,8 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /**
  * Links message identities to people. Reliable identifiers link automatically: a contact URI the
  * app attached to the sender (Signal, Molly), a phone number (Telegram tel entries), or a WhatsApp
- * chat id that carries a number. A name that matches exactly one address book contact who also has
- * that messenger's sync account only becomes a suggestion for the person to confirm. Anyone else
+ * chat id that carries a number. A matching address book name becomes a suggestion to confirm. Anyone else
  * starts as their own person. Manual links and splits are never overridden.
  */
 internal object PeopleResolver {
@@ -38,20 +37,59 @@ internal object PeopleResolver {
         if (contactsAllowed(context)) suggest(context, db, identityId, row)
     }
 
-    /** Runs again for every identity, for example after contacts access was granted. */
+    /** Refreshes contact keys and merges people whose Android contacts were joined. */
     fun resolveAll(context: Context, db: SupportSQLiteDatabase) {
-        val ids = db.query("SELECT id FROM identities").use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getLong(0)) } }
+        if (!contactsAllowed(context)) return
+        val resolver = context.contentResolver
+        val people = db.query("SELECT id, contact_lookup FROM people WHERE contact_lookup IS NOT NULL")
+            .use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getLong(0) to cursor.getString(1)) } }
+        for ((person, previousLookup) in people) {
+            val contact = runCatching {
+                val uri = ContactsContract.Contacts.lookupContact(resolver,
+                    Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_LOOKUP_URI, previousLookup))
+                    ?: return@runCatching null
+                contactAt(context, uri)
+            }.getOrNull() ?: continue
+            if (contact.lookup == previousLookup) {
+                if (contact.name != null) db.execSQL("UPDATE people SET name = ? WHERE id = ? AND name IS NOT ?",
+                    arrayOf<Any>(contact.name, person, contact.name))
+            } else {
+                val canonical = personFor(db, contact.lookup, contact.name)
+                db.execSQL("UPDATE identities SET person_id = ? WHERE person_id = ?", arrayOf(canonical, person))
+                dropIfOrphan(db, person)
+            }
+        }
+        val ids = db.query("SELECT id FROM identities WHERE COALESCE(link_source, '') NOT IN (?, ?)",
+            arrayOf(sourceManual, sourceContact)).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getLong(0)) }
+        }
         ids.forEach { resolve(context, db, it) }
     }
 
-    fun linkToContact(db: SupportSQLiteDatabase, identityId: Long, lookup: String, name: String?) {
-        val previous = personOf(db, identityId)
-        link(db, identityId, personFor(db, lookup, name), sourceManual, previous)
-        db.execSQL("DELETE FROM suggestions WHERE identity_id = ?", arrayOf(identityId))
+    fun linkToContact(db: SupportSQLiteDatabase, identities: List<Long>, lookup: String, name: String?): Long {
+        val target = personFor(db, lookup, name)
+        identities.distinct().forEach { identity ->
+            link(db, identity, target, sourceManual, personOf(db, identity))
+            db.execSQL("DELETE FROM suggestions WHERE identity_id = ?", arrayOf(identity))
+        }
+        return target
     }
 
     fun linkToPerson(db: SupportSQLiteDatabase, identityId: Long, personId: Long) {
         link(db, identityId, personId, sourceManual, personOf(db, identityId))
+    }
+
+    fun mergePeople(db: SupportSQLiteDatabase, from: Long, into: Long): Long? {
+        if (from == into) return null
+        fun lookup(id: Long): String? = db.query("SELECT contact_lookup FROM people WHERE id = ?", arrayOf(id))
+            .use { if (it.moveToFirst()) it.stringOrNull(0) else null }
+        val targetExists = db.query("SELECT 1 FROM people WHERE id = ?", arrayOf(into)).use { it.moveToFirst() }
+        if (!targetExists) return null
+        val keep = if (lookup(from) != null && lookup(into) == null) from else into
+        val moving = if (keep == from) into else from
+        db.execSQL("UPDATE identities SET person_id = ?, link_source = ? WHERE person_id = ?", arrayOf<Any>(keep, sourceManual, moving))
+        dropIfOrphan(db, moving)
+        return keep
     }
 
     /** Separates one identity from its person; it keeps its own person from now on. */
@@ -104,8 +142,7 @@ internal object PeopleResolver {
                 val uri = Uri.parse(raw)
                 if (uri.authority == ContactsContract.AUTHORITY) {
                     val contactUri = ContactsContract.Contacts.lookupContact(resolver, uri) ?: return@runCatching null
-                    resolver.query(contactUri, arrayOf(ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME), null, null, null)
-                        ?.use { if (it.moveToFirst()) ContactMatch(it.getString(0), it.stringOrNull(1)) else null }
+                    contactAt(context, contactUri)
                 } else null
             }.getOrNull()?.let { return it }
         }
@@ -114,19 +151,28 @@ internal object PeopleResolver {
             runCatching {
                 val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phone))
                 resolver.query(uri, arrayOf(ContactsContract.PhoneLookup.LOOKUP_KEY, ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
-                    ?.use { if (it.moveToFirst()) ContactMatch(it.getString(0), it.stringOrNull(1)) else null }
+                    ?.use { cursor ->
+                        buildList {
+                            while (cursor.moveToNext()) add(ContactMatch(cursor.getString(0), cursor.stringOrNull(1)))
+                        }.distinctBy { it.lookup }.singleOrNull()
+                    }
             }.getOrNull()?.let { return it }
         }
         return null
     }
 
-    /** A unique exact name match among contacts that also carry this messenger's sync account. */
+    private fun contactAt(context: Context, uri: Uri): ContactMatch? =
+        context.contentResolver.query(uri, arrayOf(ContactsContract.Contacts.LOOKUP_KEY,
+            ContactsContract.Contacts.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null else cursor.stringOrNull(0)?.let { ContactMatch(it, cursor.stringOrNull(1)) }
+        }
+
+    /** A matching name is a suggestion. Shared names never silently join different people. */
     private fun suggest(context: Context, db: SupportSQLiteDatabase, identityId: Long, identity: Identity) {
         val name = identity.name ?: return
         val accounts = Messenger.of(identity.packageName)?.accountTypes.orEmpty()
-        if (accounts.isEmpty()) return
         val placeholders = accounts.joinToString(",") { "?" }
-        val matches = runCatching {
+        val matches = if (accounts.isEmpty()) emptySet() else runCatching {
             context.contentResolver.query(
                 ContactsContract.RawContacts.CONTENT_URI,
                 arrayOf(ContactsContract.RawContacts.CONTACT_ID),
@@ -134,17 +180,18 @@ internal object PeopleResolver {
                 accounts.toTypedArray(), null
             )?.use { cursor -> buildSet { while (cursor.moveToNext()) add(cursor.getLong(0)) } }.orEmpty()
         }.getOrDefault(emptySet())
-        if (matches.isEmpty()) return
         val named = runCatching {
             context.contentResolver.query(
                 ContactsContract.Contacts.CONTENT_URI,
                 arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME),
                 "${ContactsContract.Contacts.DISPLAY_NAME} = ? COLLATE NOCASE", arrayOf(name), null
             )?.use { cursor ->
-                buildList { while (cursor.moveToNext()) if (cursor.getLong(0) in matches) add(ContactMatch(cursor.getString(1), cursor.stringOrNull(2))) }
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getLong(0) to ContactMatch(cursor.getString(1), cursor.stringOrNull(2)))
+                }
             }.orEmpty()
         }.getOrDefault(emptyList())
-        val only = named.singleOrNull() ?: return
+        val only = (named.singleOrNull() ?: named.singleOrNull { it.first in matches })?.second ?: return
         db.insert("suggestions", CONFLICT_IGNORE, ContentValues().apply {
             put("identity_id", identityId); put("contact_lookup", only.lookup); put("contact_name", only.name)
         })

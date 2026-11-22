@@ -368,7 +368,6 @@
     <string name="local_ai_no_chats">Keine gespeicherten Unterhaltungen.</string>
     <string name="local_ai_working">Antwort wird erstellt…</string>
     <string name="local_ai_prompt">Nachricht</string>
-    <string name="local_ai_send">Senden</string>
     <string name="search_all_files">Zugriff auf alle Dateien</string>
     <string name="search_all_files_granted">Enyo kann den gemeinsamen Speicher durchsuchen.</string>
     <string name="search_all_files_summary">Erlaube Enyo in den Android Einstellungen, den gemeinsamen Speicher zu durchsuchen.</string>
@@ -386,4 +385,5 @@
     <string name="model_download_percent">%1$.1f%% heruntergeladen</string>
     <string name="model_download_cancel">Download abbrechen</string>
     <string name="model_download_failed">Der Modell Download ist fehlgeschlagen. Versuche es erneut.</string>
+    <string name="thread_route_number">%1$s Unterhaltung %2$d</string>
 </resources>

@@ -67,7 +67,7 @@ class EnyoNotificationService : NotificationListenerService() {
                 val icon = entry.notification.smallIcon
                 if (entry.packageName in brandedNotificationApps && icon != null) entry.packageName to icon else null
             }.toMap()
-            val visible = local.filterNot { it.isBackgroundNotice() }
+            val visible = local.filterNot { it.isBackgroundNotice(packageName) }
             visible
         }.getOrDefault(emptyList())
     }
@@ -89,7 +89,10 @@ class EnyoNotificationService : NotificationListenerService() {
     }
 }
 
-private fun StatusBarNotification.isBackgroundNotice(): Boolean {
+private fun StatusBarNotification.isBackgroundNotice(ownPackage: String): Boolean {
+    if (packageName == ownPackage && (notification.channelId == "push" ||
+        notification.flags and Notification.FLAG_GROUP_SUMMARY != 0)
+    ) return true
     if (packageName == "moe.zhs.caffeine" ||
         notification.category == Notification.CATEGORY_TRANSPORT ||
         notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
@@ -99,8 +102,6 @@ private fun StatusBarNotification.isBackgroundNotice(): Boolean {
     if (!persistent) return false
     return when (packageName) {
         "org.unifiedpush.distributor.sunup" -> true
-        // Enyo's own push connection: shown by Android while it runs, never in Enyo's Inbox.
-        "space.koyu.enyo", "space.koyu.enyo.debug" -> notification.channelId == "push"
         "io.heckel.ntfy" -> notification.channelId == "ntfy-subscriber"
         "org.kde.kdeconnect_tp" -> notification.channelId == "media_control" || isOngoing
         "android" -> notification.channelId == "DEVELOPER_IMPORTANT" &&

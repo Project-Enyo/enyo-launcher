@@ -29,14 +29,14 @@ internal fun ContactFlyout(
     val context = LocalContext.current
     val tokens = LocalTokens.current
     val routes = rememberArchive(emptyList<ChatRoute>(), relatedThreads) { context ->
-        relatedThreads.flatMap { ArchiveData.routes(context, it) }
+        relatedThreads.flatMap { ArchiveData.routes(context, it) }.distinctBy { it.conversationId }
     }
     val details by produceState<ContactDetails?>(null, summary.contactLookup) {
         value = summary.contactLookup?.let { lookup -> withContext(Dispatchers.IO) { ArchiveData.contactDetails(context, lookup) } }
     }
     val active by EnyoNotificationService.entries.collectAsState()
     var failed by remember { mutableStateOf(false) }
-    val phones = (details?.phones.orEmpty() + routes.mapNotNull { it.phone }).distinctBy { it.filter(Char::isDigit).takeLast(9) }
+    val phones = (details?.phones.orEmpty() + routes.mapNotNull { it.phone }).distinctBy { it.filter(Char::isDigit) }
     val emails = details?.emails.orEmpty()
     // Messengers merged into the Messages hub are missing from the app list, so they are looked up here.
     val known = remember(launchers, routes) {
@@ -88,11 +88,11 @@ internal fun ContactFlyout(
             }
             if (routes.isNotEmpty()) item(key = "services") {
                 SettingsPanel(stringResource(R.string.contact_services)) {
-                    routes.distinctBy { it.packageName }.forEach { route ->
+                    routes.forEach { route ->
                         val live = active.filter { it.packageName == route.packageName && it.isMessagingNotice() }
                             .firstOrNull { entry -> entry.notification.shortcutId?.let { "shortcut:$it" == route.conversationKey } == true }
                         ListRow(
-                            stringResource(R.string.thread_open_in, label(route.packageName)),
+                            stringResource(R.string.thread_open_in, chatRouteLabel(context, route, routes, label(route.packageName))),
                             Modifier.appPress({ failed = !context.openChat(route, live); if (!failed) close() }),
                             summary = listOfNotNull(route.name, route.phone).distinct().joinToString(" · ").ifBlank { null }, summaryLines = 1,
                             leading = { known[route.packageName]?.let { AppIcon(it, displaySize = tokens.listAvatar) } }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -118,7 +119,9 @@ internal fun InboxPage(
             if (requested != null) { openThread = requested; ArchiveData.requestedThread.value = null }
         }
     }
-    if (!locked) openThread?.let { thread -> ThreadScreen(thread, launchers, openApp) { openThread = null } }
+    if (!locked) openThread?.let { thread ->
+        key(thread) { ThreadScreen(thread, launchers, openApp) { openThread = null } }
+    }
     val visibleThreads = if (group == null && !locked) threads else emptyList()
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -215,7 +218,7 @@ internal fun InboxPage(
             }
     }
     val replying = messages.firstOrNull { it.key == draftEntry && it.notification.replyAction() != null }
-    if (replying != null) NotificationReplySheet(
+    if (replying != null) NotificationReplyScreen(
         replying, labels[replying.packageName] ?: sourceLabel(context, replying.packageName),
         close = { draftEntry = null },
         openApp = { open(replying) }
@@ -313,6 +316,7 @@ private fun NoticeItem(
     dismiss: () -> Unit,
     runAction: (Notification.Action) -> Unit
 ) {
+    val progress = entry.modelDownloadProgress(LocalContext.current.packageName)
     val tokens = LocalTokens.current
     val note = entry.notification
     val messages = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(note)?.messages }.getOrNull()
@@ -333,9 +337,12 @@ private fun NoticeItem(
                         listOfNotNull(provider, title?.takeIf { it.isNotBlank() }).joinToString(" · ").ifEmpty { time },
                         Modifier.weight(1f, fill = false), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
-                    Text("  $time", style = tokens.rowSummary, maxLines = 1)
+                    if (progress == null) Text("  $time", style = tokens.rowSummary, maxLines = 1)
                 }
                 if (!body.isNullOrBlank()) Text(body, style = tokens.rowSummary, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                if (progress != null) LinearProgressIndicator(progress = { progress },
+                    modifier = Modifier.fillMaxWidth().padding(top = tokens.gap / 2),
+                    color = tokens.accent, trackColor = tokens.widgetTrack)
             }
             if (entry.isClearable) Box(
                 Modifier.size(tokens.touch).clip(CircleShape).appPress(dismiss).semantics { contentDescription = dismissLabel },
