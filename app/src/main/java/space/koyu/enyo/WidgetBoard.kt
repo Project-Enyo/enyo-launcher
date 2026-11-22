@@ -147,7 +147,7 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
     fun info(id: Int): AppWidgetProviderInfo? = runCatching { manager.getAppWidgetInfo(id) }.getOrNull()
 
     fun makeView(context: Context, widget: WidgetPlacement, info: AppWidgetProviderInfo) =
-        host.createView(context, widget.id, info).apply {
+        host.createView(WidgetLaunchContext(context), widget.id, info).apply {
             if (info.provider.packageName == context.packageName) setPadding(0, 0, 0, 0)
         }
 
@@ -455,5 +455,25 @@ internal fun HostedWidget(board: WidgetBoard, widget: WidgetPlacement, info: App
                 }
             }
         )
+    }
+}
+
+/**
+ * Widgets start their PendingIntents through their view's context. This context notes which app
+ * the intent belongs to, so an app a widget opens gets a card in Cards.
+ */
+private class WidgetLaunchContext(base: Context) : android.content.ContextWrapper(base) {
+    override fun startIntentSender(
+        intent: android.content.IntentSender, fillInIntent: Intent?, flagsMask: Int, flagsValues: Int, extraFlags: Int
+    ) {
+        RecentStore.get(this).expectLaunch(intent.creatorPackage)
+        super.startIntentSender(intent, fillInIntent, flagsMask, flagsValues, extraFlags)
+    }
+
+    override fun startIntentSender(
+        intent: android.content.IntentSender, fillInIntent: Intent?, flagsMask: Int, flagsValues: Int, extraFlags: Int, options: Bundle?
+    ) {
+        RecentStore.get(this).expectLaunch(intent.creatorPackage)
+        super.startIntentSender(intent, fillInIntent, flagsMask, flagsValues, extraFlags, options)
     }
 }

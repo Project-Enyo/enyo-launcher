@@ -41,6 +41,9 @@ class EnyoCaptureService : AccessibilityService() {
             resetTracking()
             // An app that came forward another way, such as from a widget or Android Settings, also gets a card.
             if (source == packageName || source in ignoredPackages) return
+            // Panels and dialogs float over the launcher; they are not apps the person moved to.
+            val className = event.className?.toString().orEmpty()
+            if (floatingWindow.containsMatchIn(className)) return
             val component = event.className?.toString()?.let { android.content.ComponentName(source, it) }
                 ?: android.content.ComponentName(source, "")
             request = store.adopt(component) ?: return
@@ -166,6 +169,7 @@ class EnyoCaptureService : AccessibilityService() {
     private companion object {
         const val captureInterval = 500L
         const val backupDelay = 650L
+        val floatingWindow = Regex("Panel|Dialog|Chooser|Resolver|Popup", RegexOption.IGNORE_CASE)
         /** Windows that come forward over apps without being an app the person opened. */
         val ignoredPackages = setOf("com.android.systemui", "com.android.permissioncontroller", "com.google.android.permissioncontroller",
             "com.android.packageinstaller", "com.google.android.packageinstaller", "com.android.intentresolver", "android")

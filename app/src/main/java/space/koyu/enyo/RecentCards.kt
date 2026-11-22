@@ -182,6 +182,24 @@ internal class RecentStore private constructor(context: Context) {
         return activities.firstOrNull { it.componentName == component }?.componentName ?: activities.firstOrNull()?.componentName
     }
 
+    @Volatile private var expected: Pair<String, Long>? = null
+
+    /**
+     * Notes that Enyo just asked another app to open something, from a widget or an Android screen.
+     * The card is made only if the launcher then really goes to the background, see [claimExpectedLaunch].
+     */
+    fun expectLaunch(packageName: String?) {
+        if (packageName.isNullOrEmpty() || packageName == ownPackage || packageName == "android") return
+        expected = packageName to SystemClock.elapsedRealtime()
+    }
+
+    /** Called when the launcher stops: a launch Enyo expected a moment ago becomes a card. */
+    fun claimExpectedLaunch() {
+        val (packageName, at) = expected ?: return
+        expected = null
+        if (SystemClock.elapsedRealtime() - at <= expectedLaunchMillis) adopt(ComponentName(packageName, ""))
+    }
+
     /** An app that came forward without Enyo opening it, such as from a widget, a notification or Android Settings. */
     fun adopt(component: ComponentName): CaptureRequest? {
         val card = cardComponent(component) ?: return null
@@ -380,6 +398,7 @@ internal class RecentStore private constructor(context: Context) {
         private const val thumbnailBucket = 64
         private const val maxCards = 32
         private const val syncGraceMillis = 5_000L
+        private const val expectedLaunchMillis = 3_000L
         const val maxStack = 9
         private var instance: RecentStore? = null
 

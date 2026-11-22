@@ -79,8 +79,13 @@ import java.text.DateFormat
 import java.text.Collator
 import java.util.Date
 
-internal fun Context.launchSafely(intent: Intent): Boolean =
-    runCatching { startActivity(intent); true }.getOrDefault(false)
+internal fun Context.launchSafely(intent: Intent): Boolean = runCatching {
+    // Screens Enyo opens in other apps, such as Android Settings, get a card once they take over the screen.
+    val target = intent.component?.packageName ?: runCatching { packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName }.getOrNull()
+    RecentStore.get(this).expectLaunch(target)
+    startActivity(intent)
+    true
+}.getOrDefault(false)
 
 @Composable
 internal fun foregroundCycle(): Int {

@@ -56,6 +56,7 @@ class EnyoActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        RecentStore.get(this).claimExpectedLaunch()
         launcherVisible.value = false
         widgetBoard.stop()
         super.onStop()
