@@ -221,4 +221,6 @@
     <string name="widget_size">%1$d × %2$d</string>
     <string name="widget_resize">Resize</string>
     <string name="search_web_section">Web search</string>
+    <string name="calendar_results">Calendar</string>
+    <string name="calendar_untitled">Untitled event</string>
 </resources>

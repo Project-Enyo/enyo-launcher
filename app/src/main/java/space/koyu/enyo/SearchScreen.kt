@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.text.format.DateUtils
+import android.content.ContentUris
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -128,6 +130,45 @@ private fun installedAssistants(packageCycle: Int): List<InstalledAssistant> {
 }
 
 private data class Contact(val name: String, val number: String)
+private data class CalendarHit(val id: Long, val title: String, val begin: Long, val end: Long, val allDay: Boolean, val location: String?)
+
+/**
+ * Searches title, description, and location of visible calendar instances from a month back to a
+ * year ahead, soonest first. Runs locally through the calendar provider and needs READ_CALENDAR.
+ */
+private fun searchCalendar(context: Context, term: String, signal: CancellationSignal): List<CalendarHit> {
+    val now = System.currentTimeMillis()
+    val day = 24L * 60 * 60 * 1000
+    val uri = CalendarContract.Instances.CONTENT_SEARCH_URI.buildUpon().also {
+        ContentUris.appendId(it, now - calendarSearchPastDays * day)
+        ContentUris.appendId(it, now + calendarSearchFutureDays * day)
+        it.appendPath(term)
+    }.build()
+    val projection = arrayOf(
+        CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN,
+        CalendarContract.Instances.END, CalendarContract.Instances.ALL_DAY, CalendarContract.Instances.EVENT_LOCATION
+    )
+    val hits = context.contentResolver.query(
+        uri, projection, "${CalendarContract.Instances.VISIBLE} = 1", null,
+        "${CalendarContract.Instances.BEGIN} ASC", signal
+    )?.use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(CalendarHit(
+                    cursor.getLong(0), cursor.getString(1).orEmpty(), cursor.getLong(2), cursor.getLong(3),
+                    cursor.getInt(4) == 1, cursor.getString(5)?.takeIf { it.isNotBlank() }
+                ))
+            }
+        }
+    }.orEmpty()
+    // Upcoming events first, then the most recent past ones.
+    val (upcoming, past) = hits.partition { it.end >= now }
+    return (upcoming + past.reversed()).distinctBy { it.id to it.begin }.take(calendarSearchLimit)
+}
+
+private const val calendarSearchPastDays = 30L
+private const val calendarSearchFutureDays = 365L
+private const val calendarSearchLimit = 8
 private data class SettingsDestination(val label: Int, val action: String)
 private val settingsDestinations = listOf(
     SettingsDestination(R.string.android_settings, Settings.ACTION_SETTINGS),
@@ -229,6 +270,18 @@ internal fun SearchScreen(
         }
     }
     val foreground = foregroundCycle()
+    val events by produceState(emptyList<CalendarHit>(), term, foreground, command) {
+        value = emptyList()
+        if (term.isNotBlank() && command?.first in listOf(null, Command.Calendar)
+            && context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        ) value = withContext(Dispatchers.IO) {
+            suspendCancellableCoroutine { continuation ->
+                val signal = CancellationSignal()
+                continuation.invokeOnCancellation { signal.cancel() }
+                continuation.resume(runCatching { searchCalendar(context, term, signal) }.getOrDefault(emptyList()))
+            }
+        }
+    }
     val contacts by produceState(emptyList<Contact>(), term, foreground, command) {
         value = emptyList()
         if (term.isNotBlank() && command?.first in listOf(null, Command.Call, Command.Message)
@@ -272,9 +325,10 @@ internal fun SearchScreen(
     fun open(intent: Intent) {
         if (!context.launchSafely(intent)) status = R.string.action_unavailable
     }
-    fun confirmContact(contact: Contact, message: Boolean) {
-        confirmation = Confirmation(
-            contact.name.ifBlank { contact.number },
+    // Opens the dialer or a message draft directly; neither places a call or sends anything by itself.
+    fun reachContact(contact: Contact, message: Boolean) {
+        record(input)
+        open(
             if (message) Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", contact.number, null))
             else Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.number, null))
         )
@@ -403,11 +457,36 @@ internal fun SearchScreen(
                                 leading = { ContactAvatar(contact.name.ifBlank { contact.number }) },
                                 trailing = {
                                     Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
-                                        if (command?.first != Command.Message) RoundIconButton(Glyph.Phone, callLabel) { confirmContact(contact, false) }
-                                        if (command?.first != Command.Call) RoundIconButton(Glyph.Message, messageLabel) { confirmContact(contact, true) }
+                                        if (command?.first != Command.Message) RoundIconButton(Glyph.Phone, callLabel) { reachContact(contact, false) }
+                                        if (command?.first != Command.Call) RoundIconButton(Glyph.Message, messageLabel) { reachContact(contact, true) }
                                     }
                                 }
                             )
+                        }
+                    }
+                }
+                if (events.isNotEmpty()) item {
+                    SettingsPanel(stringResource(R.string.calendar_results)) {
+                        events.forEach { event ->
+                            val time = remember(event) {
+                                if (event.allDay) DateUtils.formatDateRange(
+                                    context, java.util.Formatter(StringBuilder(), java.util.Locale.getDefault()), event.begin, event.end,
+                                    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_ALL, "UTC"
+                                ).toString()
+                                else DateUtils.formatDateRange(
+                                    context, event.begin, event.end,
+                                    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_ALL
+                                )
+                            }
+                            SettingsAction(
+                                event.title.ifBlank { stringResource(R.string.calendar_untitled) }, Glyph.Calendar,
+                                summary = listOfNotNull(time, event.location).joinToString(" · ")
+                            ) {
+                                record(input)
+                                open(Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
+                                    .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
+                                    .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end))
+                            }
                         }
                     }
                 }
