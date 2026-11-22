@@ -1,8 +1,5 @@
 package space.koyu.enyo
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,10 +9,12 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,10 +26,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 
@@ -136,28 +140,59 @@ internal fun CurrentWallpaperTile(title: Int, preview: WallpaperPreview?) {
     }
 }
 
-internal fun Context.notifyWallpaperApplied(which: Int) {
-    val notifications = getSystemService(NotificationManager::class.java)
-    if (!notifications.areNotificationsEnabled()) return
+private data class WallpaperConfirmation(val destination: Int, val shownAt: Long)
+
+private val wallpaperConfirmation = MutableStateFlow<WallpaperConfirmation?>(null)
+
+internal fun showWallpaperConfirmation(which: Int) {
     val label = when (which) {
         WallpaperManager.FLAG_SYSTEM -> R.string.wallpaper_home
         WallpaperManager.FLAG_LOCK -> R.string.wallpaper_lock
         else -> R.string.wallpaper_both
     }
-    runCatching {
-        notifications.createNotificationChannel(NotificationChannel(
-            wallpaperChannel, getString(R.string.wallpaper_notification_channel), NotificationManager.IMPORTANCE_LOW
-        ))
-        val notice = Notification.Builder(this, wallpaperChannel)
-            .setSmallIcon(R.drawable.tabler_sun)
-            .setContentTitle(getString(R.string.wallpaper_applied))
-            .setContentText(getString(label))
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
-            .build()
-        notifications.notify(wallpaperChannel, 1, notice)
+    wallpaperConfirmation.value = WallpaperConfirmation(label, SystemClock.elapsedRealtime())
+}
+
+@Composable
+internal fun WallpaperConfirmationBanner(modifier: Modifier = Modifier) {
+    val message by wallpaperConfirmation.collectAsState()
+    val confirmation = message ?: return
+    val remaining = bannerLifetimeMillis - (SystemClock.elapsedRealtime() - confirmation.shownAt)
+    LaunchedEffect(confirmation) {
+        if (remaining > 0) delay(remaining)
+        wallpaperConfirmation.compareAndSet(confirmation, null)
+    }
+    if (remaining <= 0) return
+    val tokens = LocalTokens.current
+    Surface(
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+            .padding(horizontal = tokens.margin, vertical = tokens.gap)
+            .widthIn(max = tokens.sheetMaxWidth)
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        color = tokens.widgetSurface,
+        shape = RoundedCornerShape(tokens.sheetRadius),
+        shadowElevation = tokens.elevation[1]
+    ) {
+        Row(
+            Modifier.padding(start = tokens.padding, top = tokens.gap, bottom = tokens.gap),
+            horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EnyoGlyph(Glyph.Today, color = tokens.accent)
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.wallpaper_applied), style = tokens.state, color = tokens.onAccentContainer)
+                Text(stringResource(confirmation.destination), style = tokens.secondary)
+            }
+            val close = stringResource(R.string.overlay_close)
+            Box(
+                Modifier.size(tokens.touch).appPress({ wallpaperConfirmation.compareAndSet(confirmation, null) })
+                    .semantics { contentDescription = close },
+                contentAlignment = Alignment.Center
+            ) { EnyoGlyph(Glyph.Close) }
+        }
     }
 }
 
 private const val wallpaperPreviewEdge = 512
-private const val wallpaperChannel = "wallpaper_changes"

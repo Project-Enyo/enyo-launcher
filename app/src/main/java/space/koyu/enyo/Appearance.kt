@@ -1,16 +1,13 @@
 package space.koyu.enyo
 
-import android.Manifest
 import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.Rect
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -150,15 +147,6 @@ internal fun AppearanceScreen(back: () -> Unit) {
     var drag by remember { mutableStateOf<WallpaperDrag?>(null) }
     var notice by rememberSaveable { mutableIntStateOf(0) }
     var applying by remember { mutableStateOf(false) }
-    var pendingWallpaper by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingDestination by rememberSaveable { mutableIntStateOf(0) }
-    var waitingForNotifications by rememberSaveable { mutableStateOf(false) }
-    val requestNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        waitingForNotifications = false
-    }
-    val notificationPreferences = remember(context) {
-        context.getSharedPreferences("wallpaper_notifications", Context.MODE_PRIVATE)
-    }
     val previews = rememberWallpaperPreviews(manager)
     val customization = remember { Intent(Intent.ACTION_SET_WALLPAPER) }
     val canCustomize = remember(context) { customization.resolveActivity(context.packageManager) != null }
@@ -216,25 +204,6 @@ internal fun AppearanceScreen(back: () -> Unit) {
     fun chooseDestination(wallpaper: GalleryWallpaper, which: Int) {
         targetId = null
         notice = 0
-        pendingWallpaper = wallpaper.id
-        pendingDestination = which
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-            !notificationPreferences.getBoolean("asked", false)
-        ) {
-            notificationPreferences.edit().putBoolean("asked", true).apply()
-            waitingForNotifications = true
-            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
-    LaunchedEffect(pendingWallpaper, pendingDestination, waitingForNotifications, gallery) {
-        val id = pendingWallpaper ?: return@LaunchedEffect
-        if (waitingForNotifications || pendingDestination == 0 || applying) return@LaunchedEffect
-        val wallpaper = gallery.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        val which = pendingDestination
-        pendingWallpaper = null
-        pendingDestination = 0
         applying = true
         scope.launch {
             try {
@@ -245,7 +214,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                         val id = runCatching { manager.setBitmap(bitmap, crop, false, which) }.getOrDefault(0)
                         if (id > 0) {
                             context.saveWallpaperPreview(manager, id, bitmap, crop)
-                            context.notifyWallpaperApplied(which)
+                            showWallpaperConfirmation(which)
                         }
                         id
                     } finally {

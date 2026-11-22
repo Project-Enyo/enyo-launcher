@@ -107,7 +107,6 @@
     <string name="wallpaper_apply_android">Use wallpaper on</string>
     <string name="wallpaper_preview_unavailable">Image preview unavailable</string>
     <string name="wallpaper_android_customize">Android customization</string>
-    <string name="wallpaper_notification_channel">Wallpaper changes</string>
     <string name="wallpaper_applied">Android wallpaper updated</string>
     <string name="wallpaper_unavailable">This wallpaper could not be applied</string>
     <string name="wallpaper_android_unavailable">Android wallpaper changes are unavailable in this profile.</string>

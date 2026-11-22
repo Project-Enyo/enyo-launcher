@@ -119,7 +119,10 @@ class EnyoActivity : ComponentActivity() {
                         LocalOriginalIcons provides (prefs?.get(originalIcons) == true),
                         LocalBrandIcons provides brandIcons
                     ) {
-                        LauncherScreen(::openInternetPanel, homeSequence, weatherTap) { launcherKeys = it }
+                        Box(Modifier.fillMaxSize()) {
+                            LauncherScreen(::openInternetPanel, homeSequence, weatherTap) { launcherKeys = it }
+                            WallpaperConfirmationBanner(Modifier.align(Alignment.BottomCenter))
+                        }
                     }
                 }
             }
