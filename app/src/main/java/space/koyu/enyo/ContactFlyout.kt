@@ -35,7 +35,14 @@ internal fun ContactFlyout(
     var failed by remember { mutableStateOf(false) }
     val phones = (details?.phones.orEmpty() + routes.mapNotNull { it.phone }).distinctBy { it.filter(Char::isDigit).takeLast(9) }
     val emails = details?.emails.orEmpty()
-    val label = { pkg: String -> launchers[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
+    // Messengers merged into the Messages hub are missing from the app list, so they are looked up here.
+    val known = remember(launchers, routes) {
+        val apps = context.getSystemService(android.content.pm.LauncherApps::class.java)
+        launchers + routes.map { it.packageName }.distinct().filter { it !in launchers }.mapNotNull { pkg ->
+            runCatching { apps.getActivityList(pkg, android.os.Process.myUserHandle()).firstOrNull() }.getOrNull()?.let { pkg to it }
+        }
+    }
+    val label = { pkg: String -> known[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
     fun start(intent: Intent) {
         failed = !context.launchSafely(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         if (!failed) close()
@@ -85,7 +92,7 @@ internal fun ContactFlyout(
                             stringResource(R.string.thread_open_in, label(route.packageName)),
                             Modifier.appPress({ failed = !context.openChat(route, live); if (!failed) close() }),
                             summary = listOfNotNull(route.name, route.phone).distinct().joinToString(" · ").ifBlank { null }, summaryLines = 1,
-                            leading = { launchers[route.packageName]?.let { AppIcon(it, displaySize = tokens.listAvatar) } }
+                            leading = { known[route.packageName]?.let { AppIcon(it, displaySize = tokens.listAvatar) } }
                         )
                     }
                 }

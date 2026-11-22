@@ -528,7 +528,7 @@ internal fun SearchScreen(
                                 contact.name.ifBlank { contact.number },
                                 Modifier.appPress({ record(input); flyout = contact.person }),
                                 summary = listOf(contact.number, contact.person.packages.joinToString(" · ") { pkg ->
-                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: pkg
+                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: sourceLabel(context, pkg)
                                 }).filter { it.isNotBlank() }.joinToString(" · "),
                                 summaryLines = 1,
                                 leading = { PersonAvatar(contact.person, tokens.listAvatar, contact.name.ifBlank { contact.number }) },
@@ -544,7 +544,7 @@ internal fun SearchScreen(
                             ListRow(
                                 person.name, Modifier.appPress({ record(input); flyout = person }),
                                 summary = person.packages.joinToString(" · ") { pkg ->
-                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: pkg
+                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: sourceLabel(context, pkg)
                                 }.ifBlank { null },
                                 summaryLines = 1,
                                 leading = { PersonAvatar(person, tokens.listAvatar) }
@@ -733,6 +733,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
         item { PushPreference() }
         item { InboxHostPreference() }
         item { UpdatePreference() }
+        item { RestartPreference() }
         item {
             SettingsPanel(stringResource(R.string.settings_system)) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
