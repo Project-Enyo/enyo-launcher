@@ -18,7 +18,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@color/today_widget_quiet"
-            android:textSize="11sp" />
+            android:textSize="13sp" />
         <TextView
             android:id="@+id/widget_value"
             android:layout_width="match_parent"
@@ -26,7 +26,7 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="@color/today_widget_text"
-            android:textSize="16sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
         <TextView
             android:id="@+id/widget_detail"
@@ -35,7 +35,7 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="@color/today_widget_quiet"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:visibility="gone" />
     </LinearLayout>
     <ImageView

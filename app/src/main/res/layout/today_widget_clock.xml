@@ -12,7 +12,7 @@
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:textColor="@color/today_widget_text"
-        android:textSize="28sp" />
+        android:textSize="32sp" />
     <TextClock
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -20,5 +20,5 @@
         android:format24Hour="@string/widget_date_format"
         android:maxLines="1"
         android:textColor="@color/today_widget_quiet"
-        android:textSize="12sp" />
+        android:textSize="14sp" />
 </LinearLayout>

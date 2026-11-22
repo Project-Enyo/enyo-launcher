@@ -136,10 +136,16 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val wallpaperDeleteBubble = 26.dp
     val todayWidgetHeight = dimension(144, 112, 108, 112).dp
     val notificationTrayHeight = dimension(240, 210, 180, 148).dp
-    val settingsTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = ink)
-    val rowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = onAccentContainer)
-    val rowSummary = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, color = quiet)
-    val pillLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    // One type scale for every surface: 24 title, 18 headline, 16 body, 14 supporting, 13 caption.
+    // Nothing in Enyo is set below 12 sp.
+    val settingsTitle = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, color = ink)
+    val rowTitle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = onAccentContainer)
+    val rowSummary = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = quiet)
+    val pillLabel = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+    val body = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, color = onAccentContainer)
+    val caption = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, color = quiet)
+    val articleTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = ink)
+    val articleBody = TextStyle(fontSize = 17.sp, lineHeight = 26.sp, color = ink)
     val listRowHeight = 56.dp
     val listRowPadding = 8.dp
     val listLeading = 40.dp
@@ -218,11 +224,13 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val recentFlingExitMillis = 180
     val elevation = listOf(1.dp, dimension(3, 2, 2).dp, dimension(8, 6, 5).dp)
 
-    val state = TextStyle(fontSize = dimension(18, 17, 16).sp, fontWeight = FontWeight.SemiBold, color = ink)
-    val secondary = TextStyle(fontSize = 12.sp, color = quiet)
+    val state = TextStyle(fontSize = dimension(20, 18, 18).sp, lineHeight = dimension(26, 24, 24).sp, fontWeight = FontWeight.SemiBold, color = ink)
+    val secondary = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = quiet)
     val label = TextStyle(
-        fontSize = dimension(11, 11, 10).sp,
-        letterSpacing = dimension(6, 5, 0).let { (it / 10f).sp },
+        fontSize = dimension(13, 13, 12).sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.4.sp,
         color = quiet
     )
     val value = TextStyle(fontSize = dimension(36, 32, 28).sp, fontFeatureSettings = "tnum", color = ink)
