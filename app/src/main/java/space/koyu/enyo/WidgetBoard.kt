@@ -305,13 +305,23 @@ internal class WidgetBoard(private val activity: EnyoActivity) {
 
     private fun complete(requested: WidgetPlacement) {
         val spec = grid
-        // A default widget that does not fit at its full height takes fewer rows rather than none.
-        val widget = if (spec == null || requested.kind == null) requested
-            else (requested.rows downTo 1).map { requested.copy(rows = it) }.firstOrNull { placements.firstFit(it.columns, it.rows, spec) != null } ?: requested
+        // A widget that does not fit at its preferred size takes the largest free size it accepts.
+        val widget = if (spec == null) requested else {
+            val limits = spanLimits(info(requested.id), spec)
+            val sizes = (requested.rows downTo minOf(limits.minRows, requested.rows)).flatMap { rows ->
+                (requested.columns downTo minOf(limits.minColumns, requested.columns)).map { columns -> requested.copy(columns = columns, rows = rows) }
+            }.sortedByDescending { it.columns * it.rows }
+            sizes.firstOrNull { placements.firstFit(it.columns, it.rows, spec) != null } ?: requested
+        }
         val spot = spec?.let { placements.firstFit(widget.columns, widget.rows, it) }
         if (spec != null && spot == null) {
             discard(widget)
-            Toast.makeText(activity, R.string.widget_no_room, Toast.LENGTH_SHORT).show()
+            val kind = widget.kind
+            if (kind != null) {
+                // An Enyo widget added by default waits in the picker instead of asking again on every visit.
+                migrated = migrated + kind
+                store.edit().putStringSet("migrated", migrated.mapTo(mutableSetOf()) { it.name }).apply()
+            } else Toast.makeText(activity, R.string.widget_no_room, Toast.LENGTH_SHORT).show()
             return
         }
         val placed = if (spot != null) widget.copy(x = spot.first, y = spot.second) else widget
