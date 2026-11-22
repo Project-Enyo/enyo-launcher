@@ -17,20 +17,13 @@ class EnyoTaskService(context: Context) : ITaskBridge.Stub() {
     override fun destroy() = exitProcess(0)
 
     @Synchronized
-    override fun listTasks(): String? {
-        checkOwner()
-        return tasks()?.entries?.joinToString("\n") { (id, component) ->
-            "$id ${component.flattenToString()}"
-        }
-    }
-
-    @Synchronized
-    override fun closeTask(id: Int, component: String): Boolean {
+    override fun closeCardTask(component: String): Boolean {
         checkOwner()
         val expected = ComponentName.unflattenFromString(component) ?: return false
         val before = tasks() ?: return false
-        val actual = before[id] ?: return true
-        if (actual != expected) return false
+        val matches = before.filterValues { it == expected }
+        if (matches.isEmpty()) return true
+        val id = matches.keys.singleOrNull() ?: return false
         if (activityCommand("stack", "remove", id.toString()) == null) return false
 
         val deadline = SystemClock.elapsedRealtime() + closeConfirmationMillis

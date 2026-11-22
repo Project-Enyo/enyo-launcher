@@ -346,6 +346,25 @@ private data class LiftedCard(
 internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivityInfo) -> Unit, first: FocusRequester, canScroll: Boolean) {
     val context = LocalContext.current
     val store = remember(context) { RecentStore.get(context) }
+    val closeTask = rememberCardTaskCloser()
+    val dismissFeedback = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    var closeFailures by remember { mutableIntStateOf(0) }
+    var showCloseFailure by remember { mutableStateOf(false) }
+    LaunchedEffect(closeFailures) {
+        if (closeFailures > 0) {
+            showCloseFailure = true
+            kotlinx.coroutines.delay(3500)
+            showCloseFailure = false
+        }
+    }
+    fun dismissCard(component: ComponentName) {
+        dismissFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+        store.dismiss(component)
+        scope.launch {
+            if (!closeTask(component)) closeFailures++
+        }
+    }
     val entries by store.entries.collectAsState()
     val groups = entries.mapNotNull { entry ->
         apps.find { app -> app.componentName == entry.component }?.let { BoardCard(entry, it) }
@@ -489,7 +508,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                             true
                                         })
                                     }
-                                    add(CustomAccessibilityAction(dismissLabel) { store.dismiss(entry.component); true })
+                                    add(CustomAccessibilityAction(dismissLabel) { dismissCard(entry.component); true })
                                 }
                                 DisposableEffect(entry.component) { onDispose { bounds.remove(entry.component) } }
                                 CardTile(
@@ -558,7 +577,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                             }
                                         }
                                     },
-                                    dismiss = { store.dismiss(entry.component) }
+                                    dismiss = { dismissCard(entry.component) }
                                 )
                             }
                         }
@@ -581,7 +600,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 ) { CardFace(drag.card, drag.image) }
             }
         }
-        RunningTasksAction()
+        if (showCloseFailure) Text(stringResource(R.string.running_tasks_close_failed), style = tokens.secondary)
         if (Build.VERSION.SDK_INT >= 34 && !enabled) {
             TextButton(onClick = { context.launchSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                 Text(stringResource(R.string.cards_capture_permission), color = tokens.ink)

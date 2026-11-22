@@ -273,14 +273,14 @@ internal fun SearchScreen(
             Surface(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(tokens.radius),
-                color = tokens.surface
+                color = tokens.widgetSurface
             ) {
                 BasicTextField(
                     value = query,
                     onValueChange = onQuery,
                     enabled = active,
                     singleLine = true,
-                    textStyle = tokens.state,
+                    textStyle = tokens.state.copy(color = tokens.onAccentContainer),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     cursorBrush = SolidColor(tokens.accent),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus)
@@ -291,15 +291,15 @@ internal fun SearchScreen(
                             horizontalArrangement = Arrangement.spacedBy(tokens.gap),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            EnyoGlyph(Glyph.Search, color = tokens.quiet)
+                            EnyoGlyph(Glyph.Search, color = tokens.onAccentContainer)
                             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                if (query.text.isEmpty()) Text(searchLabel, style = tokens.secondary)
+                                if (query.text.isEmpty()) Text(searchLabel, style = tokens.secondary, color = tokens.onAccentContainer)
                                 field()
                             }
                             if (query.text.isNotEmpty()) IconButton(
                                 onClick = { onQuery(TextFieldValue()) },
                                 modifier = Modifier.semantics { contentDescription = clearLabel }
-                            ) { EnyoGlyph(Glyph.Close, color = tokens.quiet) }
+                            ) { EnyoGlyph(Glyph.Close, color = tokens.onAccentContainer) }
                             else Spacer(Modifier.width(tokens.padding))
                         }
                     }
@@ -475,6 +475,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
             }
         }
         item { OverlayPreference() }
+        item { TaskClosePreference() }
         item {
             SettingsPanel(null) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),

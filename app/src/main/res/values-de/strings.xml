@@ -198,16 +198,8 @@
     <string name="overlay_enable">Enyo Banner über anderen Apps anzeigen</string>
     <string name="overlay_privacy">Mit deiner Erlaubnis kann Enyo kurze Banner über anderen Apps anzeigen, solange das Telefon entsperrt ist. Sie können Benachrichtigungstext enthalten. Android kann sie auf geschützten Bildschirmen ausblenden. Hier kannst du sie ausschalten.</string>
     <string name="overlay_close">Banner schließen</string>
-    <string name="running_tasks">Laufende Aktivitäten</string>
-    <string name="running_tasks_permission">Erlaube den Zugriff über Shizuku, um laufende Android Aktivitäten in diesem Profil anzuzeigen und zu schließen. Fenstervorschauen erfordern den separaten Bedienungshilfedienst.</string>
     <string name="running_tasks_allow">Zugriff über Shizuku erlauben</string>
-    <string name="running_tasks_loading">Android Aktivitäten werden geladen…</string>
-    <string name="running_tasks_empty">Keine laufenden Aktivitäten gefunden</string>
-    <string name="running_tasks_unavailable">Die Android Aktivitäten sind nicht verfügbar</string>
     <string name="running_tasks_close_failed">Android hat das Schließen der Aktivität nicht bestätigt</string>
-    <string name="running_tasks_close">Aktivität schließen</string>
-    <string name="running_tasks_confirm">Android Aktivität für %1$s schließen?</string>
-    <string name="running_tasks_close_named">Aktivität für %1$s schließen</string>
-    <string name="running_task_number">Aktivität %1$d</string>
-    <string name="running_tasks_closing">Android Aktivität wird geschlossen…</string>
+    <string name="task_close_title">Apps über Karten schließen</string>
+    <string name="task_close_description">Mit Zugriff über Shizuku schließt das Wegwischen einer Karte auch die zugehörige Android Aktivität.</string>
 </resources>

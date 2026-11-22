@@ -198,16 +198,8 @@
     <string name="overlay_enable">Show Enyo banners over other apps</string>
     <string name="overlay_privacy">With your permission, brief Enyo banners can appear over other apps while the phone is unlocked. They may show notification text. Android can hide them on protected screens. You can turn them off here.</string>
     <string name="overlay_close">Close banner</string>
-    <string name="running_tasks">Running tasks</string>
-    <string name="running_tasks_permission">Allow Shizuku access to see and close Android tasks in this profile. Window previews use the separate accessibility permission.</string>
     <string name="running_tasks_allow">Allow Shizuku access</string>
-    <string name="running_tasks_loading">Reading Android tasks…</string>
-    <string name="running_tasks_empty">No running app tasks found</string>
-    <string name="running_tasks_unavailable">Android task information is unavailable</string>
     <string name="running_tasks_close_failed">Android did not confirm that the task closed</string>
-    <string name="running_tasks_close">Close task</string>
-    <string name="running_tasks_confirm">Close the Android task for %1$s?</string>
-    <string name="running_tasks_close_named">Close task for %1$s</string>
-    <string name="running_task_number">Task %1$d</string>
-    <string name="running_tasks_closing">Closing Android task…</string>
+    <string name="task_close_title">Close apps from Cards</string>
+    <string name="task_close_description">With Shizuku access, swiping a card away also closes its matching Android task.</string>
 </resources>
