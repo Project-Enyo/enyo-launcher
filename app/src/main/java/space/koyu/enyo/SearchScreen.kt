@@ -286,7 +286,6 @@ internal fun SearchScreen(
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val scope = rememberCoroutineScope()
     val history by remember(store) { store.data.map { it[searchHistory].orEmpty() } }.collectAsState("")
-    val localSupported = remember(context) { supportsLocalAssistant(context) }
     val localReady = localAssistantReady()
     var localPrompt by remember { mutableStateOf<String?>(null) }
     val defaultOption = installed.defaultOption(preferred)
@@ -467,8 +466,8 @@ internal fun SearchScreen(
     val calendar = command?.first == Command.Calendar && term.isNotBlank()
     val web = command?.first in listOf(null, Command.Web) && term.isNotBlank()
     // One action hands the query to the default assistant; the choice itself lives in Settings.
-    val useLocalAssistant = active && draft == null && localSupported && preferred == localAssistantId
-    val assistant = defaultOption?.takeIf { active && draft == null && !useLocalAssistant && preferred != localAssistantId }
+    val useLocalAssistant = active && draft == null && localReady && preferred == localAssistantId
+    val assistant = defaultOption?.takeIf { active && draft == null && !useLocalAssistant }
     fun launchResult(app: LauncherActivityInfo) {
         record(input)
         if (app.componentName.packageName == transitPackage) openTransit() else openApp(app)
@@ -755,9 +754,8 @@ internal fun SearchScreen(
             }
         }
     }
-    if (active) localPrompt?.let { prompt ->
-        if (localReady) AssistantChats.Chat(null, prompt) { localPrompt = null }
-        else ConversationView(stringResource(R.string.local_ai), close = { localPrompt = null }) { LocalAssistantPreference() }
+    if (active && localReady) localPrompt?.let { prompt ->
+        AssistantChats.Chat(null, prompt) { localPrompt = null }
     }
     flyout?.let { person ->
         val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
@@ -812,7 +810,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val store = context.searchPreferences
     val scope = rememberCoroutineScope()
     val installed = installedAssistants(packageCycle)
-    val localSupported = remember(context) { supportsLocalAssistant(context) }
+    val localReady = localAssistantReady()
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
@@ -863,8 +861,8 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
             }
         }
         item { LocalAssistantPreference() }
-        if (installed.isNotEmpty() || localSupported) item {
-            DefaultAssistantCard(installed, preferred, localSupported) { assistant ->
+        if (installed.isNotEmpty() || localReady) item {
+            DefaultAssistantCard(installed, preferred, localReady) { assistant ->
                 scope.launch { store.edit { it[defaultAssistant] = assistant } }
             }
         }
@@ -911,12 +909,12 @@ private fun List<InstalledAssistant>.defaultOption(preferred: String?): Installe
 private fun DefaultAssistantCard(
     installed: List<InstalledAssistant>,
     preferred: String?,
-    localSupported: Boolean,
+    localReady: Boolean,
     select: (String) -> Unit
 ) {
     val tokens = LocalTokens.current
-    val localSelected = localSupported && preferred == localAssistantId
-    val active = installed.defaultOption(preferred).takeUnless { preferred == localAssistantId }
+    val localSelected = localReady && preferred == localAssistantId
+    val active = installed.defaultOption(preferred).takeUnless { localSelected }
     SettingsPanel(stringResource(R.string.default_assistant)) {
         if (preferred != null && installed.none { it.assistant.appId == preferred }) {
             Assistant.entries.firstOrNull { it.appId == preferred }?.let { previous ->
@@ -924,7 +922,7 @@ private fun DefaultAssistantCard(
             }
         }
         Column(Modifier.fillMaxWidth().selectableGroup()) {
-            if (localSupported) ListRow(
+            if (localReady) ListRow(
                 stringResource(R.string.local_ai),
                 Modifier.selectable(selected = localSelected, interactionSource = null, indication = null,
                     role = Role.RadioButton, onClick = { select(localAssistantId) }),

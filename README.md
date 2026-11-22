@@ -10,7 +10,7 @@ Turn on notification access to add supported conversations to Inbox. Messaging a
 
 ## Inbox
 
-When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Replies in a merged thread go through the conversation selected in the composer.
+When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Replies in a merged thread go through the conversation selected in the composer. Chat messages and Local AI replies render Markdown.
 
 ## Search
 
@@ -20,7 +20,7 @@ Under **Settings → Search**, choose a folder or enable **All files access** in
 
 ## Local AI
 
-On supported ARM64 devices, **Settings → Search** can download the models for natural language image and document search. The download is about 178 MB. Enyo builds the index while the device is charging and idle. It uses quantized CLIP for images and MiniLM for document passages. The index stays in the encrypted archive on the device.
+On ARM64 devices with at least 5 GiB of RAM reported by Android, **Settings → Search** can download the models for natural language image and document search. The download is about 178 MB. Enyo builds the index while the device is charging and idle. It uses quantized CLIP for images and MiniLM for document passages. The index stays in the encrypted archive on the device.
 
 For local chat, open **Settings → Local AI → Download recommended model**. Enyo downloads and verifies [Qwen3 0.6B INT4](https://huggingface.co/litert-community/Qwen3-0.6B-int4), then selects Local AI as the default assistant. The model takes about 347 MB. You can also import a compatible LiteRT LM file. Model downloads show progress in Android notifications and in Enyo’s overlay when enabled.
 

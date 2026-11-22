@@ -211,8 +211,8 @@ internal fun ConversationBubble(text: String, outgoing: Boolean, sender: String?
         Column(Modifier.widthIn(max = tokens.bubbleMaxWidth).clip(RoundedCornerShape(tokens.radius))
             .background(if (outgoing) tokens.accentContainer else tokens.widgetTrack).padding(tokens.padding)) {
             sender?.let { Text(it, style = tokens.caption, color = tokens.accent, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(text, style = tokens.body, color = if (outgoing) tokens.onAccentContainer else tokens.ink,
-                maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+            ChatMarkdown(text, tokens.body.copy(color = if (outgoing) tokens.onAccentContainer else tokens.ink),
+                maxLines = maxLines)
         }
     }
 }

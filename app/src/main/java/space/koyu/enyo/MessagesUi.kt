@@ -451,7 +451,7 @@ private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boo
             horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start
         ) {
             if (showSender && !message.outgoing && message.sender != null) Text(message.sender, style = tokens.pillLabel.copy(color = tokens.accent))
-            Text(message.text, style = tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
+            ChatMarkdown(message.text, tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
             Text("$app · $time", style = tokens.rowSummary)
         }
     }

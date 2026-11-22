@@ -56,4 +56,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
+    implementation("org.commonmark:commonmark:0.33.0")
+    implementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.33.0")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.33.0")
 }

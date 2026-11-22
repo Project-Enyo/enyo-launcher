@@ -26,22 +26,30 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
 
 internal const val localAssistantId = "local"
 private val localAssistantEnabled = booleanPreferencesKey("local_assistant_enabled")
@@ -199,15 +207,18 @@ internal object AssistantChats {
             }
         }.orEmpty()
 
-    private fun save(context: Context, id: String, turns: List<AssistantTurn>) {
+    private suspend fun save(context: Context, id: String, turns: List<AssistantTurn>) {
         val title = turns.first().prompt.lineSequence().first().take(120)
         val json = JSONArray().apply {
             turns.forEach { turn -> put(JSONObject().put("prompt", turn.prompt).put("reply", turn.reply)) }
         }
-        MessageArchive.get(context).write { db ->
-            db.execSQL("INSERT OR REPLACE INTO assistant_chats VALUES (?, ?, ?, ?)",
-                arrayOf(id, title, json.toString(), System.currentTimeMillis()))
+        val saved = suspendCancellableCoroutine { result ->
+            MessageArchive.get(context).writeResult({ committed: Unit? -> result.resume(committed != null) }) { db ->
+                db.execSQL("INSERT OR REPLACE INTO assistant_chats VALUES (?, ?, ?, ?)",
+                    arrayOf<Any>(id, title, json.toString(), System.currentTimeMillis()))
+            }
         }
+        check(saved)
     }
 
     @Composable
@@ -263,13 +274,18 @@ internal object AssistantChats {
             prompt = ""
             partial = ""
             failed = false
-            val history = turns
+            val history = turns.let { previous ->
+                if (previous.lastOrNull() == AssistantTurn(text, "")) previous.dropLast(1) else previous
+            }
+            val submitted = history + AssistantTurn(text, "")
+            turns = submitted
             scope.launch {
                 try {
-                    val reply = generateReply(context, history, text) { partial = it }
+                    save(context, chatId, submitted)
+                    val reply = generateReply(context, history.filter { it.reply.isNotEmpty() }, text) { partial = it }
                     val updated = history + AssistantTurn(text, reply)
-                    turns = updated
                     save(context, chatId, updated)
+                    turns = updated
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -284,12 +300,19 @@ internal object AssistantChats {
                 }
             }
         }
+        var initialSubmitted by remember(chatId) { mutableStateOf(false) }
+        LaunchedEffect(ready, loaded) {
+            if (id == null && ready && loaded && !initialSubmitted && !initial.isNullOrBlank()) {
+                initialSubmitted = true
+                send()
+            }
+        }
         val title = turns.firstOrNull()?.prompt?.lineSequence()?.firstOrNull()?.take(120)
         val appName = stringResource(R.string.local_ai)
         ConversationView(title ?: appName, appName, close) {
             val scroll = rememberLazyListState()
-            val count = turns.size + if (pending != null) 1 else 0
-            LaunchedEffect(count) { if (count > 0) scroll.scrollToItem(0) }
+            val count = turns.size
+            LaunchedEffect(count, pending != null) { if (count > 0) scroll.scrollToItem(0) }
             LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll, reverseLayout = true,
                 contentPadding = PaddingValues(tokens.margin),
                 verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
@@ -299,10 +322,11 @@ internal object AssistantChats {
                         ConversationBubble(partial.ifBlank { stringResource(R.string.local_ai_working) }, false)
                     }
                 } }
-                items(turns.asReversed()) { turn ->
+                val history = if (pending != null) turns.dropLast(1) else turns
+                items(history.asReversed()) { turn ->
                     Column(verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
                         ConversationBubble(turn.prompt, true)
-                        ConversationBubble(turn.reply, false)
+                        if (turn.reply.isNotBlank()) ConversationBubble(turn.reply, false)
                     }
                 }
             }
@@ -337,7 +361,16 @@ private suspend fun generateReply(
                 samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.1))
             engine.createConversation(config).use { chat ->
                 val response = StringBuilder()
-                chat.sendMessageAsync(prompt).collect { chunk ->
+                // Use LiteRT's callback API so the flow uses the app's coroutine runtime.
+                callbackFlow {
+                    val completed = AtomicBoolean()
+                    chat.sendMessageAsync(prompt, object : MessageCallback {
+                        override fun onMessage(message: Message) { trySend(message) }
+                        override fun onDone() { completed.set(true); close() }
+                        override fun onError(throwable: Throwable) { completed.set(true); close(throwable) }
+                    })
+                    awaitClose { if (!completed.get()) runCatching { chat.cancelProcess() } }
+                }.buffer(Channel.UNLIMITED).collect { chunk ->
                     chunk.contents.contents.filterIsInstance<Content.Text>().forEach { response.append(it.text) }
                     withContext(Dispatchers.Main) { update(response.toString()) }
                 }
