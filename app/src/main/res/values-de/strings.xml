@@ -205,4 +205,5 @@
     <string name="default_assistant_unavailable">%1$s ist nicht verfügbar. Bis dahin verwendet Enyo die markierte App.</string>
     <string name="search_history_clear">Suchverlauf löschen</string>
     <string name="search_history_clear_message">Alle in Enyo gespeicherten Suchen löschen?</string>
+    <string name="assistant_share_query">Anfrage mit %1$s teilen</string>
 </resources>

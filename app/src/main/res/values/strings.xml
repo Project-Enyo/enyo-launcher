@@ -205,4 +205,5 @@
     <string name="default_assistant_unavailable">%1$s is unavailable. Enyo will use the selected app until it returns.</string>
     <string name="search_history_clear">Clear search history</string>
     <string name="search_history_clear_message">Delete all saved searches from Enyo?</string>
+    <string name="assistant_share_query">Share query with %1$s</string>
 </resources>

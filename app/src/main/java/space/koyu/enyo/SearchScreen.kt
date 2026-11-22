@@ -3,6 +3,7 @@ package space.koyu.enyo
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherActivityInfo
@@ -77,7 +78,14 @@ private enum class Assistant(val appId: String, val label: Int) {
     Gemini("com.google.android.apps.bard", R.string.assistant_gemini)
 }
 
-private data class InstalledAssistant(val assistant: Assistant, val launch: Intent, val icon: Bitmap)
+private data class InstalledAssistant(
+    val assistant: Assistant,
+    val launch: Intent,
+    val icon: Bitmap,
+    val textShare: ComponentName?
+)
+
+private fun assistantTextShare() = Intent(Intent.ACTION_SEND).setType("text/plain")
 
 @Composable
 private fun installedAssistants(packageCycle: Int): List<InstalledAssistant> {
@@ -98,7 +106,17 @@ private fun installedAssistants(packageCycle: Int): List<InstalledAssistant> {
                     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                     drawable.setBounds(0, 0, size, size)
                     drawable.draw(Canvas(bitmap))
-                    InstalledAssistant(assistant, intent, bitmap)
+                    val shareActivity = manager.queryIntentActivities(
+                        assistantTextShare().setPackage(assistant.appId),
+                        PackageManager.MATCH_DEFAULT_ONLY
+                    ).firstOrNull { match ->
+                        val candidate = match.activityInfo
+                        candidate.packageName == assistant.appId && candidate.exported && candidate.enabled &&
+                            candidate.applicationInfo.enabled && (candidate.permission == null ||
+                            context.checkSelfPermission(candidate.permission) == PackageManager.PERMISSION_GRANTED)
+                    }?.activityInfo
+                    val textShare = shareActivity?.let { ComponentName(it.packageName, it.name) }
+                    InstalledAssistant(assistant, intent, bitmap, textShare)
                 }.getOrNull()
             }
         }
@@ -378,15 +396,27 @@ internal fun SearchScreen(
                     if (selected == null) selected = (defaultOption ?: installed.first()).assistant
                     else choosing = true
                 }
-                activeAssistant?.let {
+                activeAssistant?.let { option ->
                     if (installed.size > 1) SearchButton(R.string.change_assistant) { choosing = true }
-                    val name = stringResource(it.assistant.label)
-                    Text(stringResource(R.string.assistant_copy_explanation, name), style = tokens.secondary)
-                    if (input.isNotBlank()) SearchButton(R.string.assistant_copy_open) {
-                        val manager = context.getSystemService(ClipboardManager::class.java)
-                        manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
-                        record(input)
-                        open(it.launch)
+                    val name = stringResource(option.assistant.label)
+                    var shareFailed by remember(option, input) { mutableStateOf(false) }
+                    val recipient = option.textShare
+                    if (recipient != null && !shareFailed) {
+                        if (input.isNotBlank()) TextButton(onClick = {
+                            val share = assistantTextShare().setComponent(recipient)
+                                .putExtra(Intent.EXTRA_TEXT, input)
+                            if (context.launchSafely(share)) record(input) else shareFailed = true
+                        }) {
+                            Text(stringResource(R.string.assistant_share_query, name), color = tokens.ink)
+                        }
+                    } else {
+                        Text(stringResource(R.string.assistant_copy_explanation, name), style = tokens.secondary)
+                        if (input.isNotBlank()) SearchButton(R.string.assistant_copy_open) {
+                            val manager = context.getSystemService(ClipboardManager::class.java)
+                            manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.search), input))
+                            record(input)
+                            open(option.launch)
+                        }
                     }
                 }
             }
