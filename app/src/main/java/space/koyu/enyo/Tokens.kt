@@ -1,9 +1,16 @@
 package space.koyu.enyo
 
+import android.app.WallpaperManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -47,7 +54,16 @@ internal fun systemAccent(context: Context, dark: Boolean): AccentPalette? = run
 internal fun rememberTokens(dark: Boolean, size: CardSize): Tokens {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    val palette = remember(context, configuration, dark) { systemAccent(context, dark) }
+    var wallpaperRevision by remember(context) { mutableIntStateOf(0) }
+    DisposableEffect(context) {
+        val wallpaper = WallpaperManager.getInstance(context)
+        val listener = WallpaperManager.OnColorsChangedListener { _, which ->
+            if (which and WallpaperManager.FLAG_SYSTEM != 0) wallpaperRevision++
+        }
+        val listening = runCatching { wallpaper.addOnColorsChangedListener(listener, Handler(Looper.getMainLooper())) }.isSuccess
+        onDispose { if (listening) runCatching { wallpaper.removeOnColorsChangedListener(listener) } }
+    }
+    val palette = remember(context, configuration, dark, wallpaperRevision) { systemAccent(context, dark) }
     return remember(dark, size, palette) { Tokens(dark, size, palette) }
 }
 

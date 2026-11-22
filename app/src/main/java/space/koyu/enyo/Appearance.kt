@@ -2,6 +2,7 @@ package space.koyu.enyo
 
 import android.app.WallpaperManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,7 +29,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
@@ -38,15 +39,25 @@ import kotlin.math.roundToInt
 
 internal val Context.appearancePreferences by preferencesDataStore("appearance")
 internal val originalIcons = booleanPreferencesKey("original_icons")
-private val wallpaperChoice = stringPreferencesKey("wallpaper")
+private val previousWallpaperChoice = stringPreferencesKey("wallpaper")
 
-private enum class Backdrop(val label: Int, val image: Int? = null) {
-    System(R.string.wallpaper_system),
+private enum class Backdrop(
+    val label: Int,
+    val image: Int? = null,
+    val photographer: String? = null,
+    val source: String? = null
+) {
     Meadow(R.string.wallpaper_meadow, R.drawable.wallpaper_meadow),
     Stream(R.string.wallpaper_stream, R.drawable.wallpaper_stream),
-    Dunes(R.string.wallpaper_dunes, R.drawable.wallpaper_dunes),
+    Ruegen(
+        R.string.wallpaper_ruegen, R.drawable.wallpaper_ruegen, "W. Bulach",
+        "https://commons.wikimedia.org/wiki/File:00_6974_Steilk%C3%BCste_vom_Kap_Arkona_(Ostseeinsel_R%C3%BCgen).jpg"
+    ),
     TidalFlats(R.string.wallpaper_tidal_flats, R.drawable.wallpaper_tidal_flats),
-    Harbor(R.string.wallpaper_harbor, R.drawable.wallpaper_harbor),
+    Kiel(
+        R.string.wallpaper_kiel, R.drawable.wallpaper_kiel, "JøMa",
+        "https://commons.wikimedia.org/wiki/File:Leuchtturm_Friedrichsort_in_der_Kieler_F%C3%B6rde.jpg"
+    ),
     Castle(R.string.wallpaper_castle, R.drawable.wallpaper_castle),
     Bastei(R.string.wallpaper_bastei, R.drawable.wallpaper_bastei),
     Moselle(R.string.wallpaper_moselle, R.drawable.wallpaper_moselle),
@@ -58,32 +69,15 @@ private fun Context.customWallpaper() = File(filesDir, "wallpaper.jpg")
 
 private fun Context.decode(choice: Backdrop): Bitmap? = runCatching {
     when (choice) {
-        Backdrop.System -> null
         Backdrop.Custom -> BitmapFactory.decodeFile(customWallpaper().path)
         else -> choice.image?.let { BitmapFactory.decodeResource(resources, it) }
     }
 }.getOrNull()
 
 @Composable
-private fun currentBackdrop(): Backdrop {
-    val context = LocalContext.current
-    val store = context.appearancePreferences
-    val prefs by remember(store) { store.data }.collectAsState(null)
-    return Backdrop.entries.find { it.name == prefs?.get(wallpaperChoice) } ?: Backdrop.System
-}
-
-@Composable
 internal fun WallpaperBackdrop(content: @Composable () -> Unit) {
-    val context = LocalContext.current
     val tint = LocalTokens.current.wallpaperTint
-    val choice = currentBackdrop()
-    val bitmap by produceState<Bitmap?>(null, choice) {
-        value = withContext(Dispatchers.IO) { context.decode(choice) }
-    }
     Box(Modifier.fillMaxSize()) {
-        bitmap?.let {
-            Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        }
         Box(Modifier.matchParentSize().background(tint))
         content()
     }
@@ -96,13 +90,25 @@ internal fun AppearanceScreen(back: () -> Unit) {
     val store = context.appearancePreferences
     val scope = rememberCoroutineScope()
     val manager = remember(context) { WallpaperManager.getInstance(context) }
-    val current = currentBackdrop()
-    var preview by remember { mutableStateOf(current.takeUnless { it == Backdrop.System } ?: Backdrop.Meadow) }
+    val preferences by remember(store) { store.data }.collectAsState(null)
+    val previous = preferences?.get(previousWallpaperChoice)
+    val initialPreview = when (previous) {
+        "Dunes" -> Backdrop.Ruegen
+        "Harbor" -> Backdrop.Kiel
+        else -> Backdrop.entries.firstOrNull { it.name == previous } ?: Backdrop.Meadow
+    }
+    var selection by rememberSaveable { mutableStateOf<Backdrop?>(null) }
+    val preview = selection ?: initialPreview
     var notice by remember { mutableIntStateOf(0) }
     var revision by remember { mutableIntStateOf(0) }
     var applying by remember { mutableStateOf(false) }
     var targets by remember { mutableStateOf(false) }
     val canApply = remember(manager) { manager.isWallpaperSupported && manager.isSetWallpaperAllowed }
+    val systemPicker = remember { Intent(Intent.ACTION_SET_WALLPAPER) }
+    val canOpenSystemPicker = remember(context) { systemPicker.resolveActivity(context.packageManager) != null }
+    val hasSavedImage by produceState(false, revision) {
+        value = withContext(Dispatchers.IO) { context.customWallpaper().isFile }
+    }
     val bitmap by key(preview, revision) {
         produceState<Bitmap?>(null) {
             value = withContext(Dispatchers.IO) { context.decode(preview) }
@@ -113,7 +119,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             if (withContext(Dispatchers.IO) { context.saveWallpaper(uri) }) {
-                preview = Backdrop.Custom
+                selection = Backdrop.Custom
                 revision++
                 notice = 0
             } else notice = R.string.wallpaper_unavailable
@@ -128,9 +134,6 @@ internal fun AppearanceScreen(back: () -> Unit) {
                 runCatching {
                     manager.setBitmap(image, adjustCrop(image, context), false, which) != 0
                 }.getOrDefault(false)
-            }
-            if (success && which and WallpaperManager.FLAG_SYSTEM != 0) {
-                store.edit { it[wallpaperChoice] = Backdrop.System.name }
             }
             notice = if (success) R.string.wallpaper_applied else R.string.wallpaper_unavailable
             applying = false
@@ -156,16 +159,16 @@ internal fun AppearanceScreen(back: () -> Unit) {
                 bitmap?.let { Image(it.asImageBitmap(), label, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             }
             Text(label, Modifier.padding(top = tokens.gap), style = tokens.state)
+            val source = preview.source
+            val photographer = preview.photographer
+            if (source != null && photographer != null) {
+                TextButton(onClick = { context.launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(source))) }) {
+                    Text(stringResource(R.string.wallpaper_photo_credit, photographer), style = tokens.secondary)
+                }
+            }
         }
         item {
             SettingsPanel(null) {
-                Text(stringResource(R.string.wallpaper_current, stringResource(current.label)), style = tokens.secondary)
-                TextButton(enabled = bitmap != null, onClick = {
-                    scope.launch {
-                        store.edit { it[wallpaperChoice] = preview.name }
-                        notice = R.string.wallpaper_enyo_applied
-                    }
-                }) { Text(stringResource(R.string.wallpaper_use_in_enyo)) }
                 if (canApply) {
                     TextButton(enabled = bitmap != null && !applying, onClick = { targets = true }) {
                         Text(stringResource(R.string.wallpaper_apply_android))
@@ -179,11 +182,13 @@ internal fun AppearanceScreen(back: () -> Unit) {
                 SettingsLink(stringResource(R.string.wallpaper_pick), glyph = Glyph.Folder) {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
-                SettingsLink(stringResource(R.string.wallpaper_follow_system), glyph = Glyph.Today) {
-                    scope.launch {
-                        store.edit { it[wallpaperChoice] = Backdrop.System.name }
-                        notice = 0
-                    }
+                if (hasSavedImage) SettingsLink(stringResource(R.string.wallpaper_custom), glyph = Glyph.Folder) {
+                    selection = Backdrop.Custom
+                    notice = 0
+                    scope.launch { galleryScroll.animateScrollToItem(0) }
+                }
+                if (canOpenSystemPicker) SettingsLink(stringResource(R.string.wallpaper_system), glyph = Glyph.Today) {
+                    context.launchSafely(systemPicker)
                 }
             }
         }
@@ -200,7 +205,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                     }
                     Column(
                         Modifier.weight(1f).appPress({
-                            preview = choice
+                            selection = choice
                             notice = 0
                             scope.launch { galleryScroll.animateScrollToItem(0) }
                         }),
