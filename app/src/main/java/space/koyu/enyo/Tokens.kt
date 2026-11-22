@@ -157,6 +157,10 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val todayHandle = 16.dp
     val todayLiftScale = 1.04f
     val widgetPreview = 64.dp
+    val unreadDot = 12.dp
+    val inboxThreadPreview = 8
+    val threadAppIcon = 16.dp
+    val bubbleMaxWidth = 300.dp
     val widgetPickerHeight = 420.dp
     val noticeDismissGlyph = 18.dp
     val folderMaxHeight = 300.dp

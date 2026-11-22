@@ -106,6 +106,8 @@ internal fun LauncherScreen(
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val foreground = foregroundCycle()
+    // Links people to contacts again on each return, for example after contacts access was granted.
+    LaunchedEffect(foreground) { ArchiveData.resolveAll(context) }
     var packageCycle by remember { mutableIntStateOf(0) }
     val launcher = remember(context) { context.getSystemService(LauncherApps::class.java) }
     DisposableEffect(launcher) {
@@ -406,7 +408,8 @@ internal fun LauncherScreen(
             SearchOverlay({ searchReveal.value }, searchVisible, { surface = 0 }) {
                 SearchScreen(
                     query, { query = it }, library, openAppAction, { surface = 0 }, { surface = 2 },
-                    packageCycle, transit, { transitPicker = true }, { messagesPicker = true }, searchVisible
+                    packageCycle, transit, { transitPicker = true }, { messagesPicker = true }, searchVisible,
+                    openInbox = { surface = 0; scope.launch { pager.scrollToPage(3) } }
                 )
             }
         }

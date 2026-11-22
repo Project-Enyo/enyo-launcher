@@ -38,11 +38,6 @@ import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal val messagingPackages = setOf(
-    "space.koyu.apollo.mini", "space.koyu.apollo", "org.telegram.messenger", "com.whatsapp",
-    "im.molly.app", "org.thoughtcrime.securesms", "com.discord", "com.beeper.android",
-    "com.android.messaging", "org.fossify.messages"
-)
 
 internal fun StatusBarNotification.isMessagingNotice() =
     packageName in messagingPackages && notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
@@ -80,24 +75,29 @@ internal fun InboxPage(
         apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
     }
     val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
+    val listening by EnyoNotificationService.listening.collectAsState()
+    val threads = if (group == null) rememberArchive(emptyList<ThreadSummary>()) { ArchiveData.threads(it) } else emptyList()
+    val heads = remember(threads) { threads.filter { it.ref is ThreadRef.Person }.take(ArchiveData.recentHeadCount) }
+    var openThread by remember { mutableStateOf<ThreadRef?>(null) }
+    var allThreads by remember { mutableStateOf(false) }
+    if (group == null) LaunchedEffect(Unit) {
+        ArchiveData.requestedThread.collect { requested ->
+            if (requested != null) { openThread = requested; ArchiveData.requestedThread.value = null }
+        }
+    }
+    openThread?.let { thread -> ThreadScreen(thread, launchers, openApp) { openThread = null } }
     Column(Modifier.fillMaxSize()) {
         if (group == null) {
-            val recent by EnyoNotificationService.recentConversations.collectAsState()
-            val conversations = if (locked) emptyList() else recent
+            val conversations = if (locked) emptyList() else heads
             val hasShortcuts = providers.isNotEmpty() || conversations.isNotEmpty()
             if (hasShortcuts) LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = tokens.margin),
                 contentPadding = PaddingValues(horizontal = tokens.margin),
                 horizontalArrangement = Arrangement.spacedBy(tokens.margin)
             ) {
-                items(conversations, key = { it.key }) { conversation ->
-                    val provider = providers.firstOrNull { it.componentName.packageName == conversation.packageName }
-                    val providerName = labels[conversation.packageName] ?: sourceLabel(context, conversation.packageName)
-                    ConversationBubble(conversation, providerName) {
-                        if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return@ConversationBubble
-                        if (conversation.open?.sendFromForeground(context) == true) return@ConversationBubble
-                        if (provider != null) openApp(provider) else failed = true
-                    }
+                // Chat heads: the most recent people across every messenger, from the archive.
+                items(conversations, key = { it.ref.toString() }) { head ->
+                    ChatHead(head) { openThread = head.ref }
                 }
                 items(providers, key = { it.componentName.flattenToString() }) { app ->
                     val name = labels.getValue(app.componentName.packageName)
@@ -116,7 +116,9 @@ internal fun InboxPage(
                 style = tokens.settingsTitle
             )
         }
-        if (messages.isEmpty() && others.isEmpty()) {
+        val visibleThreads = if (group == null && !locked) threads else emptyList()
+        if (visibleThreads.isEmpty() && messages.isEmpty() && others.isEmpty()) {
+            if (group == null && !listening) Box(Modifier.padding(horizontal = tokens.margin)) { ListCard { ListNote(stringResource(R.string.archive_access_missing)) } }
             if (failed) Box(Modifier.padding(horizontal = tokens.margin)) { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
             Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
                 WorkspaceEmptyState(R.string.inbox_empty)
@@ -127,7 +129,18 @@ internal fun InboxPage(
             verticalArrangement = Arrangement.spacedBy(tokens.gap)
         ) {
             if (failed) item { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
-            if (messages.isNotEmpty()) item(key = "messages") {
+            if (group == null && !listening) item { ListCard { ListNote(stringResource(R.string.archive_access_missing)) } }
+            if (visibleThreads.isNotEmpty()) item(key = "threads") {
+                SettingsPanel(stringResource(R.string.inbox_conversations)) {
+                    val shown = if (allThreads) visibleThreads else visibleThreads.take(tokens.inboxThreadPreview)
+                    shown.forEach { summary -> key(summary.ref.toString()) { ThreadRow(summary, launchers) { openThread = summary.ref } } }
+                    if (!allThreads && visibleThreads.size > shown.size) {
+                        SettingsAction(stringResource(R.string.inbox_show_all, visibleThreads.size), Glyph.Messages) { allThreads = true }
+                    }
+                }
+            }
+            // The unified list already holds messaging notifications, so their own card stays in the banner tray only.
+            if (group != null && messages.isNotEmpty()) item(key = "messages") {
                 ListCard {
                     NoticeGroupHeader(
                         stringResource(R.string.messages), messages.size,
@@ -196,31 +209,6 @@ internal fun InboxPage(
     }
     LaunchedEffect(replying) {
         if (replying == null) { draftEntry = null; draft = "" }
-    }
-}
-
-@Composable
-private fun ConversationBubble(conversation: RecentConversation, provider: String, open: () -> Unit) {
-    val tokens = LocalTokens.current
-    val context = LocalContext.current
-    val size = with(LocalDensity.current) { tokens.iconSize.roundToPx().coerceAtLeast(1) }
-    val avatar by produceState<ImageBitmap?>(null, conversation.avatar, context, size) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { conversation.avatar?.loadDrawable(context)?.toBitmap(size, size)?.asImageBitmap() }.getOrNull()
-        }
-    }
-    val label = stringResource(R.string.inbox_conversation_shortcut, conversation.name, provider)
-    Box(
-        Modifier.size(tokens.iconSize).clip(CircleShape).background(tokens.accentContainer)
-            .appPress(open).semantics { contentDescription = label },
-        contentAlignment = Alignment.Center
-    ) {
-        val image = avatar
-        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else {
-            val initial = conversation.name.codePoints().findFirst().orElse('?'.code)
-            Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
-        }
     }
 }
 
@@ -301,7 +289,7 @@ private fun NoticeItem(
     }
 }
 
-private fun Notification.replyAction(): Notification.Action? =
+internal fun Notification.replyAction(): Notification.Action? =
     actions.orEmpty().firstOrNull { it.actionIntent != null && it.remoteInputs.orEmpty().any(RemoteInput::getAllowFreeFormInput) }
 
 internal fun sourceLabel(context: Context, packageName: String): String =

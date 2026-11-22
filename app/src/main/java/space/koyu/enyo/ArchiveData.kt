@@ -1,0 +1,245 @@
+package space.koyu.enyo
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.ContactsContract
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.flow.MutableStateFlow
+
+/** A thread in the unified inbox: one person across messengers, or one group chat. */
+internal sealed interface ThreadRef {
+    data class Person(val id: Long) : ThreadRef
+    data class Group(val conversationId: Long) : ThreadRef
+}
+
+internal data class ThreadSummary(
+    val ref: ThreadRef,
+    val name: String,
+    val contactLookup: String?,
+    val avatar: ByteArray?,
+    val preview: String?,
+    val lastAt: Long,
+    val unread: Int,
+    val packages: List<String>
+)
+
+internal data class ArchivedMessage(
+    val id: Long,
+    val packageName: String,
+    val sender: String?,
+    val text: String,
+    val postedAt: Long,
+    val outgoing: Boolean,
+    val conversationId: Long,
+    val notificationKey: String?
+)
+
+internal data class ThreadIdentity(val id: Long, val packageName: String, val name: String?, val linkSource: String?)
+
+internal data class LinkSuggestion(val identityId: Long, val packageName: String, val lookup: String, val contactName: String?)
+
+internal data class MessageHit(val message: ArchivedMessage, val thread: ThreadRef, val threadName: String)
+
+/** Read queries and edits on the archive. Reads run on the caller's background dispatcher. */
+internal object ArchiveData {
+    /** A thread that another surface, such as search, asks the Inbox to open. */
+    val requestedThread = MutableStateFlow<ThreadRef?>(null)
+
+    private const val personSummary = """
+        SELECT p.id, COALESCE(p.name, MAX(i.name)), p.contact_lookup,
+            (SELECT i2.avatar FROM identities i2 WHERE i2.person_id = p.id AND i2.avatar IS NOT NULL LIMIT 1),
+            (SELECT m2.text FROM messages m2 JOIN conversations c2 ON c2.id = m2.conversation_id JOIN identities i3 ON i3.id = c2.identity_id
+                WHERE i3.person_id = p.id AND c2.is_group = 0 AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC LIMIT 1),
+            MAX(c.last_at),
+            (SELECT COUNT(*) FROM messages m3 JOIN conversations c3 ON c3.id = m3.conversation_id JOIN identities i4 ON i4.id = c3.identity_id
+                WHERE i4.person_id = p.id AND c3.is_group = 0 AND m3.outgoing = 0 AND m3.duplicate_of IS NULL AND m3.posted_at > c3.read_at),
+            GROUP_CONCAT(DISTINCT c.package)
+        FROM people p JOIN identities i ON i.person_id = p.id JOIN conversations c ON c.identity_id = i.id AND c.is_group = 0
+        GROUP BY p.id HAVING MAX(c.last_at) > 0"""
+
+    private const val groupSummary = """
+        SELECT c.id, COALESCE(c.title, c.key), NULL, NULL,
+            (SELECT m2.text FROM messages m2 WHERE m2.conversation_id = c.id AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC LIMIT 1),
+            c.last_at,
+            (SELECT COUNT(*) FROM messages m3 WHERE m3.conversation_id = c.id AND m3.outgoing = 0 AND m3.duplicate_of IS NULL AND m3.posted_at > c.read_at),
+            c.package
+        FROM conversations c WHERE c.is_group = 1 AND c.last_at > 0"""
+
+    fun threads(context: Context, limit: Int = 200): List<ThreadSummary> {
+        val archive = MessageArchive.get(context)
+        return archive.read { db ->
+            val people = db.query("$personSummary ORDER BY MAX(c.last_at) DESC LIMIT $limit").use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(ThreadSummary(
+                        ThreadRef.Person(cursor.getLong(0)), cursor.stringOrNull(1) ?: "?", cursor.stringOrNull(2),
+                        cursor.getBlobOrNull(3), cursor.stringOrNull(4), cursor.getLong(5), cursor.getInt(6),
+                        cursor.stringOrNull(7)?.split(',').orEmpty()
+                    ))
+                }
+            }
+            val groups = db.query("$groupSummary ORDER BY c.last_at DESC LIMIT $limit").use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(ThreadSummary(
+                        ThreadRef.Group(cursor.getLong(0)), cursor.stringOrNull(1) ?: "?", null, null,
+                        cursor.stringOrNull(4), cursor.getLong(5), cursor.getInt(6), listOfNotNull(cursor.stringOrNull(7))
+                    ))
+                }
+            }
+            (people + groups).sortedByDescending { it.lastAt }.take(limit)
+        }.orEmpty()
+    }
+
+    /** The chat heads: the most recent people, groups excluded. */
+    fun recentPeople(context: Context, count: Int = recentHeadCount): List<ThreadSummary> =
+        threads(context, count * 2).filter { it.ref is ThreadRef.Person }.take(count)
+
+    fun messages(context: Context, thread: ThreadRef): List<ArchivedMessage> = MessageArchive.get(context).read { db ->
+        val (sql, args) = when (thread) {
+            is ThreadRef.Person -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN identities i ON i.id = c.identity_id
+                WHERE i.person_id = ? AND c.is_group = 0 AND m.duplicate_of IS NULL ORDER BY m.posted_at""" to arrayOf<Any>(thread.id)
+            is ThreadRef.Group -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
+                FROM messages m WHERE m.conversation_id = ? AND m.duplicate_of IS NULL ORDER BY m.posted_at""" to arrayOf<Any>(thread.conversationId)
+        }
+        db.query(sql, args).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.message()) } }
+    }.orEmpty()
+
+    fun summary(context: Context, thread: ThreadRef): ThreadSummary? = MessageArchive.get(context).read { db ->
+        val (sql, arg) = when (thread) {
+            is ThreadRef.Person -> "$personSummary AND p.id = ?" to thread.id
+            is ThreadRef.Group -> "$groupSummary AND c.id = ?" to thread.conversationId
+        }
+        db.query(sql, arrayOf(arg)).use { cursor ->
+            if (!cursor.moveToFirst()) null else ThreadSummary(
+                thread, cursor.stringOrNull(1) ?: "?", cursor.stringOrNull(2), cursor.getBlobOrNull(3), cursor.stringOrNull(4),
+                cursor.getLong(5), cursor.getInt(6), cursor.stringOrNull(7)?.split(',').orEmpty()
+            )
+        }
+    }
+
+    fun identities(context: Context, personId: Long): List<ThreadIdentity> = MessageArchive.get(context).read { db ->
+        db.query("SELECT id, package, name, link_source FROM identities WHERE person_id = ? ORDER BY package", arrayOf(personId)).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(ThreadIdentity(cursor.getLong(0), cursor.getString(1), cursor.stringOrNull(2), cursor.stringOrNull(3))) }
+        }
+    }.orEmpty()
+
+    fun suggestions(context: Context, personId: Long): List<LinkSuggestion> = MessageArchive.get(context).read { db ->
+        db.query(
+            """SELECT s.identity_id, i.package, s.contact_lookup, s.contact_name FROM suggestions s JOIN identities i ON i.id = s.identity_id
+               WHERE i.person_id = ? AND s.dismissed = 0 AND COALESCE(i.link_source, '') NOT IN (?, ?)""",
+            arrayOf(personId, PeopleResolver.sourceManual, PeopleResolver.sourceContact)
+        ).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(LinkSuggestion(cursor.getLong(0), cursor.getString(1), cursor.getString(2), cursor.stringOrNull(3))) }
+        }
+    }.orEmpty()
+
+    /** People other than [except], for merging an Enyo person without an address book entry. */
+    fun people(context: Context, except: Long): List<ThreadSummary> = threads(context).filter { it.ref is ThreadRef.Person && (it.ref as ThreadRef.Person).id != except }
+
+    fun search(context: Context, term: String, limit: Int = 20): List<MessageHit> {
+        val query = term.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            .joinToString(" ") { word -> "\"" + word.replace("\"", "") + "\"*" }
+        if (query.isBlank()) return emptyList()
+        return MessageArchive.get(context).read { db ->
+            db.query(
+                """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key,
+                       c.is_group, i.person_id, COALESCE(CASE WHEN c.is_group = 1 THEN c.title END, p.name, i.name, c.title, c.key)
+                   FROM messages_fts f JOIN messages m ON m.id = f.docid JOIN conversations c ON c.id = m.conversation_id
+                   LEFT JOIN identities i ON i.id = c.identity_id LEFT JOIN people p ON p.id = i.person_id
+                   WHERE messages_fts MATCH ? AND m.duplicate_of IS NULL ORDER BY m.posted_at DESC LIMIT $limit""",
+                arrayOf(query)
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val group = cursor.getInt(8) == 1
+                        val person = cursor.longOrNull(9)
+                        val ref = if (group || person == null) ThreadRef.Group(cursor.getLong(6)) else ThreadRef.Person(person)
+                        add(MessageHit(cursor.message(), ref, cursor.stringOrNull(10) ?: "?"))
+                    }
+                }
+            }
+        }.orEmpty()
+    }
+
+    fun markRead(context: Context, thread: ThreadRef) = MessageArchive.get(context).write { db ->
+        val now = System.currentTimeMillis()
+        when (thread) {
+            is ThreadRef.Person -> db.execSQL(
+                "UPDATE conversations SET read_at = ? WHERE is_group = 0 AND identity_id IN (SELECT id FROM identities WHERE person_id = ?)",
+                arrayOf(now, thread.id)
+            )
+            is ThreadRef.Group -> db.execSQL("UPDATE conversations SET read_at = ? WHERE id = ?", arrayOf(now, thread.conversationId))
+        }
+    }
+
+    fun deleteMessage(context: Context, id: Long) = MessageArchive.get(context).write { db ->
+        db.execSQL("DELETE FROM messages WHERE id = ?", arrayOf(id))
+    }
+
+    /** Deletes the stored history of a thread; identities and links stay so new messages land in place. */
+    fun deleteThread(context: Context, thread: ThreadRef) = MessageArchive.get(context).write { db ->
+        when (thread) {
+            is ThreadRef.Person -> db.execSQL(
+                """DELETE FROM messages WHERE conversation_id IN (SELECT c.id FROM conversations c JOIN identities i ON i.id = c.identity_id
+                   WHERE i.person_id = ? AND c.is_group = 0)""", arrayOf(thread.id)
+            )
+            is ThreadRef.Group -> db.execSQL("DELETE FROM messages WHERE conversation_id = ?", arrayOf(thread.conversationId))
+        }
+        db.execSQL("UPDATE conversations SET last_at = COALESCE((SELECT MAX(posted_at) FROM messages WHERE conversation_id = conversations.id), 0)")
+    }
+
+    fun deleteAll(context: Context) = MessageArchive.get(context).write { db ->
+        db.execSQL("DELETE FROM messages")
+        db.execSQL("DELETE FROM suggestions")
+        db.execSQL("DELETE FROM conversations")
+        db.execSQL("DELETE FROM identities")
+        db.execSQL("DELETE FROM people")
+    }
+
+    fun linkToContact(context: Context, identityId: Long, lookup: String, name: String?) =
+        MessageArchive.get(context).write { db -> PeopleResolver.linkToContact(db, identityId, lookup, name) }
+
+    fun linkToPerson(context: Context, identityId: Long, personId: Long) =
+        MessageArchive.get(context).write { db -> PeopleResolver.linkToPerson(db, identityId, personId) }
+
+    fun split(context: Context, identityId: Long) = MessageArchive.get(context).write { db -> PeopleResolver.split(db, identityId) }
+
+    fun dismissSuggestion(context: Context, suggestion: LinkSuggestion) =
+        MessageArchive.get(context).write { db -> PeopleResolver.dismissSuggestion(db, suggestion.identityId, suggestion.lookup) }
+
+    fun resolveAll(context: Context) = MessageArchive.get(context).write { db -> PeopleResolver.resolveAll(context, db) }
+
+    /** The contact photo when the person is in the address book, otherwise the avatar the app supplied. */
+    fun avatar(context: Context, summary: ThreadSummary): ImageBitmap? {
+        summary.contactLookup?.takeIf {
+            context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        }?.let { lookup ->
+            runCatching {
+                val uri = ContactsContract.Contacts.lookupContact(
+                    context.contentResolver, Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_LOOKUP_URI, lookup)
+                ) ?: return@runCatching null
+                ContactsContract.Contacts.openContactPhotoInputStream(context.contentResolver, uri, false)
+                    ?.use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+            }.getOrNull()?.let { return it }
+        }
+        return summary.avatar?.let { bytes -> runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }.getOrNull() }
+    }
+
+    /** Contact lookup key and name for a contact URI returned by the system picker. */
+    fun contactOf(context: Context, uri: Uri): PeopleResolver.ContactMatch? = runCatching {
+        context.contentResolver.query(uri, arrayOf(ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) PeopleResolver.ContactMatch(it.getString(0), it.stringOrNull(1)) else null }
+    }.getOrNull()
+
+    private fun android.database.Cursor.message() = ArchivedMessage(
+        getLong(0), getString(1), stringOrNull(2), getString(3), getLong(4), getInt(5) == 1, getLong(6), stringOrNull(7)
+    )
+
+    private fun android.database.Cursor.getBlobOrNull(index: Int): ByteArray? = if (isNull(index)) null else getBlob(index)
+
+    const val recentHeadCount = 10
+}

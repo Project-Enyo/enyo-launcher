@@ -221,7 +221,8 @@ internal fun SearchScreen(
     transit: List<LauncherActivityInfo>,
     openTransit: () -> Unit,
     openMessages: () -> Unit,
-    active: Boolean
+    active: Boolean,
+    openInbox: () -> Unit
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
@@ -281,6 +282,10 @@ internal fun SearchScreen(
                 continuation.resume(runCatching { searchCalendar(context, term, signal) }.getOrDefault(emptyList()))
             }
         }
+    }
+    val messageHits by produceState(emptyList<MessageHit>(), term, command) {
+        value = if (term.isBlank() || command != null) emptyList()
+        else withContext(Dispatchers.IO) { ArchiveData.search(context, term) }
     }
     val contacts by produceState(emptyList<Contact>(), term, foreground, command) {
         value = emptyList()
@@ -465,6 +470,25 @@ internal fun SearchScreen(
                         }
                     }
                 }
+                // Offline full text search over the saved messages; a hit opens its thread in Inbox.
+                if (messageHits.isNotEmpty()) item {
+                    SettingsPanel(stringResource(R.string.messages)) {
+                        messageHits.forEach { hit ->
+                            val app = apps.firstOrNull { it.componentName.packageName == hit.message.packageName }
+                            ListRow(
+                                hit.threadName,
+                                Modifier.appPress({
+                                    record(input)
+                                    ArchiveData.requestedThread.value = hit.thread
+                                    openInbox()
+                                }),
+                                summary = listOfNotNull(hit.message.sender?.takeIf { !hit.message.outgoing && it != hit.threadName }, hit.message.text).joinToString(": "),
+                                summaryLines = 2,
+                                leading = { if (app != null) AppIcon(app, displaySize = tokens.listAvatar) else EnyoGlyph(Glyph.Message, color = tokens.quiet) }
+                            )
+                        }
+                    }
+                }
                 if (events.isNotEmpty()) item {
                     SettingsPanel(stringResource(R.string.calendar_results)) {
                         events.forEach { event ->
@@ -604,6 +628,17 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
     val hasHistory by remember(store) { store.data.map { !it[searchHistory].isNullOrBlank() } }.collectAsState(false)
     var confirmClearHistory by remember { mutableStateOf(false) }
+    var confirmClearMessages by remember { mutableStateOf(false) }
+    if (confirmClearMessages) EnyoSheet(stringResource(R.string.settings_history_clear), { confirmClearMessages = false }) {
+        Text(stringResource(R.string.settings_history_clear_message), style = tokens.secondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            PillButton(stringResource(R.string.cancel)) { confirmClearMessages = false }
+            PillButton(stringResource(R.string.settings_history_clear), filled = true) {
+                confirmClearMessages = false
+                ArchiveData.deleteAll(context)
+            }
+        }
+    }
     SettingsScreen { padding -> LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = padding,
@@ -639,12 +674,21 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                 scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } }
             }
         }
+        item {
+            SettingsPanel(stringResource(R.string.settings_history)) {
+                ListNote(stringResource(R.string.settings_history_summary))
+                SettingsAction(stringResource(R.string.settings_history_clear), Glyph.Trash) { confirmClearMessages = true }
+            }
+        }
         item { OverlayPreference() }
         item { TaskClosePreference() }
         item {
             SettingsPanel(stringResource(R.string.settings_system)) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
                     Glyph.Settings, setup)
+                SettingsLink(stringResource(R.string.android_settings), glyph = Glyph.Quick) {
+                    context.launchSafely(Intent(Settings.ACTION_SETTINGS))
+                }
             }
         }
     } }

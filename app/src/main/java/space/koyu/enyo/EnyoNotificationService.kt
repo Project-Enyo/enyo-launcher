@@ -16,11 +16,16 @@ class EnyoNotificationService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         connected = this
+        listening.value = true
         if (overlays == null) overlays = OverlayBanners(this)
         refresh()
+        // Messages still shown in the shade are archived once more; known ones are recognized and skipped.
+        val archive = MessageArchive.get(this)
+        entries.value.filter { it.packageName in messagingPackages }.forEach(archive::capture)
     }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val previous = entries.value.firstOrNull { it.key == sbn.key }
+        if (sbn.packageName in messagingPackages) MessageArchive.get(this).capture(sbn)
         refresh()
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
         val current = entries.value.firstOrNull { it.key == sbn.key } ?: return
@@ -30,11 +35,11 @@ class EnyoNotificationService : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) = refresh()
     override fun onListenerDisconnected() {
         if (connected === this) connected = null
+        listening.value = false
         overlays?.close()
         overlays = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
-        recentConversations.value = emptyList()
     }
     override fun onDestroy() {
         if (connected === this) connected = null
@@ -42,7 +47,6 @@ class EnyoNotificationService : NotificationListenerService() {
         overlays = null
         entries.value = emptyList()
         brandIcons.value = emptyMap()
-        recentConversations.value = emptyList()
         super.onDestroy()
     }
 
@@ -54,12 +58,6 @@ class EnyoNotificationService : NotificationListenerService() {
                 if (entry.packageName in brandedNotificationApps && icon != null) entry.packageName to icon else null
             }.toMap()
             val visible = local.filterNot { it.isBackgroundNotice() }
-            if (!getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
-                recentConversations.value = (visible.mapNotNull { runCatching { it.recentConversation(this) }.getOrNull() } + recentConversations.value)
-                    .sortedByDescending { it.postedAt }
-                    .distinctBy { it.key }
-                    .take(10)
-            }
             visible
         }.getOrDefault(emptyList())
     }
@@ -75,34 +73,10 @@ class EnyoNotificationService : NotificationListenerService() {
 
         internal val brandIcons = MutableStateFlow<Map<String, android.graphics.drawable.Icon>>(emptyMap())
         internal val arrivals = MutableSharedFlow<StatusBarNotification>(extraBufferCapacity = 8)
-        internal val recentConversations = MutableStateFlow<List<RecentConversation>>(emptyList())
         internal val entries = MutableStateFlow<List<StatusBarNotification>>(emptyList())
+        /** Whether notification access is active, so new messages are being archived. */
+        internal val listening = MutableStateFlow(false)
     }
-}
-
-internal data class RecentConversation(
-    val key: String,
-    val packageName: String,
-    val name: String,
-    val avatar: Icon?,
-    val open: PendingIntent?,
-    val postedAt: Long
-)
-
-private fun StatusBarNotification.recentConversation(context: android.content.Context): RecentConversation? {
-    if (!isMessagingNotice()) return null
-    val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
-        ?: return null
-    val latest = style.messages.lastOrNull() ?: return null
-    val name = (if (style.isGroupConversation) style.conversationTitle else latest.person?.name)
-        ?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val shortcut = notification.shortcutId?.takeIf { it.isNotBlank() }
-    val identity = if (shortcut != null) "$packageName:shortcut:$shortcut" else "$packageName:notice:$key"
-    return RecentConversation(
-        identity, packageName, name,
-        if (style.isGroupConversation) null else latest.person?.icon?.let { runCatching { it.toIcon(context) }.getOrNull() },
-        notification.contentIntent, postTime
-    )
 }
 
 private fun StatusBarNotification.isBackgroundNotice(): Boolean {

@@ -223,4 +223,25 @@
     <string name="search_web_section">Internetsuche</string>
     <string name="calendar_results">Kalender</string>
     <string name="calendar_untitled">Termin ohne Titel</string>
+    <string name="inbox_conversations">Unterhaltungen</string>
+    <string name="inbox_show_all">Alle %1$d anzeigen</string>
+    <string name="thread_link_contact">Mit Kontakt verknüpfen</string>
+    <string name="thread_merge">Mit anderer Person zusammenführen</string>
+    <string name="thread_delete">Gespeicherte Nachrichten löschen</string>
+    <string name="thread_delete_message">Nachricht löschen</string>
+    <string name="thread_delete_confirm">Gespeicherte Nachrichten mit %1$s löschen? Benachrichtigungen in Android bleiben unverändert.</string>
+    <string name="thread_suggestion">Ist das %1$s aus deinen Kontakten?</string>
+    <string name="thread_suggestion_link">Verknüpfen</string>
+    <string name="thread_suggestion_no">Nein</string>
+    <string name="thread_split">Trennen</string>
+    <string name="thread_open_in">In %1$s öffnen</string>
+    <string name="thread_reply_hint">Mit %1$s antworten</string>
+    <string name="thread_no_reply">Antworten ist hier nur mit einer aktuellen Benachrichtigung der App möglich, die eine Antwort anbietet.</string>
+    <string name="thread_people_section">Konten</string>
+    <string name="archive_access_missing">Benachrichtigungszugriff ist aus. Neue Nachrichten werden nicht gespeichert, der gespeicherte Verlauf bleibt lesbar.</string>
+    <string name="archive_note">Nur aus Benachrichtigungen gespeichert, die Enyo erhalten hat. Das ist kein vollständiger Chatverlauf.</string>
+    <string name="settings_history">Nachrichtenverlauf</string>
+    <string name="settings_history_summary">Enyo speichert Nachrichten aus erlaubten Benachrichtigungen verschlüsselt auf diesem Gerät, bis du sie löschst. Deinstallieren, Löschen der App Daten, Zurücksetzen des Telefons oder Entfernen dieses Profils löscht sie ebenfalls.</string>
+    <string name="settings_history_clear">Alle gespeicherten Nachrichten löschen</string>
+    <string name="settings_history_clear_message">Alle gespeicherten Nachrichten, Personenverknüpfungen und Vorschläge in diesem Profil löschen? Benachrichtigungen in Android bleiben unverändert.</string>
 </resources>

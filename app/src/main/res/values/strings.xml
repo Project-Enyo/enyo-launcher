@@ -223,4 +223,25 @@
     <string name="search_web_section">Web search</string>
     <string name="calendar_results">Calendar</string>
     <string name="calendar_untitled">Untitled event</string>
+    <string name="inbox_conversations">Conversations</string>
+    <string name="inbox_show_all">Show all %1$d</string>
+    <string name="thread_link_contact">Link to a contact</string>
+    <string name="thread_merge">Merge with another person</string>
+    <string name="thread_delete">Delete saved messages</string>
+    <string name="thread_delete_message">Delete message</string>
+    <string name="thread_delete_confirm">Delete the saved messages with %1$s? Notifications in Android stay as they are.</string>
+    <string name="thread_suggestion">Is this %1$s from your contacts?</string>
+    <string name="thread_suggestion_link">Link</string>
+    <string name="thread_suggestion_no">No</string>
+    <string name="thread_split">Separate</string>
+    <string name="thread_open_in">Open in %1$s</string>
+    <string name="thread_reply_hint">Reply with %1$s</string>
+    <string name="thread_no_reply">Replying here needs a current notification from the app that offers a reply.</string>
+    <string name="thread_people_section">Accounts</string>
+    <string name="archive_access_missing">Notification access is off. New messages are not saved, and the saved history stays readable.</string>
+    <string name="archive_note">Saved only from notifications Enyo received, so this is not a complete chat history.</string>
+    <string name="settings_history">Message history</string>
+    <string name="settings_history_summary">Enyo keeps messages from authorized notifications in an encrypted database on this device until you delete them. Uninstalling Enyo, clearing its data, resetting the phone, or removing this profile also deletes them.</string>
+    <string name="settings_history_clear">Delete all saved messages</string>
+    <string name="settings_history_clear_message">Delete every saved message, person link, and suggestion in this profile? Notifications in Android stay as they are.</string>
 </resources>
