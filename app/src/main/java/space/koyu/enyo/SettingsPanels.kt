@@ -78,14 +78,16 @@ internal fun SettingsLink(title: String, summary: String? = null, glyph: Glyph, 
 @Composable
 internal fun SettingsToggle(title: String, checked: Boolean, change: (Boolean) -> Unit) {
     val tokens = LocalTokens.current
-    val position by animateDpAsState(
-        if (checked) tokens.toggleWidth - tokens.toggleHeight else androidx.compose.ui.unit.Dp(0f),
-        label = "switch thumb"
-    )
+    // Stored values arrive after the first frame, so only a user change animates the thumb.
+    var touched by remember { mutableStateOf(false) }
+    val target = if (checked) tokens.toggleWidth - tokens.toggleHeight else androidx.compose.ui.unit.Dp(0f)
+    val animated by animateDpAsState(target, label = "switch thumb")
+    val position = if (touched) animated else target
     Row(
         Modifier.fillMaxWidth().heightIn(min = tokens.touch)
             .toggleable(
-                checked, interactionSource = null, indication = null, role = Role.Switch, onValueChange = change
+                checked, interactionSource = null, indication = null, role = Role.Switch,
+                onValueChange = { touched = true; change(it) }
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(tokens.padding)

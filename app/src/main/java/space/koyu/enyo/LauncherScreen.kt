@@ -34,6 +34,23 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -268,15 +285,25 @@ internal fun LauncherScreen(
     BackHandler(surface != 0 || pager.currentPage != 2) {
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
-    when (if (setupComplete == false) 4 else surface) {
-
-        2 -> PreferencesScreen({ surface = 0 }, packageCycle, { surface = 3 }, { surface = 4 })
-        3 -> AppearanceScreen { surface = 2 }
-        4 -> {
-            BackHandler { closeSetup() }
-            PermissionSetup(setupComplete == false, ::closeSetup)
-        }
-        else -> WallpaperBackdrop { Box { Column(
+    val screen = if (setupComplete == false) 4 else surface
+    val settingsOpen = screen in fullScreens
+    // Settings stays composed and drawn from startup, so opening it only slides an existing layer.
+    val settingsSlide = remember { Animatable(0f) }
+    LaunchedEffect(settingsOpen) {
+        settingsSlide.animateTo(if (settingsOpen) 1f else 0f, tween(tokens.settingsTransitionMillis))
+    }
+    val covered by remember { derivedStateOf { settingsSlide.value == 1f } }
+    val nested = if (screen == 3 || screen == 4) screen else 0
+    val nestedScreens = updateTransition(nested, label = "nested screens")
+    val settingsCovered = nestedScreens.currentState != 0 && nestedScreens.targetState != 0
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
+    val focusManager = LocalFocusManager.current
+    var launcherFocused by remember { mutableStateOf(false) }
+    var settingsFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(covered, launcherFocused) { if (covered && launcherFocused) focusManager.clearFocus(force = true) }
+    LaunchedEffect(settingsOpen, settingsFocused) { if (!settingsOpen && settingsFocused) focusManager.clearFocus(force = true) }
+    // The launcher stays composed and drawn under full screen surfaces so closing them never rebuilds the pages.
+    Box(Modifier.graphicsLayer { alpha = if (covered) 0f else 1f }.inert(covered).onFocusChanged { launcherFocused = it.hasFocus }) { WallpaperBackdrop { Box { Column(
             Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
@@ -301,8 +328,10 @@ internal fun LauncherScreen(
                         .semantics { contentDescription = preferencesLabel }
                 ) { EnyoGlyph(Glyph.Settings) }
             }
+            // Every page stays composed so a switch never composes the full app grid in one frame.
             HorizontalPager(
                 pager, Modifier.weight(1f),
+                beyondViewportPageCount = pages.size - 1,
                 userScrollEnabled = surface == 0 && searchPullFraction == 0f
             ) { page ->
                 when (page) {
@@ -327,7 +356,7 @@ internal fun LauncherScreen(
                         )
                     }
                     3 -> InboxPage(apps, ::openApp)
-                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4)
+                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4 && screen !in 2..4)
                 }
             }
             if (surface == 0) NotificationBanners(apps, ::openApp)
@@ -362,6 +391,44 @@ internal fun LauncherScreen(
         }
         } }
     }
+    Box(
+        Modifier.fillMaxSize()
+            .graphicsLayer {
+                translationX = (1f - settingsSlide.value) * size.width * direction
+                alpha = if (settingsSlide.value == 0f || settingsCovered) 0f else 1f
+            }
+            .inert(!settingsOpen || settingsCovered)
+            .onFocusChanged { settingsFocused = it.hasFocus }
+            .then(if (settingsOpen) Modifier.blockPointersBelow() else Modifier)
+    ) { PreferencesScreen({ surface = 0 }, packageCycle, { surface = 3 }, { surface = 4 }) }
+    nestedScreens.AnimatedContent(
+        transitionSpec = {
+            val motion = tween<IntOffset>(tokens.settingsTransitionMillis)
+            val forward = targetState != 0
+            slideInHorizontally(motion) { width -> if (forward) width else 0 }
+                .togetherWith(slideOutHorizontally(motion) { width -> if (forward) 0 else width })
+                .using(null)
+        }
+    ) { target ->
+        if (target != 0) Box(Modifier.fillMaxSize().blockPointersBelow()) {
+            if (target == 3) AppearanceScreen { surface = 2 } else {
+                BackHandler { closeSetup() }
+                PermissionSetup(setupComplete == false, ::closeSetup)
+            }
+        }
+    }
+}
+
+private val fullScreens = 2..4
+
+/** Hides covered content from accessibility and keeps focus from entering it. */
+private fun Modifier.inert(inert: Boolean) = then(if (inert) Modifier.clearAndSetSemantics {} else Modifier)
+    .focusProperties { onEnter = { if (inert) cancelFocusChange() } }
+    .focusGroup()
+
+/** Claims every pointer over a full screen surface so blank areas never reach the launcher below. */
+private fun Modifier.blockPointersBelow() = pointerInput(Unit) {
+    awaitPointerEventScope { while (true) awaitPointerEvent() }
 }
 
 private val pageGlyphs = listOf(Glyph.Today, Glyph.Apps, Glyph.Cards, Glyph.Inbox, Glyph.Quick)
