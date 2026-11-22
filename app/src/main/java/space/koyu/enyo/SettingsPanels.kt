@@ -172,6 +172,8 @@ internal fun SettingsToggle(
             onValueChange = { touched = true; change(it) }
         ),
         summary = summary,
+        // A switch's explanation is what the person agrees to, so it is never cut off.
+        summaryLines = Int.MAX_VALUE,
         leading = glyph?.let { { EnyoGlyph(it, color = tokens.onAccentContainer) } },
         trailing = { EnyoSwitch(checked, animate = touched) }
     )
