@@ -3,98 +3,100 @@ package space.koyu.enyo
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.graphics.Bitmap
-import android.content.pm.ApplicationInfo
-import android.util.Log
 import android.os.Build
-import android.os.Handler
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
-import kotlin.math.max
 
 class EnyoCaptureService : AccessibilityService() {
     private val store by lazy { RecentStore.get(this) }
-    private var mostRecentAttempt = 0L
-    private val handler by lazy { Handler(mainLooper) }
+    private var trackedWindow: TrackedWindow? = null
+    private var mostRecentAttempt = -captureInterval
     private var captureGeneration = 0L
+    private val returnToLauncher: () -> Unit = { captureBeforeLauncher() }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        if (Build.VERSION.SDK_INT >= 34) store.captureOnReturn = returnToLauncher
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (Build.VERSION.SDK_INT < 34 || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        if (getSystemService(KeyguardManager::class.java).isDeviceLocked) return
-        val request = store.capture ?: return
-        val now = SystemClock.elapsedRealtime()
-        val age = now - request.createdAt
-        if (age > requestLifetime) { store.capture = null; return }
-        if (event.packageName?.toString() == request.component.packageName) {
-            debug("Matching package event. Window ${event.windowId}. Expected activity ${event.className?.toString() == request.component.className}.")
+        if (isLocked()) {
+            onInterrupt()
+            return
         }
-        if (event.packageName?.toString() != request.component.packageName ||
-            event.windowId < 0
-        ) return
-        val targetWindow = event.windowId
-        if (windows.none { it.id == targetWindow && it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive }) return
+        val request = store.capture ?: return
+        val source = event.packageName?.toString() ?: return
+        if (source == packageName && event.className?.toString() == EnyoActivity::class.java.name) {
+            captureBeforeLauncher()
+            store.capture = null
+            trackedWindow = null
+            return
+        }
+        val applicationWindow = windows.any {
+            it.id == event.windowId && it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive
+        }
+        if (applicationWindow) {
+            trackedWindow = if (source == request.component.packageName) TrackedWindow(request, event.windowId) else null
+        }
+    }
+
+    private fun captureBeforeLauncher() {
+        if (Build.VERSION.SDK_INT < 34) return
+        if (isLocked()) {
+            onInterrupt()
+            return
+        }
+        val target = trackedWindow ?: return
+        if (target.request !== store.capture) return
+        val exposed = windows.any { it.id == target.id && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        if (!exposed) return
+        trackedWindow = null
         store.capture = null
+        val now = SystemClock.elapsedRealtime()
+        if (now - mostRecentAttempt < captureInterval) return
+        mostRecentAttempt = now
         val generation = ++captureGeneration
-        captureWindow(request, targetWindow, generation, retry = true)
-    }
-
-    private fun captureWindow(request: CaptureRequest, windowId: Int, generation: Long, retry: Boolean) {
-        val delay = max(settleTime, captureInterval - (SystemClock.elapsedRealtime() - mostRecentAttempt))
-        handler.postDelayed({
-            if (generation != captureGeneration || store.capture != null ||
-                SystemClock.elapsedRealtime() - request.createdAt > requestLifetime ||
-                getSystemService(KeyguardManager::class.java).isDeviceLocked ||
-                windows.none { it.id == windowId && it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive }
-            ) return@postDelayed
-            mostRecentAttempt = SystemClock.elapsedRealtime()
-            runCatching {
-                takeScreenshotOfWindow(windowId, mainExecutor, object : TakeScreenshotCallback {
-                    override fun onSuccess(result: ScreenshotResult) {
-                        val buffer = result.hardwareBuffer
-                        val copy = buffer.use {
-                            if (generation != captureGeneration || store.capture != null ||
-                                getSystemService(KeyguardManager::class.java).isDeviceLocked
-                            ) return
-                            runCatching {
-                                Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
-                            }.getOrNull()
-                        }
-                        debug("Capture copied ${copy != null}.")
-                        if (copy != null) store.save(request, copy)
+        runCatching {
+            takeScreenshotOfWindow(target.id, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    val buffer = result.hardwareBuffer
+                    val copy = buffer.use {
+                        if (generation != captureGeneration || store.capture != null || isLocked()) return
+                        runCatching {
+                            Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                        }.getOrNull()
                     }
+                    if (copy != null) store.save(target.request, copy)
+                }
 
-                    override fun onFailure(errorCode: Int) {
-                        if (generation != captureGeneration) return
-                        debug("Capture status ${errorCode}.")
-                        when (errorCode) {
-                            ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> store.denied(request)
-                            ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT, ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR ->
-                                if (retry) captureWindow(request, windowId, generation, retry = false)
-                        }
+                override fun onFailure(errorCode: Int) {
+                    if (generation == captureGeneration && errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW) {
+                        store.denied(target.request)
                     }
-                })
-            }
-        }, delay)
+                }
+            })
+        }
     }
 
-    private fun debug(message: String) {
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) Log.d("EnyoCapture", message)
-    }
+    private fun isLocked(): Boolean = getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     override fun onInterrupt() {
         captureGeneration++
-        handler.removeCallbacksAndMessages(null)
+        trackedWindow = null
         store.capture = null
     }
 
     override fun onDestroy() {
+        if (store.captureOnReturn === returnToLauncher) store.captureOnReturn = null
         onInterrupt()
         super.onDestroy()
     }
 
+    private data class TrackedWindow(val request: CaptureRequest, val id: Int)
+
     private companion object {
         const val captureInterval = 500L
-        const val settleTime = 300L
-        const val requestLifetime = 2500L
     }
 }

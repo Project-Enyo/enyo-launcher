@@ -105,6 +105,7 @@ internal class RecentStore private constructor(context: Context) {
     val entries = MutableStateFlow<List<RecentEntry>>(emptyList())
     val launchEvents = MutableStateFlow<Pair<ComponentName, Long>?>(null)
     @Volatile var capture: CaptureRequest? = null
+    var captureOnReturn: (() -> Unit)? = null
     @Volatile private var targetWidth = 0
     @Volatile private var clearedAt = Long.MIN_VALUE
     private val dismissedAt = mutableMapOf<ComponentName, Long>()

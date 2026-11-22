@@ -50,6 +50,7 @@ class EnyoActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        RecentStore.get(this).captureOnReturn?.invoke()
         launcherVisible.value = true
         widgetBoard.start()
     }
@@ -75,7 +76,10 @@ class EnyoActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
-        else if (intent.hasCategory(Intent.CATEGORY_HOME)) homeSequence++
+        else if (intent.hasCategory(Intent.CATEGORY_HOME)) {
+            RecentStore.get(this).captureOnReturn?.invoke()
+            homeSequence++
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
