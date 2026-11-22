@@ -321,4 +321,6 @@
     <string name="inbox_no_notifications">No notifications</string>
     <string name="push_battery">Deliver instantly</string>
     <string name="push_battery_summary">Android pauses Enyo\'s push connection while the phone rests. Allow Enyo to run unrestricted so pushes arrive right away.</string>
+    <string name="push_notification_permission">Show the push connection</string>
+    <string name="push_notification_permission_summary">Android keeps a push service running reliably only while its status notification may show. You can silence that notification\'s category afterwards.</string>
 </resources>

@@ -37,6 +37,27 @@ internal fun PushPreference() {
         }
         if (enabled) {
             val foreground = foregroundCycle()
+            var asked by remember { mutableIntStateOf(0) }
+            val notifying = remember(foreground, asked) {
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+            val request = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                asked++
+                // Android stops asking after two refusals; its notification settings still allow it.
+                if (!granted) context.launchSafely(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                else PushConnection.restart(context)
+            }
+            if (!notifying) ListRow(
+                stringResource(R.string.push_notification_permission),
+                summary = stringResource(R.string.push_notification_permission_summary),
+                leading = { EnyoGlyph(Glyph.Bell, color = tokens.accent) },
+                trailing = { PillButton(stringResource(R.string.running_tasks_allow), filled = true) {
+                    request.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                } }
+            )
             val unrestricted = remember(foreground) { PushDistributor.unrestricted(context) }
             if (!unrestricted) ListRow(
                 stringResource(R.string.push_battery), Modifier.appPress({
