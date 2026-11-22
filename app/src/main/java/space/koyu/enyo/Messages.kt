@@ -82,14 +82,6 @@ internal fun InboxPage(
                 contentPadding = PaddingValues(horizontal = tokens.margin),
                 horizontalArrangement = Arrangement.spacedBy(tokens.margin)
             ) {
-                items(providers, key = { it.componentName.flattenToString() }) { app ->
-                    val name = labels.getValue(app.componentName.packageName)
-                    Box(
-                        Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
-                            .semantics { contentDescription = name },
-                        contentAlignment = Alignment.Center
-                    ) { AppIcon(app, label = name) }
-                }
                 items(conversations, key = { it.key }) { conversation ->
                     val provider = providers.firstOrNull { it.componentName.packageName == conversation.packageName }
                     val providerName = labels[conversation.packageName] ?: sourceLabel(context, conversation.packageName)
@@ -98,6 +90,14 @@ internal fun InboxPage(
                         if (runCatching { conversation.open?.send() != null }.getOrDefault(false)) return@ConversationBubble
                         if (provider != null) openApp(provider) else failed = true
                     }
+                }
+                items(providers, key = { it.componentName.flattenToString() }) { app ->
+                    val name = labels.getValue(app.componentName.packageName)
+                    Box(
+                        Modifier.size(tokens.iconSize).clip(CircleShape).appPress({ openApp(app) })
+                            .semantics { contentDescription = name },
+                        contentAlignment = Alignment.Center
+                    ) { AppIcon(app, label = name) }
                 }
             }
             Text(
