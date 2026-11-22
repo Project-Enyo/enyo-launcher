@@ -255,4 +255,15 @@
     <string name="thread_latest">Jump to the newest message</string>
     <string name="reply_sent">Sent</string>
     <string name="reply_failed">The app didn\'t take the reply. Open it to answer there.</string>
+    <string name="today_alarms">Alarms</string>
+    <string name="today_new_alarm">New alarm</string>
+    <string name="today_timers">Timers</string>
+    <string name="today_date_settings">Date and time</string>
+    <string name="today_battery_usage">Battery usage</string>
+    <string name="today_battery_saver">Battery saver</string>
+    <string name="today_internet_panel">Internet</string>
+    <string name="today_wifi_settings">Wi-Fi settings</string>
+    <string name="today_mobile_settings">Mobile network</string>
+    <string name="today_open_calendar">Open calendar</string>
+    <string name="today_new_event">New event</string>
 </resources>

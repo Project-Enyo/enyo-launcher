@@ -76,6 +76,7 @@ class EnyoActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
+        else if (todayActionKind(intent) != null) todayActionRequest.value = todayActionKind(intent)
         else if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             RecentStore.get(this).captureOnReturn?.invoke()
             homeSequence++
@@ -85,6 +86,7 @@ class EnyoActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null && isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
+        if (savedInstanceState == null) todayActionKind(intent)?.let { todayActionRequest.value = it }
         enableEdgeToEdge()
         setContent {
             val dark = isSystemInDarkTheme()
@@ -126,6 +128,8 @@ class EnyoActivity : ComponentActivity() {
                         Box(Modifier.fillMaxSize().semanticsWhenConsumed()) {
                             LauncherScreen(::openInternetPanel, homeSequence, weatherTap) { launcherKeys = it }
                             WallpaperConfirmationBanner(Modifier.align(Alignment.BottomCenter))
+                            val todayRequest by todayActionRequest.collectAsState()
+                            todayRequest?.let { kind -> TodayActionSheet(kind, ::openInternetPanel) { todayActionRequest.value = null } }
                         }
                     }
                 }

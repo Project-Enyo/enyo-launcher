@@ -161,6 +161,7 @@ private fun renderTodayWidget(
             }
         }
     }
+    if (kind != TodayWidget.Weather) views.setOnClickPendingIntent(R.id.widget_content, context.todayActionPendingIntent(id, kind))
     manager.updateAppWidget(id, views)
 }
 

@@ -73,10 +73,10 @@ internal data class WeatherReading(
     private set
 
 private const val weatherAction = "weather_widget_refresh"
-private const val weatherTokenExtra = "weather_widget_token"
+internal const val weatherTokenExtra = "weather_widget_token"
 
 @Synchronized
-private fun Context.weatherWidgetToken(): String {
+internal fun Context.weatherWidgetToken(): String {
     val preferences = getSharedPreferences("weather_widget_action", Context.MODE_PRIVATE)
     return preferences.getString(weatherTokenExtra, null) ?: java.util.UUID.randomUUID().toString().also {
         preferences.edit().putString(weatherTokenExtra, it).apply()

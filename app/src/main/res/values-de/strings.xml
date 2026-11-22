@@ -255,4 +255,15 @@
     <string name="thread_latest">Zur neuesten Nachricht</string>
     <string name="reply_sent">Gesendet</string>
     <string name="reply_failed">Die App hat die Antwort nicht angenommen. Öffne sie, um dort zu antworten.</string>
+    <string name="today_alarms">Wecker</string>
+    <string name="today_new_alarm">Neuer Wecker</string>
+    <string name="today_timers">Timer</string>
+    <string name="today_date_settings">Datum und Uhrzeit</string>
+    <string name="today_battery_usage">Akkunutzung</string>
+    <string name="today_battery_saver">Energiesparmodus</string>
+    <string name="today_internet_panel">Internet</string>
+    <string name="today_wifi_settings">WLAN-Einstellungen</string>
+    <string name="today_mobile_settings">Mobilfunknetz</string>
+    <string name="today_open_calendar">Kalender öffnen</string>
+    <string name="today_new_event">Neuer Termin</string>
 </resources>
