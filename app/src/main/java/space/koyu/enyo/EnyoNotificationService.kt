@@ -99,6 +99,8 @@ private fun StatusBarNotification.isBackgroundNotice(): Boolean {
     if (!persistent) return false
     return when (packageName) {
         "org.unifiedpush.distributor.sunup" -> true
+        // Enyo's own push connection: shown by Android while it runs, never in Enyo's Inbox.
+        "space.koyu.enyo", "space.koyu.enyo.debug" -> notification.channelId == "push"
         "io.heckel.ntfy" -> notification.channelId == "ntfy-subscriber"
         "org.kde.kdeconnect_tp" -> notification.channelId == "media_control" || isOngoing
         "android" -> notification.channelId == "DEVELOPER_IMPORTANT" &&
