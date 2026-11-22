@@ -280,4 +280,20 @@
     <string name="news_add">Add</string>
     <string name="news_adding">Adding…</string>
     <string name="news_add_failed">No RSS or Atom feed found at that address.</string>
+    <string name="notes_todos">To-dos</string>
+    <string name="notes_notes">Notes</string>
+    <string name="notes_add_todo">Add a to-do</string>
+    <string name="notes_add">Add</string>
+    <string name="notes_show_done">Show done (%1$d)</string>
+    <string name="notes_hide_done">Hide done (%1$d)</string>
+    <string name="notes_clear_done">Remove done to-dos</string>
+    <string name="notes_untitled">Empty note</string>
+    <string name="notes_new">New note</string>
+    <string name="notes_edit">Note</string>
+    <string name="notes_edit_todo">To-do</string>
+    <string name="notes_delete">Delete</string>
+    <string name="notes_pin">Pin</string>
+    <string name="notes_unpin">Unpin</string>
+    <string name="notes_done">Done</string>
+    <string name="backup_category_notes">Notes and to-dos</string>
 </resources>

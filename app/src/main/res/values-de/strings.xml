@@ -280,4 +280,20 @@
     <string name="news_add">Hinzufügen</string>
     <string name="news_adding">Wird hinzugefügt …</string>
     <string name="news_add_failed">Unter dieser Adresse wurde kein RSS- oder Atom-Feed gefunden.</string>
+    <string name="notes_todos">To-dos</string>
+    <string name="notes_notes">Notizen</string>
+    <string name="notes_add_todo">To-do hinzufügen</string>
+    <string name="notes_add">Hinzufügen</string>
+    <string name="notes_show_done">Erledigte anzeigen (%1$d)</string>
+    <string name="notes_hide_done">Erledigte ausblenden (%1$d)</string>
+    <string name="notes_clear_done">Erledigte To-dos entfernen</string>
+    <string name="notes_untitled">Leere Notiz</string>
+    <string name="notes_new">Neue Notiz</string>
+    <string name="notes_edit">Notiz</string>
+    <string name="notes_edit_todo">To-do</string>
+    <string name="notes_delete">Löschen</string>
+    <string name="notes_pin">Anheften</string>
+    <string name="notes_unpin">Lösen</string>
+    <string name="notes_done">Fertig</string>
+    <string name="backup_category_notes">Notizen und To-dos</string>
 </resources>

@@ -50,7 +50,8 @@ internal enum class BackupCategory(val id: String, val label: Int) {
     Messages("messages", R.string.backup_category_messages),
     Links("links", R.string.backup_category_links),
     Settings("settings", R.string.backup_category_settings),
-    Layout("layout", R.string.backup_category_layout)
+    Layout("layout", R.string.backup_category_layout),
+    Notes("notes", R.string.backup_category_notes)
 }
 
 internal data class BackupPreview(
@@ -299,6 +300,9 @@ internal object BackupContent {
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
         }
+        if (BackupCategory.Notes in categories) archive.read { db ->
+            json.put("notes", rows(db.query("SELECT uid, kind, text, done, pinned, position, created_at, updated_at FROM notes")))
+        }
         if (BackupCategory.Settings in categories) json.put("settings", JSONObject().apply {
             put("appearance", preferences(context.appearancePreferences.data.first(), exclude = layoutKeys))
             put("search", preferences(context.searchPreferences.data.first(), exclude = emptySet()))
@@ -317,6 +321,19 @@ internal object BackupContent {
         }
         if (BackupCategory.Links in categories) json.optJSONObject("links")?.let { links ->
             archive.write { db -> restoreLinks(db, links) }
+        }
+        if (BackupCategory.Notes in categories) json.optJSONArray("notes")?.let { notes ->
+            archive.write { db ->
+                notes.forEachRow { r ->
+                    // The newer edit of the same note wins.
+                    db.execSQL(
+                        """INSERT INTO notes(uid, kind, text, done, pinned, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(uid) DO UPDATE SET text = excluded.text, done = excluded.done, pinned = excluded.pinned,
+                           position = excluded.position, updated_at = excluded.updated_at WHERE excluded.updated_at > notes.updated_at""",
+                        arrayOf(r.str(0), r.str(1), r.str(2), r.long(3), r.long(4), r.long(5), r.long(6), r.long(7))
+                    )
+                }
+            }
         }
         if (BackupCategory.Settings in categories) json.optJSONObject("settings")?.let { settings ->
             settings.optJSONObject("appearance")?.let { restorePreferences(context.appearancePreferences, it, keep = layoutKeys) }

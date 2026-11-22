@@ -139,13 +139,8 @@ internal fun InboxPage(
             )
         }
         val visibleThreads = if (group == null && !locked) threads else emptyList()
-        if (visibleThreads.isEmpty() && messages.isEmpty() && others.isEmpty()) {
-            if (group == null && !listening) Box(Modifier.padding(horizontal = tokens.margin)) { ListCard { ListNote(stringResource(R.string.archive_access_missing)) } }
-            if (failed) Box(Modifier.padding(horizontal = tokens.margin)) { ListCard { ListNote(stringResource(R.string.notice_open_failed)) } }
-            Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
-                WorkspaceEmptyState(R.string.inbox_empty)
-            }
-        } else LazyColumn(
+        val nothing = visibleThreads.isEmpty() && messages.isEmpty() && others.isEmpty()
+        LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = tokens.margin, end = tokens.margin, bottom = tokens.margin),
             verticalArrangement = Arrangement.spacedBy(tokens.gap)
@@ -161,6 +156,13 @@ internal fun InboxPage(
                     }
                 }
             }
+            if (group == null && nothing) item(key = "empty") {
+                Box(Modifier.fillMaxWidth().padding(vertical = tokens.margin), contentAlignment = Alignment.Center) {
+                    WorkspaceEmptyState(R.string.inbox_empty)
+                }
+            }
+            // Notes and to-dos sit below the messages, and stay private while the phone is locked.
+            if (group == null && !locked) item(key = "notes") { NotesSection() }
             // The unified list already holds messaging notifications, so their own card stays in the banner tray only.
             if (group != null && messages.isNotEmpty()) item(key = "messages") {
                 ListCard {

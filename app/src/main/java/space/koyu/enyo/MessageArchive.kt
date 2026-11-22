@@ -46,7 +46,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(databaseName)
             .callback(object : SupportSQLiteOpenHelper.Callback(schemaVersion) {
-                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db) }
+                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db) }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = migrate(db, oldVersion)
                 override fun onConfigure(db: SupportSQLiteDatabase) { db.execSQL("PRAGMA foreign_keys = ON") }
             })
@@ -246,7 +246,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 3
+        const val schemaVersion = 4
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
 
@@ -327,6 +327,7 @@ internal class MessageArchive private constructor(private val context: Context) 
             if (from < 1) createSchema(db)
             if (from < 2) BeeperDuplicates.createSchema(db)
             if (from in 1..2) dropStatusNotices(db)
+            if (from < 4) Notes.createSchema(db)
         }
 
         /**
