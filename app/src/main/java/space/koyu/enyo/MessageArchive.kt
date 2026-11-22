@@ -111,11 +111,22 @@ internal class MessageArchive private constructor(private val context: Context) 
     private fun store(notice: CapturedNotice): Boolean {
         db.beginTransaction()
         try {
+            val duplicate = storeInTransaction(notice)
+            db.setTransactionSuccessful()
+            return duplicate
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun storeInTransaction(notice: CapturedNotice): Boolean {
+        run {
             val conversation = upsertConversation(notice)
             var fresh = 0
             var duplicates = 0
             for (message in notice.messages) {
                 if (message.sender == null && adoptLocalReply(conversation, message, notice)) continue
+                if (sameAsOtherSource(conversation, message, notice)) continue
                 val identity = message.sender?.let { upsertIdentity(notice.packageName, it) }
                 val values = ContentValues().apply {
                     put("conversation_id", conversation)
@@ -144,11 +155,38 @@ internal class MessageArchive private constructor(private val context: Context) 
             notice.messages.maxOfOrNull { it.postedAt }?.let {
                 db.execSQL("UPDATE conversations SET last_at = MAX(last_at, ?) WHERE id = ?", arrayOf(it, conversation))
             }
-            db.setTransactionSuccessful()
             return fresh > 0 && duplicates == fresh
+        }
+    }
+
+    /**
+     * A message an app sends through the inbox API usually also arrives as a notification. The API
+     * copy wins: a notification copy is skipped, and an earlier notification copy takes the API id.
+     */
+    private fun sameAsOtherSource(conversation: Long, message: CapturedMessage, notice: CapturedNotice): Boolean {
+        val api = message.apiId != null
+        val other = db.query(
+            """SELECT id FROM messages WHERE conversation_id = ? AND text = ? AND ABS(posted_at - ?) < ?
+               AND fingerprint ${if (api) "NOT LIKE" else "LIKE"} ? AND fingerprint != ? LIMIT 1""",
+            arrayOf(conversation, message.text, message.postedAt, sourceEchoWindow, "%|api:%", message.fingerprint(notice))
+        ).use { if (it.moveToFirst()) it.getLong(0) else null } ?: return false
+        if (api) db.execSQL("UPDATE messages SET fingerprint = ? WHERE id = ?", arrayOf(message.fingerprint(notice), other))
+        return true
+    }
+
+    /** Stores messages an app handed over through the inbox API, on the calling thread. */
+    fun ingest(notice: CapturedNotice): Int {
+        var stored = 0
+        db.beginTransaction()
+        try {
+            stored = notice.messages.size
+            storeInTransaction(notice)
+            db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
+        revision.value = System.nanoTime()
+        return stored
     }
 
     /** Gives a locally kept reply the identity of the app's own copy of it, when the app echoes it. */
@@ -247,6 +285,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val tagBits = 128
         private const val databaseKeyLength = 32
         const val schemaVersion = 4
+        private const val sourceEchoWindow = 3 * 60_000L
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
 
@@ -363,8 +402,10 @@ internal class MessageArchive private constructor(private val context: Context) 
 /** A sender as a messaging notification describes it. The key is stable within one app. */
 internal data class CapturedSender(val key: String, val name: String?, val uri: String?, val phone: String?, val avatar: ByteArray?)
 
-internal data class CapturedMessage(val sender: CapturedSender?, val text: String, val postedAt: Long) {
-    fun fingerprint(notice: CapturedNotice) = "${notice.packageName}|${notice.conversationKey}|$postedAt|${sender?.key ?: "self"}"
+internal data class CapturedMessage(val sender: CapturedSender?, val text: String, val postedAt: Long, val apiId: String? = null) {
+    fun fingerprint(notice: CapturedNotice) =
+        if (apiId != null) "${notice.packageName}|${notice.conversationKey}|api:$apiId"
+        else "${notice.packageName}|${notice.conversationKey}|$postedAt|${sender?.key ?: "self"}"
 }
 
 /** The archive view of one notification: its conversation, counterpart, and messages. */
