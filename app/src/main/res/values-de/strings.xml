@@ -322,5 +322,5 @@
     <string name="push_battery">Sofort zustellen</string>
     <string name="push_battery_summary">Android pausiert Enyos Push-Verbindung, während das Telefon ruht. Erlaube Enyo uneingeschränkten Betrieb, damit Pushes sofort ankommen.</string>
     <string name="push_notification_permission">Push-Verbindung anzeigen</string>
-    <string name="push_notification_permission_summary">Android hält einen Push-Dienst nur zuverlässig am Laufen, solange seine Statusbenachrichtigung angezeigt werden darf. Die Kategorie lässt sich danach stummschalten.</string>
+    <string name="push_notification_permission_summary">Erlaubt Enyo, die laufende Push-Verbindung als Benachrichtigung anzuzeigen, damit du siehst, dass sie läuft. Die Kategorie lässt sich danach stummschalten.</string>
 </resources>
