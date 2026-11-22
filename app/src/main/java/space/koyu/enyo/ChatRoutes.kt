@@ -15,7 +15,9 @@ internal data class ChatRoute(
     val name: String?,
     val phone: String?,
     val uri: String?,
-    val lastAt: Long
+    val lastAt: Long,
+    /** The chat's id in its app, when the app shares it through UnifiedInbox. */
+    val inboxId: String? = null
 ) {
     val shortcutId get() = conversationKey.removePrefix("shortcut:").takeIf { conversationKey.startsWith("shortcut:") }
 }
@@ -26,6 +28,7 @@ internal data class ChatRoute(
  * link for the person, and the app itself last.
  */
 internal fun Context.openChat(route: ChatRoute, live: StatusBarNotification? = null): Boolean {
+    if (route.inboxId != null && InboxHost.open(this, route.packageName, route.inboxId)) return true
     if (live != null && live.openFromForeground(this)) return true
     route.shortcutId?.let { id ->
         val apps = getSystemService(LauncherApps::class.java)

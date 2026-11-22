@@ -302,8 +302,6 @@
     <string name="contact_services">Chats</string>
     <string name="contact_open">In Kontakten öffnen</string>
     <string name="contact_details_of">Details zu %1$s</string>
-    <string name="inbox_api_permission">Chats mit dem Enyo-Posteingang teilen</string>
-    <string name="inbox_api_permission_description">Erlaubt der App, ihre Unterhaltungen zu Enyos gemeinsamem Posteingang hinzuzufügen und ihre eigenen Unterhaltungen dort zu lesen.</string>
     <string name="push_title">Push-Benachrichtigungen</string>
     <string name="push_enable">Push für andere Apps zustellen</string>
     <string name="push_summary">Enyo arbeitet als UnifiedPush-Verteiler über ntfy, damit Apps wie Anura ohne Google-Dienste benachrichtigen können.</string>
@@ -324,4 +322,10 @@
     <string name="push_notification_permission">Push-Verbindung anzeigen</string>
     <string name="push_notification_permission_summary">Erlaubt Enyo, die laufende Push-Verbindung als Benachrichtigung anzuzeigen, damit du siehst, dass sie läuft. Die Kategorie lässt sich danach stummschalten.</string>
     <string name="push_allow">Erlauben</string>
+    <string name="inbox_host_title">Geteilte Chats</string>
+    <string name="inbox_host_enable">Chat-Apps mit Enyo teilen lassen</string>
+    <string name="inbox_host_summary">Apps mit UnifiedInbox zeigen ihre Chats hier direkt. Du kannst antworten, als gelesen markieren und Chats öffnen, ohne ihre Benachrichtigungen.</string>
+    <string name="inbox_host_none">Noch keine App teilt ihre Chats. Wähle Enyo in der UnifiedInbox-Einstellung einer Chat-App.</string>
+    <string name="inbox_host_sharing">Teilt ihre Chats</string>
+    <string name="reply_failed_app">Die App konnte die Antwort nicht senden.</string>
 </resources>

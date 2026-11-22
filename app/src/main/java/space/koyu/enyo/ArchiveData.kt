@@ -257,16 +257,18 @@ internal object ArchiveData {
     /** Every app conversation behind a thread, most recent first. */
     fun routes(context: Context, thread: ThreadRef): List<ChatRoute> = MessageArchive.get(context).read { db ->
         val (sql, arg) = when (thread) {
-            is ThreadRef.Person -> """SELECT c.package, c.key, i.key, COALESCE(i.name, c.title), i.phone, i.uri, c.last_at
-                FROM conversations c JOIN identities i ON i.id = c.identity_id WHERE i.person_id = ? AND c.is_group = 0
-                ORDER BY c.last_at DESC""" to thread.id
-            is ThreadRef.Group -> """SELECT c.package, c.key, NULL, c.title, NULL, NULL, c.last_at FROM conversations c WHERE c.id = ?""" to thread.conversationId
+            is ThreadRef.Person -> """SELECT c.package, c.key, i.key, COALESCE(i.name, c.title), i.phone, i.uri, c.last_at, ic.id
+                FROM conversations c JOIN identities i ON i.id = c.identity_id
+                LEFT JOIN inbox_conversations ic ON ic.package = c.package AND ic.key = c.key
+                WHERE i.person_id = ? AND c.is_group = 0 ORDER BY c.last_at DESC""" to thread.id
+            is ThreadRef.Group -> """SELECT c.package, c.key, NULL, c.title, NULL, NULL, c.last_at, ic.id FROM conversations c
+                LEFT JOIN inbox_conversations ic ON ic.package = c.package AND ic.key = c.key WHERE c.id = ?""" to thread.conversationId
         }
         db.query(sql, arrayOf(arg)).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) add(ChatRoute(
                     cursor.getString(0), cursor.getString(1), cursor.stringOrNull(2), cursor.stringOrNull(3),
-                    cursor.stringOrNull(4), cursor.stringOrNull(5), cursor.getLong(6)
+                    cursor.stringOrNull(4), cursor.stringOrNull(5), cursor.getLong(6), cursor.stringOrNull(7)
                 ))
             }
         }

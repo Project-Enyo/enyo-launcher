@@ -46,7 +46,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(databaseName)
             .callback(object : SupportSQLiteOpenHelper.Callback(schemaVersion) {
-                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db) }
+                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db); createInboxSchema(db) }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = migrate(db, oldVersion)
                 override fun onConfigure(db: SupportSQLiteDatabase) { db.execSQL("PRAGMA foreign_keys = ON") }
             })
@@ -61,6 +61,8 @@ internal class MessageArchive private constructor(private val context: Context) 
      */
     fun capture(entry: StatusBarNotification, stored: (Boolean) -> Unit = {}) {
         if (entry.user != Process.myUserHandle() || !entry.isMessagingNotice()) { stored(false); return }
+        // An app that shares through UnifiedInbox already delivers its messages; its notifications would be copies.
+        if (InboxHost.isConnector(context, entry.packageName)) { stored(false); return }
         if (entry.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) { stored(false); return }
         val captured = runCatching { CapturedNotice.from(context, entry) }.getOrNull() ?: run { stored(false); return }
         writes.launch {
@@ -174,19 +176,96 @@ internal class MessageArchive private constructor(private val context: Context) 
         return true
     }
 
-    /** Stores messages an app handed over through the inbox API, on the calling thread. */
-    fun ingest(notice: CapturedNotice): Int {
-        var stored = 0
-        db.beginTransaction()
-        try {
-            stored = notice.messages.size
-            storeInTransaction(notice)
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+    /**
+     * Applies UnifiedInbox events from a registered connector, in order. Messages are keyed by the
+     * connector's own ids, so sending the same message again changes nothing and an edit replaces its text.
+     */
+    fun applyInboxEvents(packageName: String, events: org.json.JSONArray, replyFailed: (String, String?) -> Unit) {
+        writes.launch {
+            runCatching {
+                db.beginTransaction()
+                try {
+                    for (index in 0 until events.length()) {
+                        val event = events.optJSONObject(index) ?: continue
+                        runCatching { applyInboxEvent(packageName, event, replyFailed) }
+                    }
+                    db.setTransactionSuccessful()
+                } finally { db.endTransaction() }
+            }
+            revision.value = System.nanoTime()
         }
-        revision.value = System.nanoTime()
-        return stored
+    }
+
+    private fun inboxKey(packageName: String, id: String): String =
+        db.query("SELECT key FROM inbox_conversations WHERE package = ? AND id = ?", arrayOf(packageName, id))
+            .use { if (it.moveToFirst()) it.getString(0) else null } ?: "inbox:$id"
+
+    private fun applyInboxEvent(packageName: String, event: org.json.JSONObject, replyFailed: (String, String?) -> Unit) {
+        fun str(name: String) = event.optString(name).takeIf { event.has(name) && !event.isNull(name) && it.isNotEmpty() }
+        when (event.optString("type")) {
+            "conversation" -> {
+                val id = str("id") ?: return
+                val key = str("shortcut")?.let { "shortcut:$it" } ?: "inbox:$id"
+                db.execSQL("INSERT OR REPLACE INTO inbox_conversations(package, id, key) VALUES (?, ?, ?)", arrayOf(packageName, id, key))
+                val group = event.optBoolean("group")
+                val members = event.optJSONArray("members")
+                val counterpart = if (group) null else members?.optJSONObject(0)?.let { member ->
+                    val memberId = member.optString("id").takeIf { it.isNotEmpty() } ?: return@let null
+                    CapturedSender(memberId, member.optString("name").ifEmpty { null }, member.optString("uri").ifEmpty { null },
+                        member.optString("phone").ifEmpty { null }, null)
+                }
+                upsertConversation(CapturedNotice("inbox", packageName, key, str("title") ?: counterpart?.name, group, counterpart, emptyList()))
+                db.execSQL("UPDATE conversations SET is_group = ? WHERE package = ? AND key = ?", arrayOf(if (group) 1 else 0, packageName, key))
+                // Members of groups are known people too, so their messages carry their numbers.
+                if (group) for (index in 0 until (members?.length() ?: 0)) {
+                    val member = members!!.optJSONObject(index) ?: continue
+                    val memberId = member.optString("id").takeIf { it.isNotEmpty() } ?: continue
+                    upsertIdentity(packageName, CapturedSender(memberId, member.optString("name").ifEmpty { null },
+                        member.optString("uri").ifEmpty { null }, member.optString("phone").ifEmpty { null }, null))
+                }
+            }
+            "message" -> {
+                val conversation = str("conversation") ?: return
+                val id = str("id") ?: return
+                val text = str("text") ?: return
+                val key = inboxKey(packageName, conversation)
+                val group = db.query("SELECT is_group FROM conversations WHERE package = ? AND key = ?", arrayOf(packageName, key))
+                    .use { it.moveToFirst() && it.getInt(0) == 1 }
+                val outgoing = event.optBoolean("outgoing")
+                val sender = if (outgoing) null else str("sender")?.let { CapturedSender(it, str("senderName"), null, null, null) }
+                if (!outgoing && sender == null) return
+                val time = event.optLong("time").takeIf { it > 0 } ?: System.currentTimeMillis()
+                storeInTransaction(CapturedNotice("inbox", packageName, key, null, group, null,
+                    listOf(CapturedMessage(sender, text, time, apiId = id))))
+            }
+            "edit" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                db.execSQL("UPDATE messages SET text = ? WHERE fingerprint = ?", arrayOf(str("text") ?: return, "$packageName|$key|api:${str("id") ?: return}"))
+            }
+            "delete" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                db.execSQL("DELETE FROM messages WHERE fingerprint = ?", arrayOf("$packageName|$key|api:${str("id") ?: return}"))
+            }
+            "read" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                db.execSQL("UPDATE conversations SET read_at = MAX(read_at, ?) WHERE package = ? AND key = ?", arrayOf(event.optLong("time"), packageName, key))
+            }
+            "conversation_delete" -> {
+                val id = str("id") ?: return
+                val key = inboxKey(packageName, id)
+                db.execSQL("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE package = ? AND key = ?)", arrayOf(packageName, key))
+                db.execSQL("UPDATE conversations SET last_at = 0 WHERE package = ? AND key = ?", arrayOf(packageName, key))
+                db.execSQL("DELETE FROM inbox_conversations WHERE package = ? AND id = ?", arrayOf(packageName, id))
+            }
+            "reply_failed" -> replyFailed(str("request") ?: return, str("reason"))
+        }
+    }
+
+    /** Deletes everything a connector shared, after it or the person ended its registration. */
+    fun forgetConnector(packageName: String) = write { db ->
+        db.execSQL("DELETE FROM messages WHERE package = ? AND fingerprint LIKE ?", arrayOf(packageName, "%|api:%"))
+        db.execSQL("DELETE FROM inbox_conversations WHERE package = ?", arrayOf(packageName))
+        db.execSQL("UPDATE conversations SET last_at = COALESCE((SELECT MAX(posted_at) FROM messages WHERE conversation_id = conversations.id), 0) WHERE package = ?", arrayOf(packageName))
     }
 
     /** Gives a locally kept reply the identity of the app's own copy of it, when the app echoes it. */
@@ -284,7 +363,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 4
+        const val schemaVersion = 5
         private const val sourceEchoWindow = 3 * 60_000L
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
@@ -361,12 +440,25 @@ internal class MessageArchive private constructor(private val context: Context) 
             db.execSQL("CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN INSERT INTO messages_fts(docid, text, sender_name) VALUES (new.id, new.text, new.sender_name); END")
         }
 
+        /** Which archive conversation each UnifiedInbox connector conversation id maps to. */
+        private fun createInboxSchema(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS inbox_conversations (
+                    package TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    PRIMARY KEY(package, id)
+                )"""
+            )
+        }
+
         /** Each schema step runs once, in order, inside the open transaction. */
         private fun migrate(db: SupportSQLiteDatabase, from: Int) {
             if (from < 1) createSchema(db)
             if (from < 2) BeeperDuplicates.createSchema(db)
             if (from in 1..2) dropStatusNotices(db)
             if (from < 4) Notes.createSchema(db)
+            if (from < 5) createInboxSchema(db)
         }
 
         /**

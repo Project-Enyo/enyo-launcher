@@ -150,13 +150,29 @@ internal fun ThreadScreen(
         active.filter { it.key in keys }.sortedByDescending { it.postTime }.distinctBy { it.packageName }
     }
     val replies = live.mapNotNull { entry -> entry.notification.replyAction()?.let { entry to it } }
-    var replyVia by remember(replies.map { it.first.packageName }) { mutableStateOf(replies.firstOrNull()?.first?.packageName) }
     val scope = rememberCoroutineScope()
     val label = { pkg: String -> launchers[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
 
     var accounts by remember { mutableStateOf(false) }
     var flyout by remember { mutableStateOf(false) }
     val routes = rememberArchive(emptyList<ChatRoute>(), thread) { ArchiveData.routes(it, thread) }
+    val connectors by InboxHost.connectors.collectAsState()
+    // Apps that share through UnifiedInbox reply directly; others through their current notification.
+    val targets = remember(routes, replies, connectors) {
+        val direct = routes.filter { it.inboxId != null && InboxHost.supports(context, it.packageName, InboxHost.featureReply) }
+            .distinctBy { it.packageName }.map { route ->
+                ReplyTarget(route.packageName, emptyList(), inboxId = route.inboxId)
+            }
+        val notified = replies.map { (entry, action) -> ReplyTarget(entry.packageName, action.replyChoices(), inboxId = null, notification = entry to action) }
+        (direct + notified).distinctBy { it.packageName }
+    }
+    var pendingReplies by remember { mutableStateOf(setOf<String>()) }
+    val failures by InboxHost.failedReplies.collectAsState()
+    val replyFailure = failures.filterKeys { it in pendingReplies }.entries.lastOrNull()
+    var replyVia by remember(targets.map { it.packageName }) { mutableStateOf(targets.firstOrNull()?.packageName) }
+    LaunchedEffect(thread, messages.lastOrNull()?.id, routes) {
+        routes.filter { it.inboxId != null }.forEach { InboxHost.markRead(context, it.packageName, it.inboxId!!) }
+    }
     val list = rememberLazyListState()
     // The list is laid out from the newest message up, so the newest stays in view as messages arrive.
     LaunchedEffect(messages.lastOrNull()?.id) { if (messages.isNotEmpty()) list.scrollToItem(0) }
@@ -249,22 +265,30 @@ internal fun ThreadScreen(
                 Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
                 verticalArrangement = Arrangement.spacedBy(tokens.gap)
             ) {
-                if (replies.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                    replies.forEach { (entry, _) ->
-                        PillButton(label(entry.packageName), filled = replyVia == entry.packageName) { replyVia = entry.packageName }
+                replyFailure?.let { (_, reason) ->
+                    Text(listOfNotNull(stringResource(R.string.reply_failed_app), reason).joinToString(" "), style = tokens.caption)
+                }
+                if (targets.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                    targets.forEach { target ->
+                        PillButton(label(target.packageName), filled = replyVia == target.packageName) { replyVia = target.packageName }
                     }
                 }
-                val selected = replies.firstOrNull { it.first.packageName == replyVia }
-                if (selected != null) key(selected.first.key) {
+                val selected = targets.firstOrNull { it.packageName == replyVia }
+                if (selected != null) key(selected.packageName, selected.notification?.first?.key) {
                     ReplyComposer(
-                        stringResource(R.string.thread_reply_hint, label(selected.first.packageName)),
-                        selected.second.replyChoices(), autofocus = false
+                        stringResource(R.string.thread_reply_hint, label(selected.packageName)),
+                        selected.choices, autofocus = false
                     ) { text ->
-                        val (entry, action) = selected
-                        sendReply(context, entry, action, text).also { sent ->
-                            if (!sent) entry.openFromForeground(context)
-                            else scope.launch { list.animateScrollToItem(0) }
+                        val inboxId = selected.inboxId
+                        val notification = selected.notification
+                        val sent = when {
+                            inboxId != null -> InboxHost.reply(context, selected.packageName, inboxId, text)?.also { pendingReplies = pendingReplies + it } != null
+                            notification != null -> sendReply(context, notification.first, notification.second, text)
+                                .also { if (!it) notification.first.openFromForeground(context) }
+                            else -> false
                         }
+                        if (sent) scope.launch { list.animateScrollToItem(0) }
+                        sent
                     }
                 } else Text(stringResource(R.string.thread_no_reply), style = tokens.caption)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
@@ -374,6 +398,14 @@ private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boo
         }
     }
 }
+
+/** Where a thread's reply goes: a UnifiedInbox connector, or the reply action of a live notification. */
+private data class ReplyTarget(
+    val packageName: String,
+    val choices: List<String>,
+    val inboxId: String?,
+    val notification: Pair<android.service.notification.StatusBarNotification, android.app.Notification.Action>? = null
+)
 
 /** A round icon action in the thread bar. */
 @Composable
