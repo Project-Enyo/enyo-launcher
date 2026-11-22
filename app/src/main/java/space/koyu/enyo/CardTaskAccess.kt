@@ -78,7 +78,7 @@ internal fun TaskClosePreference() {
 }
 
 @Composable
-internal fun rememberCardTaskCloser(): suspend (ComponentName) -> Boolean {
+internal fun rememberCardTaskCloser(): suspend (List<ComponentName>) -> Boolean {
     val context = LocalContext.current
     val access = rememberTaskAccess()
     var bridge by remember { mutableStateOf<ITaskBridge?>(null) }
@@ -106,14 +106,16 @@ internal fun rememberCardTaskCloser(): suspend (ComponentName) -> Boolean {
     }
 
     val currentAccess by rememberUpdatedState(access.granted)
-    return close@{ component ->
-        if (!currentAccess) return@close true
+    return close@{ components ->
+        if (!currentAccess || components.isEmpty()) return@close true
         val service = withTimeoutOrNull(4000) {
             snapshotFlow { bridge }.filterNotNull().first()
         } ?: return@close false
         if (!currentAccess) return@close true
         withContext(Dispatchers.IO) {
-            runCatching { service.closeCardTask(component.flattenToString()) }.getOrDefault(false)
+            components.distinct().map { component ->
+                runCatching { service.closeCardTask(component.flattenToString()) }.getOrDefault(false)
+            }.all { it }
         }
     }
 }

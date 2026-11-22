@@ -92,7 +92,8 @@ internal data class RecentEntry(
 internal data class CaptureRequest(
     val component: ComponentName,
     val width: Int,
-    val createdAt: Long
+    val createdAt: Long,
+    val needsPreview: Boolean
 )
 
 internal class RecentStore private constructor(context: Context) {
@@ -126,7 +127,7 @@ internal class RecentStore private constructor(context: Context) {
     fun prepare(component: ComponentName) {
         val current = entries.value.find { it.component == component }
         capture = if (targetWidth > 0 && current?.denied != true) {
-            CaptureRequest(component, targetWidth, SystemClock.elapsedRealtime())
+            CaptureRequest(component, targetWidth, SystemClock.elapsedRealtime(), current?.aspect == null)
         } else null
     }
 
@@ -363,7 +364,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
         dismissFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
         store.dismiss(component)
         scope.launch {
-            if (!closeTask(component)) closeFailures++
+            if (!closeTask(listOf(component))) closeFailures++
         }
     }
     val entries by store.entries.collectAsState()
@@ -440,7 +441,15 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                 item(key = "clear_cards") {
                     Box(Modifier.width(cardWidth).fillMaxHeight(), contentAlignment = Alignment.Center) {
                         if (scroll.firstVisibleItemIndex == 0) {
-                            TextButton(onClick = { selected = null; store.clear() }) {
+                            TextButton(onClick = {
+                                val components = groups.flatten().map { it.entry.component }
+                                selected = null
+                                dismissFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                store.clear()
+                                scope.launch {
+                                    if (!closeTask(components)) closeFailures++
+                                }
+                            }) {
                                 Text(stringResource(R.string.cards_clear_all))
                             }
                         }
