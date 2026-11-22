@@ -304,7 +304,7 @@
     <string name="contact_details_of">Details zu %1$s</string>
     <string name="push_title">Push-Benachrichtigungen</string>
     <string name="push_enable">Push für andere Apps zustellen</string>
-    <string name="push_summary">Enyo arbeitet als UnifiedPush-Verteiler über ntfy, damit Apps wie Anura ohne Google-Dienste benachrichtigen können.</string>
+    <string name="push_summary">Enyo stellt UnifiedPush über ntfy zu, damit Apps wie Anura ohne Google-Dienste benachrichtigen.</string>
     <string name="push_server">ntfy-Server</string>
     <string name="push_server_note">Apps erhalten sofort neue Push-Adressen auf dem neuen Server.</string>
     <string name="push_server_default">ntfy.sh verwenden</string>
@@ -324,8 +324,26 @@
     <string name="push_allow">Erlauben</string>
     <string name="inbox_host_title">Geteilte Chats</string>
     <string name="inbox_host_enable">Chat-Apps mit Enyo teilen lassen</string>
-    <string name="inbox_host_summary">Apps mit UnifiedInbox zeigen ihre Chats hier direkt. Du kannst antworten, als gelesen markieren und Chats öffnen, ohne ihre Benachrichtigungen.</string>
+    <string name="inbox_host_summary">Apps mit UnifiedInbox zeigen ihre Chats hier. Du kannst antworten, als gelesen markieren und öffnen.</string>
     <string name="inbox_host_none">Noch keine App teilt ihre Chats. Wähle Enyo in der UnifiedInbox-Einstellung einer Chat-App.</string>
     <string name="inbox_host_sharing">Teilt ihre Chats</string>
     <string name="reply_failed_app">Die App konnte die Antwort nicht senden.</string>
+    <string name="update_title">Updates</string>
+    <string name="update_check">Nach Updates suchen</string>
+    <string name="update_version">Enyo %1$s</string>
+    <string name="update_debug">Debug-Build: Updates kommen mit dem nächsten installierten Build.</string>
+    <string name="update_current">Enyo %1$s ist aktuell.</string>
+    <string name="update_none_published">Es wurde noch keine Version veröffentlicht.</string>
+    <string name="update_check_failed">Update-Suche fehlgeschlagen: %1$s</string>
+    <string name="update_rate_limited">GitHub begrenzt gerade die Abfragen. Versuche es innerhalb einer Stunde erneut.</string>
+    <string name="update_available">Enyo %1$s ist verfügbar</string>
+    <string name="update_tap">Tippe, um die Neuerungen zu sehen und zu installieren.</string>
+    <string name="update_channel">Updates</string>
+    <string name="update_no_changelog">Es gibt keine Änderungsliste.</string>
+    <string name="update_install">Herunterladen und installieren</string>
+    <string name="update_later">Später</string>
+    <string name="update_downloading">Wird geladen … %1$d %%</string>
+    <string name="update_permission">Erlaube Enyo, Updates zu installieren, und tippe dann erneut auf Herunterladen und installieren.</string>
+    <string name="update_no_apk">Diese Version enthält keine installierbare APK.</string>
+    <string name="update_failed">Das Update ist fehlgeschlagen: %1$s</string>
 </resources>

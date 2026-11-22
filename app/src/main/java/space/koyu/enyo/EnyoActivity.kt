@@ -79,6 +79,7 @@ class EnyoActivity : ComponentActivity() {
         if (isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
         else if (todayActionKind(intent) != null) todayActionRequest.value = todayActionKind(intent)
         else if (newsRequest(intent) != null) NewsStore.requested.value = newsRequest(intent)
+        else if (intent.getBooleanExtra(Updates.extraShowUpdate, false)) Updates.showFromNotification(this)
         else if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             RecentStore.get(this).captureOnReturn?.invoke()
             homeSequence++
@@ -92,6 +93,8 @@ class EnyoActivity : ComponentActivity() {
         if (savedInstanceState == null && isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
         if (savedInstanceState == null) todayActionKind(intent)?.let { todayActionRequest.value = it }
         if (savedInstanceState == null) newsRequest(intent)?.let { NewsStore.requested.value = it }
+        if (savedInstanceState == null && intent.getBooleanExtra(Updates.extraShowUpdate, false)) Updates.showFromNotification(this)
+        Updates.schedule(this)
         enableEdgeToEdge()
         setContent {
             val dark = isSystemInDarkTheme()
@@ -137,6 +140,8 @@ class EnyoActivity : ComponentActivity() {
                             todayRequest?.let { kind -> TodayActionSheet(kind, ::openInternetPanel) { todayActionRequest.value = null } }
                             val newsRequested by NewsStore.requested.collectAsState()
                             newsRequested?.let { article -> NewsReader(article) { NewsStore.requested.value = null } }
+                            val update by Updates.offered.collectAsState()
+                            update?.let { release -> UpdateSheet(release) { Updates.offered.value = null } }
                         }
                     }
                 }

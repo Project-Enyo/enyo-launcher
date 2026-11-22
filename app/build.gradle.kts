@@ -11,10 +11,24 @@ android {
         applicationId = enyoId
         minSdk = 31
         targetSdk = 36
+        versionCode = 100
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        create("release") {
+            // Credentials come from the environment, so nothing secret lives in the repository.
+            System.getenv("SIGNING_KEYSTORE")?.let { storeFile = file(it) }
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "upload"
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: System.getenv("SIGNING_STORE_PASSWORD")
+        }
     }
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+        }
+        release {
+            if (System.getenv("SIGNING_KEYSTORE") != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     buildFeatures {
