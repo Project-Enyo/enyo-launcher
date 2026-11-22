@@ -10,9 +10,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +40,10 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.unit.LayoutDirection
@@ -87,6 +90,7 @@ internal suspend fun Context.movePin(component: ComponentName, anchor: Component
 }
 
 internal const val dockCapacity = 5
+private const val preparedTileLimit = 80
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -129,27 +133,49 @@ internal fun AppsGrid(
             drawFadedEdge(bottomBounds, bottomMask)
         }
     }
-    val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.50f, behindFraction = 0.30f) }
-    val state = rememberLazyGridState(cacheWindow = cache)
-    LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
-
-    fun appAt(index: Int): LauncherActivityInfo =
-        apps[if (index < extraIndex) index else index - 1]
-
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(tokens.appCellWidth),
-        modifier = Modifier.fillMaxSize().then(fade),
-        state = state,
-        contentPadding = PaddingValues(tokens.margin),
-        horizontalArrangement = Arrangement.spacedBy(tokens.gap),
-        verticalArrangement = Arrangement.spacedBy(tokens.gap)
-    ) {
-        items(
-            count = apps.size + 1,
-            key = { index -> if (index == extraIndex) "messages" else appAt(index).componentName.flattenToString() },
-            contentType = { "appTile" }
-        ) { index ->
-            if (index == extraIndex) extra() else tile(appAt(index))
+    BoxWithConstraints(Modifier.fillMaxSize().then(fade)) {
+        val width = maxWidth - tokens.margin * 2
+        val columns = ((width + tokens.gap) / (tokens.appCellWidth + tokens.gap)).toInt().coerceAtLeast(1)
+        val entries = apps.size + 1
+        val rows = (entries + columns - 1) / columns
+        val collection = Modifier.fillMaxSize().semantics { collectionInfo = CollectionInfo(rows, columns) }
+        val rowContent: @Composable (Int) -> Unit = { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                repeat(columns) { column ->
+                    val index = row * columns + column
+                    val cell = if (index < entries) Modifier.semantics {
+                        collectionItemInfo = CollectionItemInfo(row, 1, column, 1)
+                    } else Modifier
+                    Box(Modifier.weight(1f).then(cell)) {
+                        if (index == extraIndex) extra()
+                        else apps.getOrNull(if (index < extraIndex) index else index - 1)?.let { app ->
+                            key(app.componentName) { tile(app) }
+                        }
+                    }
+                }
+            }
+        }
+        if (entries <= preparedTileLimit) {
+            val state = rememberScrollState()
+            LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
+            Column(
+                collection.verticalScroll(state).padding(tokens.margin),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                repeat(rows) { rowContent(it) }
+            }
+        } else {
+            val cache = remember { LazyLayoutCacheWindow(aheadFraction = 0.50f, behindFraction = 0.30f) }
+            val state = rememberLazyListState(cacheWindow = cache)
+            LaunchedEffect(state) { snapshotFlow { !state.canScrollBackward }.collect { reportTop(it) } }
+            LazyColumn(
+                modifier = collection,
+                state = state,
+                contentPadding = PaddingValues(tokens.margin),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                items(rows, contentType = { "appRow" }) { rowContent(it) }
+            }
         }
     }
 }
