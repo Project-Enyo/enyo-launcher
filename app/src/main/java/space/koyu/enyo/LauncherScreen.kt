@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -122,10 +123,21 @@ internal fun LauncherScreen(
         apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
     }
     var messagesPicker by remember { mutableStateOf(false) }
-    val library = remember(apps) {
+    val messagesLabel = stringResource(R.string.messages)
+    val transitLabel = stringResource(R.string.transit)
+    val locale = LocalConfiguration.current.locales[0]
+    fun appLabel(app: LauncherActivityInfo): String =
+        if (app.componentName.packageName == transitPackage) transitLabel else labels[app.componentName].orEmpty()
+
+    val appCollator = remember(locale) { Collator.getInstance(locale) }
+    val library = remember(apps, labels, transitLabel, appCollator) {
         apps.filterNot { it.componentName.packageName in messagingPackages }.distinctBy {
             if (it.componentName.packageName == transitPackage) transitPackage else it.componentName.flattenToString()
-        }
+        }.sortedWith(compareBy(appCollator) { appLabel(it) })
+    }
+    val messagesIndex = remember(library, labels, transitLabel, messagesLabel, appCollator) {
+        library.indexOfFirst { appCollator.compare(appLabel(it), messagesLabel) >= 0 }
+            .takeIf { it >= 0 } ?: library.size
     }
     var transitPicker by remember { mutableStateOf(false) }
     var appMenu by remember { mutableStateOf<LauncherActivityInfo?>(null) }
@@ -295,20 +307,12 @@ internal fun LauncherScreen(
             ) { page ->
                 when (page) {
                     0 -> TodayBoard(foreground, pager.settledPage == 0 && surface == 0, weatherTap)
-                    1 -> AppsGrid(library, onAtTopChanged = { appsAtTop = it }, extra = {
-                        AppTile(stringResource(R.string.messages), { messagesPicker = true }) {
-                            androidx.compose.material3.Surface(
-                                modifier = Modifier.size(tokens.iconSize),
-                                color = tokens.accentContainer,
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(tokens.iconRadius)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.appGlyphSize)) }
-                            }
-                        }
+                    1 -> AppsGrid(library, messagesIndex, onAtTopChanged = { appsAtTop = it }, extra = {
+                        AppTile(messagesLabel, { messagesPicker = true }) { MessagesAppIcon() }
                     }) { app ->
                         val consolidated = app.componentName.packageName == transitPackage
                         AppTile(
-                            label = if (consolidated) stringResource(R.string.transit) else labels[app.componentName].orEmpty(),
+                            label = appLabel(app),
                             open = { if (consolidated) transitPicker = true else openApp(app) },
                             actions = if (consolidated) null else ({ appMenu = app })
                         ) { AppIcon(app, label = labels[app.componentName]) }

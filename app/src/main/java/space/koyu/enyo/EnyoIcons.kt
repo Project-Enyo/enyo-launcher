@@ -251,6 +251,18 @@ private fun extractLegacyForeground(bitmap: Bitmap, padding: Int, tolerance: Int
 }
 
 @Composable
+internal fun MessagesAppIcon() {
+    val tokens = LocalTokens.current
+    Box(
+        Modifier.size(tokens.iconSize)
+            .background(tokens.accentContainer, RoundedCornerShape(tokens.iconRadius)),
+        contentAlignment = Alignment.Center
+    ) {
+        EnyoGlyph(Glyph.Messages, Modifier.size(tokens.appGlyphSize))
+    }
+}
+
+@Composable
 internal fun EnyoGlyph(
     glyph: Glyph,
     modifier: Modifier = Modifier,

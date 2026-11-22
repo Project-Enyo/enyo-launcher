@@ -349,7 +349,7 @@ internal fun SearchScreen(
                 if (showMessages) item {
                     AppSearchResult(
                         label = messagesLabel,
-                        icon = { EnyoGlyph(Glyph.Messages, Modifier.size(tokens.iconSize), color = tokens.onAccentContainer) },
+                        icon = { MessagesAppIcon() },
                         open = openMessages
                     )
                 }

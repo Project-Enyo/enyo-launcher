@@ -91,7 +91,8 @@ private const val preparedTileLimit = 80
 @Composable
 internal fun AppsGrid(
     apps: List<LauncherActivityInfo>,
-    extra: (@Composable () -> Unit)? = null,
+    extraIndex: Int,
+    extra: @Composable () -> Unit,
     onAtTopChanged: (Boolean) -> Unit,
     tile: @Composable (LauncherActivityInfo) -> Unit
 ) {
@@ -112,8 +113,7 @@ internal fun AppsGrid(
     BoxWithConstraints(Modifier.fillMaxSize().then(fade)) {
         val width = maxWidth - tokens.margin * 2
         val columns = ((width + tokens.gap) / (tokens.appCellWidth + tokens.gap)).toInt().coerceAtLeast(1)
-        val leading = if (extra == null) 0 else 1
-        val entries = apps.size + leading
+        val entries = apps.size + 1
         val rows = (entries + columns - 1) / columns
         val collection = Modifier.fillMaxSize().semantics { collectionInfo = CollectionInfo(rows, columns) }
         val rowContent: @Composable (Int) -> Unit = { row ->
@@ -124,8 +124,8 @@ internal fun AppsGrid(
                         collectionItemInfo = CollectionItemInfo(row, 1, column, 1)
                     } else Modifier
                     Box(Modifier.weight(1f).then(cell)) {
-                        if (index < leading) extra?.invoke()
-                        else apps.getOrNull(index - leading)?.let { app ->
+                        if (index == extraIndex) extra()
+                        else apps.getOrNull(if (index < extraIndex) index else index - 1)?.let { app ->
                             key(app.componentName) { tile(app) }
                         }
                     }
