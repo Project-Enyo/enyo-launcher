@@ -386,7 +386,17 @@
     <string name="model_download_cancel">Download abbrechen</string>
     <string name="model_download_failed">Der Modell Download ist fehlgeschlagen. Versuche es erneut.</string>
     <string name="thread_route_number">%1$s Unterhaltung %2$d</string>
-    <string name="search_interpret_draft">Nachrichtenanfrage auswerten</string>
-    <string name="search_interpreting_draft">Nachrichtenanfrage wird ausgewertet…</string>
-    <string name="search_interpret_failed">Empfänger und Nachricht konnten nicht erkannt werden. Versuche „Schreib Alex, dass ich unterwegs bin“.</string>
+    <string name="search_interpret_draft">Anfrage auswerten</string>
+    <string name="search_interpreting_draft">Anfrage wird ausgewertet…</string>
+    <string name="search_interpret_failed">Es wurde keine unterstützte Aktion erkannt.</string>
+    <string name="search_torch_on">Taschenlampe einschalten</string>
+    <string name="search_torch_off">Taschenlampe ausschalten</string>
+    <string name="search_set_alarm">Wecker auf %1$s stellen</string>
+    <string name="search_set_timer">Timer für %1$d Min. %2$d Sek. starten</string>
+    <string name="search_finding_reply_routes">Verfügbare Chat Apps werden gesucht…</string>
+    <string name="search_reply_to">%1$s in %2$s antworten</string>
+    <string name="search_sms_to">SMS an %1$s</string>
+    <string name="search_proofread">Rechtschreibung und Grammatik prüfen</string>
+    <string name="search_original_wording">Ursprünglichen Text verwenden</string>
+    <string name="search_ai_summarize">Mit lokaler KI zusammenfassen</string>
 </resources>

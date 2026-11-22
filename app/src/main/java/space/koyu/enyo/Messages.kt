@@ -344,6 +344,7 @@ private fun NoticeItem(
                     modifier = Modifier.fillMaxWidth().padding(top = tokens.gap / 2),
                     color = tokens.accent, trackColor = tokens.widgetTrack)
             }
+            AiSummaryButton(listOfNotNull(title, body).joinToString("\n"))
             if (entry.isClearable) Box(
                 Modifier.size(tokens.touch).clip(CircleShape).appPress(dismiss).semantics { contentDescription = dismissLabel },
                 contentAlignment = Alignment.Center

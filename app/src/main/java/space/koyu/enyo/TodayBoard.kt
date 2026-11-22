@@ -10,7 +10,6 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.os.BatteryManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -96,8 +95,6 @@ internal fun TodayBoard(foreground: Int, visible: Boolean, weatherTap: Long) {
     )
 }
 
-private data class BatteryReading(val level: Float, val charging: Boolean)
-
 @Composable
 private fun rememberBattery(): BatteryReading? {
     val context = LocalContext.current
@@ -105,13 +102,7 @@ private fun rememberBattery(): BatteryReading? {
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                if (level >= 0 && scale > 0) {
-                    val power = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
-                    status = BatteryReading((level.toFloat() / scale).coerceIn(0f, 1f),
-                        power == BatteryManager.BATTERY_STATUS_CHARGING || power == BatteryManager.BATTERY_STATUS_FULL)
-                }
+                intent.batteryReading()?.let { status = it }
             }
         }
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)

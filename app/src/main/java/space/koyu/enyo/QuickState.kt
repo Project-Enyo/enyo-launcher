@@ -85,15 +85,7 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
     private val mediaManager = context.getSystemService(MediaSessionManager::class.java)
     private val notifications = context.getSystemService(NotificationManager::class.java)
     private val listener = ComponentName(context, EnyoNotificationService::class.java)
-    private val flashId by lazy {
-        runCatching {
-            camera.cameraIdList.mapNotNull { id ->
-                val characteristics = camera.getCameraCharacteristics(id)
-                id.takeIf { characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
-                    ?.let { it to (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) }
-            }.sortedByDescending { it.second }.firstOrNull()?.first
-        }.getOrNull()
-    }
+    private val flashId by lazy { camera.flashCameraId() }
 
     val snapshot = MutableStateFlow(QuickSnapshot())
 
@@ -216,7 +208,7 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
         val maximum = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val allowed = context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
         val bluetoothOutput = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-            it.type in bluetoothOutputs
+            it.type in bluetoothAudioOutputs
         }
         val peripheral = if (allowed && bluetoothOutput == null) runCatching {
             bluetooth.getConnectedDevices(BluetoothProfile.GATT).firstOrNull()?.name
@@ -411,11 +403,21 @@ internal class QuickState(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() = stop()
 
-    private companion object {
-        val bluetoothOutputs = setOf(
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER,
-            AudioDeviceInfo.TYPE_HEARING_AID
-        )
-    }
+
 }
+
+
+internal fun CameraManager.flashCameraId(): String? = runCatching {
+    cameraIdList.mapNotNull { id ->
+        val characteristics = getCameraCharacteristics(id)
+        id.takeIf { characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+            ?.let { it to (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) }
+    }.maxByOrNull { it.second }?.first
+}.getOrNull()
+
+
+internal val bluetoothAudioOutputs = setOf(
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER,
+    AudioDeviceInfo.TYPE_HEARING_AID
+)

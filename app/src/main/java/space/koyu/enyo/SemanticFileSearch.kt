@@ -23,6 +23,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -34,6 +35,7 @@ import kotlin.coroutines.coroutineContext
 private val semanticEnabled = booleanPreferencesKey("semantic_files")
 internal val semanticRevision = intPreferencesKey("semantic_revision")
 private const val periodicIndex = "periodic_file_index"
+private val fileIndexLock = Mutex()
 private const val immediateIndex = "initial_file_index"
 
 private const val clip = "Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/"
@@ -128,7 +130,7 @@ class SemanticFileIndexWorker(context: Context, parameters: WorkerParameters) : 
         val archive = MessageArchive.get(context)
         val scan = UUID.randomUUID().toString()
         try {
-            localInference.withLock {
+            fileIndexLock.withLock {
                 SearchEmbeddings(modelDirectory(context)).use { encoder ->
                     visitSearchFiles(context, source) { file ->
                         val kind = if (file.mime.startsWith("image/")) EmbeddingKind.Image else EmbeddingKind.Document
@@ -143,20 +145,22 @@ class SemanticFileIndexWorker(context: Context, parameters: WorkerParameters) : 
                             archive.read { it.execSQL("UPDATE semantic_files SET scan = ? WHERE source = ? AND uri = ?",
                                 arrayOf(scan, source, file.uri.toString())) }
                         } else {
-                            val vectors = when (kind) {
-                                EmbeddingKind.Image -> try {
-                                    listOf(encoder.image(context.contentResolver, file))
-                                } catch (_: java.io.IOException) {
-                                    emptyList()
-                                } catch (_: IllegalStateException) {
-                                    emptyList()
-                                }
-                                EmbeddingKind.Document -> {
-                                    val text = readSearchText(context.contentResolver, file)
-                                    if (text.isBlank()) emptyList() else {
-                                        text.take(8000).chunked(500).map { chunk ->
-                                            coroutineContext.ensureActive()
-                                            encoder.text(file.name + " " + chunk, kind)
+                            val vectors = localInference.withLock {
+                                when (kind) {
+                                    EmbeddingKind.Image -> try {
+                                        listOf(encoder.image(context.contentResolver, file))
+                                    } catch (_: java.io.IOException) {
+                                        emptyList()
+                                    } catch (_: IllegalStateException) {
+                                        emptyList()
+                                    }
+                                    EmbeddingKind.Document -> {
+                                        val text = readSearchText(context.contentResolver, file)
+                                        if (text.isBlank()) emptyList() else {
+                                            text.take(8000).chunked(500).map { chunk ->
+                                                coroutineContext.ensureActive()
+                                                encoder.text(file.name + " " + chunk, kind)
+                                            }
                                         }
                                     }
                                 }

@@ -14,7 +14,7 @@ When chats link to the same Android contact, Enyo combines their history and unr
 
 ## Search
 
-Search covers apps, settings, contacts, calendar events, saved messages, and files. A query such as “Message Alex to say that I’m on my way” can open an SMS draft with the recipient and message filled in. Review the draft and send it in your messaging app. With Local AI selected, use **Interpret message request** for wording the built in patterns do not recognize.
+Search covers apps, settings, contacts, calendar events, saved messages, and files. A query such as “Message Alex to say that I’m on my way” can open an SMS draft with the recipient and message filled in. Review the draft and send it in your messaging app. Drafts can also use chat apps with an available UnifiedInbox or notification reply. Search understands flashlight, alarm and timer requests. With Local AI selected, use **Interpret request** for unfamiliar wording. Draft previews offer spelling and grammar corrections.
 
 Under **Settings → Search**, choose a folder or enable **All files access** in Android Settings. Enyo searches filenames and extracts text from plain text, DOCX, XLSX, PPTX, ODT, ODS, and ODP files. PDF text search requires Android 15 or newer. Scanned PDFs need an existing text layer.
 
@@ -24,7 +24,7 @@ On ARM64 devices with at least 5 GiB of RAM reported by Android, **Settings → 
 
 For local chat, open **Settings → Local AI → Download recommended model**. Enyo downloads and verifies [Qwen3 0.6B INT4](https://huggingface.co/litert-community/Qwen3-0.6B-int4), then selects Local AI as the default assistant. The model takes about 347 MB. You can also import a compatible LiteRT LM file. Model downloads show progress in Android notifications and in Enyo’s overlay when enabled.
 
-Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox.
+Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox. Local AI can refer to relevant excerpts of earlier chats and show action previews inside a conversation. Use the sparkle button on a message or notification to summarize it. You can also ask Local AI for a summary of recent Inbox activity. When requested, it can use battery, Wi-Fi, Bluetooth, local time, upcoming calendar events, and the latest available weather widget reading.
 
 ## Build
 

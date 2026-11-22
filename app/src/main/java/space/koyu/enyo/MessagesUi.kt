@@ -452,7 +452,11 @@ private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boo
         ) {
             if (showSender && !message.outgoing && message.sender != null) Text(message.sender, style = tokens.pillLabel.copy(color = tokens.accent))
             ChatMarkdown(message.text, tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
-            Text("$app · $time", style = tokens.rowSummary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$app · $time", Modifier.weight(1f, fill = false), style = tokens.rowSummary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                AiSummaryButton(message.text)
+            }
         }
     }
 }

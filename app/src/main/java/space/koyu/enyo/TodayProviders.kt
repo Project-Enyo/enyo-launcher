@@ -67,6 +67,20 @@ class BatteryWidget : TodayProvider() { override val kind get() = TodayWidget.Ba
 class InternetWidget : TodayProvider() { override val kind get() = TodayWidget.Network }
 class NewsWidget : TodayProvider() { override val kind get() = TodayWidget.News }
 
+internal data class BatteryReading(val level: Float, val charging: Boolean)
+
+internal fun Intent.batteryReading(): BatteryReading? {
+    val level = getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+    val scale = getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+    if (level < 0 || scale <= 0) return null
+    val power = getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+    return BatteryReading((level.toFloat() / scale).coerceIn(0f, 1f),
+        power == BatteryManager.BATTERY_STATUS_CHARGING || power == BatteryManager.BATTERY_STATUS_FULL)
+}
+
+internal fun readBattery(context: Context): BatteryReading? =
+    context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.batteryReading()
+
 internal fun nextTodayEvent(context: Context, start: Long): String? {
     if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) return null
     return runCatching {
@@ -127,19 +141,14 @@ private fun renderTodayWidget(
             ))
             TodayWidget.Battery -> {
                 views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 28f)
-                val state = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                val level = state?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val scale = state?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                if (level >= 0 && scale > 0) {
-                    value(NumberFormat.getPercentInstance(locale).format(level.toDouble() / scale))
-                    val power = state?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-                    if (power == BatteryManager.BATTERY_STATUS_CHARGING || power == BatteryManager.BATTERY_STATUS_FULL) {
-                        detail(context.getString(R.string.widget_charging))
-                    }
+                val reading = readBattery(context)
+                if (reading != null) {
+                    value(NumberFormat.getPercentInstance(locale).format(reading.level.toDouble()))
+                    if (reading.charging) detail(context.getString(R.string.widget_charging))
                     if (expandedBattery) {
                         icon(Glyph.Battery)
                         views.setColorStateList(R.id.widget_icon, "setImageTintList", null)
-                        views.setImageViewBitmap(R.id.widget_icon, batteryWidgetImage(context, tokens, level.toFloat() / scale))
+                        views.setImageViewBitmap(R.id.widget_icon, batteryWidgetImage(context, tokens, reading.level))
                         views.setViewLayoutWidth(R.id.widget_icon, 92f, android.util.TypedValue.COMPLEX_UNIT_DIP)
                         views.setViewLayoutHeight(R.id.widget_icon, 46f, android.util.TypedValue.COMPLEX_UNIT_DIP)
                     }

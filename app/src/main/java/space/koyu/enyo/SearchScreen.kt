@@ -223,7 +223,6 @@ private val settingsDestinations = listOf(
 
 private enum class Command { Call, Message, Calendar, Web, Settings }
 
-private val draftPhonePattern = Regex("""[+\d][\d ().-]{2,}""")
 
 private data class Confirmation(val title: String, val intent: Intent)
 
@@ -305,24 +304,22 @@ internal fun SearchScreen(
         Command.Settings to stringResource(R.string.command_settings)
     )
     val input = query.text.trim()
-    val patternDraft = remember(input) { matchMessageDraft(input) }
+    val kind = remember(input) { intentKind(input) }
+    val patternAction = remember(input, kind) { matchMessageDraft(input) ?: kind?.let { matchDeviceAction(input, it) } }
     val localIntentAvailable = active && localReady && preferred == localAssistantId &&
-        patternDraft == null && looksLikeMessageRequest(input)
+        patternAction == null && kind != null
     var interpret by remember(input, localIntentAvailable) { mutableStateOf(false) }
-    var interpreting by remember(input, localIntentAvailable) { mutableStateOf(false) }
-    var interpretedDraft by remember(input, localIntentAvailable) { mutableStateOf<MessageDraft?>(null) }
+    var interpretedAction by remember(input, localIntentAvailable) { mutableStateOf<LauncherSearchAction?>(null) }
     var interpretationFailed by remember(input, localIntentAvailable) { mutableStateOf(false) }
     LaunchedEffect(input, localIntentAvailable, interpret) {
         if (localIntentAvailable && interpret) {
-            interpreting = true
-            interpretedDraft = interpretMessageDraft(context, input)
-            interpretationFailed = interpretedDraft == null
-            interpreting = false
+            interpretedAction = interpretLauncherAction(context, input, kind)
+            interpretationFailed = interpretedAction == null
         }
     }
-    val draft = patternDraft ?: interpretedDraft
+    val action = patternAction ?: interpretedAction
+    val draft = action as? MessageDraft
     val recipient = draft?.recipient
-    val draftBody = draft?.body
     val command = if (draft != null) commands.first { it.first == Command.Message }
     else commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
     val term = recipient ?: if (command == null) input else input.drop(command.second.length).trim()
@@ -339,7 +336,7 @@ internal fun SearchScreen(
         }
     }
     val folder = fileSearchSource()
-    val fileQuery = input.takeIf { active && command == null && it.length >= 2 }
+    val fileQuery = input.takeIf { active && command == null && action == null && !interpret && it.length >= 2 }
     val findFolder = folder
     val fileKey = findFolder to fileQuery
     val fileResults by key(fileKey) { produceState(emptyList<FileHit>()) {
@@ -515,18 +512,12 @@ internal fun SearchScreen(
         record(input)
         open(Intent(Intent.ACTION_VIEW, uri))
     }
-    fun openDraft(number: String) {
-        open(Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null)).putExtra("sms_body", draftBody))
-    }
-    val draftRecipients = when {
-        draft == null -> emptyList()
-        draftPhonePattern.matches(term) -> listOf(term to term)
-        else -> contacts.map { it.name.ifBlank { it.number } to it.number }
-    }
     // Submitting runs the topmost result, in the order the list shows them.
     val firstResult: (() -> Unit)? = if (input.isBlank()) null else when {
-        draftRecipients.size == 1 -> { { openDraft(draftRecipients.single().second) } }
-        draft != null -> null
+        patternAction is DeviceSearchAction -> {
+            { if (!patternAction.execute(context, openIntent)) status = R.string.action_unavailable }
+        }
+        action != null -> null
         localIntentAvailable && !interpretationFailed -> if (interpret) null else ({ interpret = true })
         showMessages -> openMessages
         appResults.isNotEmpty() -> appResults.first().let { app -> { launchResult(app) } }
@@ -620,24 +611,17 @@ internal fun SearchScreen(
                     SettingsAction(stringResource(R.string.search_history_clear), Glyph.Trash) { confirmClear = true }
                 }
             }
-            if (localIntentAvailable && draft == null && !interpretationFailed) item {
+            if (localIntentAvailable && action == null && !interpretationFailed) item {
                 ListCard {
-                    SettingsAction(stringResource(if (interpreting || interpret) R.string.search_interpreting_draft
-                        else R.string.search_interpret_draft), Glyph.Message, enabled = !interpret) {
+                    SettingsAction(stringResource(if (interpret) R.string.search_interpreting_draft
+                        else R.string.search_interpret_draft), Glyph.Sparkles, enabled = !interpret) {
                         interpret = true
                     }
                 }
             }
             if (interpretationFailed) item { ListCard { ListNote(stringResource(R.string.search_interpret_failed)) } }
-            if (draft != null) item {
-                SettingsPanel(stringResource(R.string.search_message_draft)) {
-                    if (draftRecipients.isEmpty()) ListNote(stringResource(R.string.search_draft_no_recipient, term))
-                    draftRecipients.forEach { (name, number) ->
-                        SettingsAction(name, Glyph.Message, summary = draftBody) { openDraft(number) }
-                    }
-                }
-            }
-            if (input.isNotBlank() && draft == null) {
+            if (action != null) item { IntentActionPreview(action, proofread = interpretedAction is MessageDraft, openIntent = openIntent) }
+            if (input.isNotBlank() && action == null) {
                 if (appResults.isNotEmpty() || showMessages) item {
                     SettingsPanel(stringResource(R.string.apps)) {
                         if (showMessages) ListRow(

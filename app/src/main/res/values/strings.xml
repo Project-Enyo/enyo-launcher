@@ -386,7 +386,17 @@
     <string name="model_download_cancel">Cancel download</string>
     <string name="model_download_failed">The model download failed. Try again.</string>
     <string name="thread_route_number">%1$s conversation %2$d</string>
-    <string name="search_interpret_draft">Interpret message request</string>
-    <string name="search_interpreting_draft">Interpreting message request…</string>
-    <string name="search_interpret_failed">Could not identify a recipient and message. Try “Message Alex to say that I’m on my way”.</string>
+    <string name="search_interpret_draft">Interpret request</string>
+    <string name="search_interpreting_draft">Interpreting request…</string>
+    <string name="search_interpret_failed">Could not identify a supported action.</string>
+    <string name="search_torch_on">Turn on the flashlight</string>
+    <string name="search_torch_off">Turn off the flashlight</string>
+    <string name="search_set_alarm">Set alarm for %1$s</string>
+    <string name="search_set_timer">Start timer for %1$d min %2$d sec</string>
+    <string name="search_finding_reply_routes">Finding available chat apps…</string>
+    <string name="search_reply_to">Reply to %1$s in %2$s</string>
+    <string name="search_sms_to">SMS to %1$s</string>
+    <string name="search_proofread">Check spelling and grammar</string>
+    <string name="search_original_wording">Use original wording</string>
+    <string name="search_ai_summarize">Summarize with Local AI</string>
 </resources>
