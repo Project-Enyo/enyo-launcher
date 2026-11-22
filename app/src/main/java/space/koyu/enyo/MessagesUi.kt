@@ -319,8 +319,9 @@ internal fun ThreadScreen(
 @Composable
 private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boolean, delete: () -> Unit) {
     val tokens = LocalTokens.current
+    val context = LocalContext.current
     val time = remember(message.postedAt) {
-        DateUtils.formatDateTime(null, message.postedAt, DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL)
+        DateUtils.formatDateTime(context, message.postedAt, DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL)
     }
     Box(Modifier.fillMaxWidth(), contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart) {
         Column(
