@@ -96,13 +96,15 @@
         <item quantity="other">%d Karten</item>
     </plurals>
     <string name="wallpaper">Hintergrundbild</string>
-    <string name="wallpaper_system">Android Hintergrundeinstellungen</string>
+    <string name="wallpaper_add">Hintergrund hinzufügen</string>
+    <string name="wallpaper_delete">Diesen Hintergrund entfernen</string>
+    <string name="wallpaper_delete_failed">Dieser Hintergrund konnte nicht entfernt werden</string>
+    <string name="wallpaper_move_earlier">Hintergrund nach vorne verschieben</string>
+    <string name="wallpaper_move_later">Hintergrund nach hinten verschieben</string>
     <string name="wallpaper_meadow">Offene Wiese</string>
     <string name="wallpaper_stream">Alpenbach</string>
     <string name="wallpaper_custom">Eigenes Bild</string>
-    <string name="wallpaper_scope">Wähle einen Android Hintergrund. Wenn Hintergrundfarben ausgewählt sind, erzeugt Android daraus die Akzentfarbe.</string>
-    <string name="wallpaper_pick">Bild auswählen</string>
-    <string name="wallpaper_apply_android">Für Android übernehmen</string>
+    <string name="wallpaper_apply_android">Hintergrund verwenden für</string>
     <string name="wallpaper_applied">Android Hintergrundbild aktualisiert</string>
     <string name="wallpaper_unavailable">Dieses Hintergrundbild konnte nicht übernommen werden</string>
     <string name="wallpaper_android_unavailable">Das Android Hintergrundbild kann in diesem Profil nicht geändert werden.</string>
@@ -144,7 +146,6 @@
     <string name="wallpaper_settings_summary">Wähle eine Landschaft oder dein eigenes Bild für Android.</string>
     <string name="setup_settings_summary">Prüfe den Zugriff für optionale Enyo Funktionen.</string>
     <string name="setup_welcome">Enyo einrichten</string>
-    <string name="wallpaper_gallery">Landschaftsgalerie</string>
     <string name="wallpaper_ruegen">Kreidefelsen auf Rügen</string>
     <string name="wallpaper_kiel">Kieler Rathaus</string>
     <string name="wallpaper_photo_credit">Foto von %1$s · CC BY SA 4.0</string>

@@ -121,7 +121,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val toggleWidth = 48.dp
     val toggleHeight = 26.dp
     val toggleInset = 4.dp
-    val wallpaperThumbnail = 82.dp
+    val wallpaperThumbnail = 108.dp
+    val wallpaperDeleteBubble = 26.dp
     val todayWidgetHeight = dimension(144, 112, 108, 112).dp
     val notificationTrayHeight = dimension(240, 210, 180, 148).dp
     val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)

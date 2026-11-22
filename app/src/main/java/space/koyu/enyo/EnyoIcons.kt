@@ -49,6 +49,7 @@ internal enum class Glyph(val drawable: Int) {
     Back(R.drawable.tabler_arrow_left),
     Forward(R.drawable.tabler_chevron_right),
     Close(R.drawable.tabler_x),
+    Plus(R.drawable.tabler_plus),
     Location(R.drawable.tabler_map_pin),
     LocationOff(R.drawable.tabler_map_pin_off),
     Battery(R.drawable.tabler_battery),
