@@ -162,8 +162,9 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
                 CompositionLocalProvider(LocalTokens provides tokens) {
                     OverlayCard(entry, close = ::dismiss) {
                         if (!keyguard.isKeyguardLocked) {
-                            val sent = entry.openFromForeground(context)
-                            if (!sent) context.launchSafely(Intent(context, EnyoActivity::class.java)
+                            // The notification's own target first, then its app, and Enyo only when neither opens.
+                            val opened = entry.openFromForeground(context) || context.launchNotifyingApp(entry.packageName)
+                            if (!opened) context.launchSafely(Intent(context, EnyoActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
                         dismiss()

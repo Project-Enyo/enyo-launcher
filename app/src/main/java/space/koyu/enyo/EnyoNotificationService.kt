@@ -149,3 +149,11 @@ internal fun StatusBarNotification.openFromForeground(context: android.content.C
     if (sent && notification.flags and Notification.FLAG_AUTO_CANCEL != 0) EnyoNotificationService.dismiss(key)
     return sent
 }
+
+/** Starts the main activity of the app that posted a notification, in the current profile. */
+internal fun android.content.Context.launchNotifyingApp(packageName: String): Boolean = runCatching {
+    val launcher = getSystemService(android.content.pm.LauncherApps::class.java)
+    val activity = launcher.getActivityList(packageName, Process.myUserHandle()).firstOrNull() ?: return false
+    launcher.startMainActivity(activity.componentName, activity.user, null, null)
+    true
+}.getOrDefault(false)
