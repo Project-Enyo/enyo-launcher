@@ -141,8 +141,6 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val sheetMaxWidth = 480.dp
     val sheetRadius = dimension(30, 26, 24).dp
     val dockCellWidth = dimension(68, 62, 58, 48).dp
-    val brandInk = Color.White
-    val brandSurface = if (dark) accentContainer else accent
     val appCellWidth = dimension(94, 86, 78, 68).dp
     val appCellHeight = dimension(100, 96, 88, 80).dp
     val iconSize = 56.dp

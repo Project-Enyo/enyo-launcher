@@ -101,18 +101,18 @@ internal fun AppIcon(app: LauncherActivityInfo, modifier: Modifier = Modifier, d
     Box(
         modifier.size(displaySize)
             .then(if (originals) Modifier else Modifier
-                .background(if (brand || arches) tokens.brandSurface else tokens.accentContainer, shape)),
+                .background(tokens.accentContainer, shape)),
         contentAlignment = Alignment.Center
     ) {
         when {
             !originals && arches -> Image(
                 painterResource(R.drawable.mcdonalds_arches), null, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)),
-                colorFilter = ColorFilter.tint(tokens.brandInk)
+                colorFilter = ColorFilter.tint(tokens.ink)
             )
             !originals && dedicated != null -> EnyoGlyph(dedicated, Modifier.size(minOf(tokens.appGlyphSize, displaySize * 0.55f)))
             icon != null -> Image(
                 icon, null, Modifier.fillMaxSize(),
-                colorFilter = if (!originals && brand) ColorFilter.tint(tokens.brandInk) else null
+                colorFilter = if (!originals && brand) ColorFilter.tint(tokens.ink) else null
             )
             else -> {
                 val fallback = (label ?: app.label.toString()).trim()
