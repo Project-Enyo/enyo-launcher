@@ -206,4 +206,5 @@
     <string name="search_history_clear">Clear search history</string>
     <string name="search_history_clear_message">Delete all saved searches from Enyo?</string>
     <string name="assistant_share_query">Share query with %1$s</string>
+    <string name="inbox_notifications_heading">Notifications</string>
 </resources>

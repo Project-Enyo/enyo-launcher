@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.service.notification.StatusBarNotification
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -19,6 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 
 internal val messagingPackages = setOf(
     "space.koyu.apollo.mini", "space.koyu.apollo", "org.telegram.messenger", "com.whatsapp",
@@ -53,29 +57,54 @@ internal fun InboxPage(
         val provider = apps.firstOrNull { it.componentName.packageName == entry.packageName }
         if (provider == null) failed = true else openApp(provider)
     }
-    if (messages.isEmpty() && others.isEmpty()) {
-        Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
-            WorkspaceEmptyState(R.string.inbox_empty)
-        }
-    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
-        if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
-        if (messages.isNotEmpty()) {
-            if (group == null) item {
-                TextButton(onClick = { expanded = !expanded }) {
-                    EnyoGlyph(Glyph.Messages)
-                    Spacer(Modifier.width(tokens.gap))
-                    Text(stringResource(R.string.messages), style = tokens.state)
+    val providers = remember(apps) {
+        apps.filter { it.componentName.packageName in messagingPackages }.distinctBy { it.componentName.packageName }
+    }
+    Column(Modifier.fillMaxSize()) {
+        if (group == null) {
+            if (providers.isNotEmpty()) LazyRow(
+                contentPadding = PaddingValues(horizontal = tokens.margin),
+                horizontalArrangement = Arrangement.spacedBy(tokens.gap)
+            ) {
+                items(providers, key = { it.componentName.flattenToString() }) { app ->
+                    val name = labels.getValue(app.componentName.packageName)
+                    Box(
+                        Modifier.size(tokens.iconSize).appPress({ openApp(app) })
+                            .semantics { contentDescription = name },
+                        contentAlignment = Alignment.Center
+                    ) { AppIcon(app, label = name) }
                 }
             }
-            if (expanded) items(messages, key = { it.key }) { entry ->
-                NoticeRow(entry, labels[entry.packageName] ?: sourceLabel(context, entry.packageName),
-                    { open(entry) }, { draft = ""; draftEntry = entry.key }, { failed = !EnyoNotificationService.dismiss(entry.key) })
-            }
+            Text(
+                stringResource(R.string.inbox_notifications_heading),
+                Modifier.padding(horizontal = tokens.margin).padding(top = tokens.gap).semantics { heading() },
+                style = tokens.state
+            )
         }
-        others.groupBy { it.packageName }.forEach { (source, notifications) ->
-            item { Text(labels[source] ?: sourceLabel(context, source), style = tokens.state) }
-            items(notifications, key = { it.key }) { entry ->
-                NoticeRow(entry, null, { open(entry) }, null, { failed = !EnyoNotificationService.dismiss(entry.key) })
+        if (messages.isEmpty() && others.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(tokens.margin), contentAlignment = Alignment.Center) {
+                WorkspaceEmptyState(R.string.inbox_empty)
+            }
+        } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(tokens.margin)) {
+            if (failed) item { Text(stringResource(R.string.action_unavailable), style = tokens.secondary) }
+            if (messages.isNotEmpty()) {
+                if (group == null) item {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        EnyoGlyph(Glyph.Messages)
+                        Spacer(Modifier.width(tokens.gap))
+                        Text(stringResource(R.string.messages), style = tokens.state)
+                    }
+                }
+                if (expanded) items(messages, key = { it.key }) { entry ->
+                    NoticeRow(entry, labels[entry.packageName] ?: sourceLabel(context, entry.packageName),
+                        { open(entry) }, { draft = ""; draftEntry = entry.key }, { failed = !EnyoNotificationService.dismiss(entry.key) })
+                }
+            }
+            others.groupBy { it.packageName }.forEach { (source, notifications) ->
+                item { Text(labels[source] ?: sourceLabel(context, source), style = tokens.state) }
+                items(notifications, key = { it.key }) { entry ->
+                    NoticeRow(entry, null, { open(entry) }, null, { failed = !EnyoNotificationService.dismiss(entry.key) })
+                }
             }
         }
     }
