@@ -95,6 +95,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val widgetTrack = accent.copy(alpha = 0.22f)
     val dockSurface = lerp(surface, accentContainer, 0.48f)
     val settingsBackground = lerp(background, accentContainer, 0.40f)
+    /** Warnings and destructive countdowns. */
+    val danger = tone(0xFFC62828, 0xFFFF8A80)
     val wallpaperTint = lerp(Color.Black, accent, 0.42f).copy(alpha = 0.14f)
 
     val margin = dimension(20, 16, 12).dp

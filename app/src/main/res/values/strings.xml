@@ -346,4 +346,6 @@
     <string name="update_permission">Allow Enyo to install updates, then tap Download and install again.</string>
     <string name="update_no_apk">This release has no APK to install.</string>
     <string name="update_failed">The update failed: %1$s</string>
+    <string name="restart_title">Restart Enyo</string>
+    <string name="restart_summary">Touch and hold for 3 seconds.</string>
 </resources>

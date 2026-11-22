@@ -346,4 +346,6 @@
     <string name="update_permission">Erlaube Enyo, Updates zu installieren, und tippe dann erneut auf Herunterladen und installieren.</string>
     <string name="update_no_apk">Diese Version enthält keine installierbare APK.</string>
     <string name="update_failed">Das Update ist fehlgeschlagen: %1$s</string>
+    <string name="restart_title">Enyo neu starten</string>
+    <string name="restart_summary">3 Sekunden gedrückt halten.</string>
 </resources>
