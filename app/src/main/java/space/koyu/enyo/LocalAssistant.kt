@@ -341,6 +341,29 @@ internal object AssistantChats {
     }
 }
 
+internal suspend fun interpretMessageDraft(context: Context, query: String): MessageDraft? {
+    val instruction = """
+        Extract the recipient name and exact SMS text from the last input. Reply with JSON only.
+        Input: Can you get a message over to Alice with the words I am running late
+        Output: {"recipient":"Alice","body":"I am running late"}
+        Input: Write to Marco and let him know the meeting is cancelled
+        Output: {"recipient":"Marco","body":"the meeting is cancelled"}
+        Input: Find the last message from Bob
+        Output: {}
+        Copy the recipient and message text verbatim. If there is no request to draft a message, return {}.
+    """.trimIndent()
+    return try {
+        val result = generateReply(context, emptyList(), "$instruction\nInput: $query\nOutput:") {}
+        modelMessageDraft(query, result)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    } catch (_: LinkageError) {
+        null
+    }
+}
+
 private suspend fun generateReply(
     context: Context,
     history: List<AssistantTurn>,

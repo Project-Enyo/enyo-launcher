@@ -14,7 +14,7 @@ When chats link to the same Android contact, Enyo combines their history and unr
 
 ## Search
 
-Search covers apps, settings, contacts, calendar events, saved messages, and files. A query such as “Send a message to Alex that I’m on my way” can open an SMS draft with the recipient and message filled in. Review the draft and send it in your messaging app.
+Search covers apps, settings, contacts, calendar events, saved messages, and files. A query such as “Message Alex to say that I’m on my way” can open an SMS draft with the recipient and message filled in. Review the draft and send it in your messaging app. With Local AI selected, use **Interpret message request** for wording the built in patterns do not recognize.
 
 Under **Settings → Search**, choose a folder or enable **All files access** in Android Settings. Enyo searches filenames and extracts text from plain text, DOCX, XLSX, PPTX, ODT, ODS, and ODP files. PDF text search requires Android 15 or newer. Scanned PDFs need an existing text layer.
 

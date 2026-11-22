@@ -386,4 +386,7 @@
     <string name="model_download_cancel">Download abbrechen</string>
     <string name="model_download_failed">Der Modell Download ist fehlgeschlagen. Versuche es erneut.</string>
     <string name="thread_route_number">%1$s Unterhaltung %2$d</string>
+    <string name="search_interpret_draft">Nachrichtenanfrage auswerten</string>
+    <string name="search_interpreting_draft">Nachrichtenanfrage wird ausgewertet…</string>
+    <string name="search_interpret_failed">Empfänger und Nachricht konnten nicht erkannt werden. Versuche „Schreib Alex, dass ich unterwegs bin“.</string>
 </resources>

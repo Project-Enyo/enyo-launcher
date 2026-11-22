@@ -223,10 +223,6 @@ private val settingsDestinations = listOf(
 
 private enum class Command { Call, Message, Calendar, Web, Settings }
 
-private val messageDraftPattern = Regex(
-    """(?:send (?:a |an )?(?:text |sms )?message to (.+?) (?:that|saying) (.+)|(?:sende|schicke) (?:eine )?nachricht an (.+?)[,:]? (?:dass|mit dem text) (.+))""",
-    RegexOption.IGNORE_CASE
-)
 private val draftPhonePattern = Regex("""[+\d][\d ().-]{2,}""")
 
 private data class Confirmation(val title: String, val intent: Intent)
@@ -309,9 +305,24 @@ internal fun SearchScreen(
         Command.Settings to stringResource(R.string.command_settings)
     )
     val input = query.text.trim()
-    val draft = remember(input) { messageDraftPattern.matchEntire(input) }
-    val recipient = draft?.groupValues?.let { it[1].ifBlank { it[3] }.trim() }
-    val draftBody = draft?.groupValues?.let { it[2].ifBlank { it[4] } }
+    val patternDraft = remember(input) { matchMessageDraft(input) }
+    val localIntentAvailable = active && localReady && preferred == localAssistantId &&
+        patternDraft == null && looksLikeMessageRequest(input)
+    var interpret by remember(input, localIntentAvailable) { mutableStateOf(false) }
+    var interpreting by remember(input, localIntentAvailable) { mutableStateOf(false) }
+    var interpretedDraft by remember(input, localIntentAvailable) { mutableStateOf<MessageDraft?>(null) }
+    var interpretationFailed by remember(input, localIntentAvailable) { mutableStateOf(false) }
+    LaunchedEffect(input, localIntentAvailable, interpret) {
+        if (localIntentAvailable && interpret) {
+            interpreting = true
+            interpretedDraft = interpretMessageDraft(context, input)
+            interpretationFailed = interpretedDraft == null
+            interpreting = false
+        }
+    }
+    val draft = patternDraft ?: interpretedDraft
+    val recipient = draft?.recipient
+    val draftBody = draft?.body
     val command = if (draft != null) commands.first { it.first == Command.Message }
     else commands.firstOrNull { input.startsWith(it.second + " ", ignoreCase = true) }
     val term = recipient ?: if (command == null) input else input.drop(command.second.length).trim()
@@ -514,8 +525,9 @@ internal fun SearchScreen(
     }
     // Submitting runs the topmost result, in the order the list shows them.
     val firstResult: (() -> Unit)? = if (input.isBlank()) null else when {
-        draftRecipients.isNotEmpty() -> { { openDraft(draftRecipients.first().second) } }
+        draftRecipients.size == 1 -> { { openDraft(draftRecipients.single().second) } }
         draft != null -> null
+        localIntentAvailable && !interpretationFailed -> if (interpret) null else ({ interpret = true })
         showMessages -> openMessages
         appResults.isNotEmpty() -> appResults.first().let { app -> { launchResult(app) } }
         settingsResults.isNotEmpty() -> settingsResults.first().let { destination -> { open(Intent(destination.action)) } }
@@ -608,6 +620,15 @@ internal fun SearchScreen(
                     SettingsAction(stringResource(R.string.search_history_clear), Glyph.Trash) { confirmClear = true }
                 }
             }
+            if (localIntentAvailable && draft == null && !interpretationFailed) item {
+                ListCard {
+                    SettingsAction(stringResource(if (interpreting || interpret) R.string.search_interpreting_draft
+                        else R.string.search_interpret_draft), Glyph.Message, enabled = !interpret) {
+                        interpret = true
+                    }
+                }
+            }
+            if (interpretationFailed) item { ListCard { ListNote(stringResource(R.string.search_interpret_failed)) } }
             if (draft != null) item {
                 SettingsPanel(stringResource(R.string.search_message_draft)) {
                     if (draftRecipients.isEmpty()) ListNote(stringResource(R.string.search_draft_no_recipient, term))
