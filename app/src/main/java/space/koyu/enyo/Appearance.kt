@@ -1,13 +1,16 @@
 package space.koyu.enyo
 
+import android.Manifest
 import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -51,6 +54,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -146,6 +150,18 @@ internal fun AppearanceScreen(back: () -> Unit) {
     var drag by remember { mutableStateOf<WallpaperDrag?>(null) }
     var notice by rememberSaveable { mutableIntStateOf(0) }
     var applying by remember { mutableStateOf(false) }
+    var pendingWallpaper by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDestination by rememberSaveable { mutableIntStateOf(0) }
+    var waitingForNotifications by rememberSaveable { mutableStateOf(false) }
+    val requestNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        waitingForNotifications = false
+    }
+    val notificationPreferences = remember(context) {
+        context.getSharedPreferences("wallpaper_notifications", Context.MODE_PRIVATE)
+    }
+    val previews = rememberWallpaperPreviews(manager)
+    val customization = remember { Intent(Intent.ACTION_SET_WALLPAPER) }
+    val canCustomize = remember(context) { customization.resolveActivity(context.packageManager) != null }
     val canApply = remember(manager) { manager.isWallpaperSupported && manager.isSetWallpaperAllowed }
     val addLabel = stringResource(R.string.wallpaper_add)
     val deleteLabel = stringResource(R.string.wallpaper_delete)
@@ -197,21 +213,49 @@ internal fun AppearanceScreen(back: () -> Unit) {
         }
     }
 
-    fun apply(wallpaper: GalleryWallpaper, which: Int) {
+    fun chooseDestination(wallpaper: GalleryWallpaper, which: Int) {
         targetId = null
         notice = 0
+        pendingWallpaper = wallpaper.id
+        pendingDestination = which
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !notificationPreferences.getBoolean("asked", false)
+        ) {
+            notificationPreferences.edit().putBoolean("asked", true).apply()
+            waitingForNotifications = true
+            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(pendingWallpaper, pendingDestination, waitingForNotifications, gallery) {
+        val id = pendingWallpaper ?: return@LaunchedEffect
+        if (waitingForNotifications || pendingDestination == 0 || applying) return@LaunchedEffect
+        val wallpaper = gallery.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        val which = pendingDestination
+        pendingWallpaper = null
+        pendingDestination = 0
         applying = true
         scope.launch {
-            val success = withContext(Dispatchers.IO) {
-                val bitmap = context.decode(wallpaper) ?: return@withContext false
-                try {
-                    runCatching { manager.setBitmap(bitmap, adjustCrop(bitmap, context), false, which) != 0 }.getOrDefault(false)
-                } finally {
-                    bitmap.recycle()
+            try {
+                val wallpaperId = withContext(NonCancellable + Dispatchers.IO) {
+                    val bitmap = context.decode(wallpaper) ?: return@withContext 0
+                    try {
+                        val crop = adjustCrop(bitmap, context)
+                        val id = runCatching { manager.setBitmap(bitmap, crop, false, which) }.getOrDefault(0)
+                        if (id > 0) {
+                            context.saveWallpaperPreview(manager, id, bitmap, crop)
+                            context.notifyWallpaperApplied(which)
+                        }
+                        id
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
+                if (wallpaperId <= 0) notice = R.string.wallpaper_unavailable
+            } finally {
+                applying = false
             }
-            notice = if (success) R.string.wallpaper_applied else R.string.wallpaper_unavailable
-            applying = false
         }
     }
 
@@ -234,6 +278,16 @@ internal fun AppearanceScreen(back: () -> Unit) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             SettingsHeading(stringResource(R.string.wallpaper), ::leave)
             if (notice != 0) Text(stringResource(notice), style = tokens.secondary)
+        }
+        item(key = "current_home_wallpaper") { CurrentWallpaperTile(R.string.wallpaper_home, previews.home) }
+        item(key = "current_lock_wallpaper") { CurrentWallpaperTile(R.string.wallpaper_lock, previews.lock) }
+        if (canCustomize) item(key = "customize_android", span = { GridItemSpan(maxLineSpan) }) {
+            Box(Modifier.fillMaxWidth().background(tokens.widgetSurface, RoundedCornerShape(tokens.artworkRadius))) {
+                SettingsLink(stringResource(R.string.wallpaper_android_customize), glyph = Glyph.Settings) {
+                    if (deletion != null) deletion = null
+                    else if (!context.launchSafely(customization)) notice = R.string.action_unavailable
+                }
+            }
         }
         itemsIndexed(gallery, key = { _, item -> item.id }) { index, wallpaper ->
             val label = stringResource(wallpaper.label)
@@ -258,7 +312,7 @@ internal fun AppearanceScreen(back: () -> Unit) {
                         drag?.takeIf { it.offset != Offset.Zero }?.let { moved ->
                             val center = moved.origin + moved.offset
                             val destination = grid.layoutInfo.visibleItemsInfo
-                                .firstOrNull { it.key != moved.id && it.key is String && it.key != addWallpaperKey &&
+                                .firstOrNull { it.key != moved.id && gallery.any { entry -> entry.id == it.key } &&
                                     center.x >= it.offset.x && center.x <= it.offset.x + it.size.width &&
                                     center.y >= it.offset.y && center.y <= it.offset.y + it.size.height }
                             val key = destination?.key as? String
@@ -342,13 +396,13 @@ internal fun AppearanceScreen(back: () -> Unit) {
             if (source != null && photographer != null) TextButton(
                 onClick = { context.launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(source))) }
             ) { Text(stringResource(R.string.wallpaper_photo_credit, photographer), style = tokens.secondary) }
-            TextButton(onClick = { apply(wallpaper, WallpaperManager.FLAG_SYSTEM) }) {
+            TextButton(onClick = { chooseDestination(wallpaper, WallpaperManager.FLAG_SYSTEM) }) {
                 Text(stringResource(R.string.wallpaper_home))
             }
-            TextButton(onClick = { apply(wallpaper, WallpaperManager.FLAG_LOCK) }) {
+            TextButton(onClick = { chooseDestination(wallpaper, WallpaperManager.FLAG_LOCK) }) {
                 Text(stringResource(R.string.wallpaper_lock))
             }
-            TextButton(onClick = { apply(wallpaper, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) }) {
+            TextButton(onClick = { chooseDestination(wallpaper, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) }) {
                 Text(stringResource(R.string.wallpaper_both))
             }
         }

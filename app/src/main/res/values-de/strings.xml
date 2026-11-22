@@ -105,6 +105,9 @@
     <string name="wallpaper_stream">Alpenbach</string>
     <string name="wallpaper_custom">Eigenes Bild</string>
     <string name="wallpaper_apply_android">Hintergrund verwenden für</string>
+    <string name="wallpaper_preview_unavailable">Bildvorschau nicht verfügbar</string>
+    <string name="wallpaper_android_customize">Android Personalisierung</string>
+    <string name="wallpaper_notification_channel">Hintergrundänderungen</string>
     <string name="wallpaper_applied">Android Hintergrundbild aktualisiert</string>
     <string name="wallpaper_unavailable">Dieses Hintergrundbild konnte nicht übernommen werden</string>
     <string name="wallpaper_android_unavailable">Das Android Hintergrundbild kann in diesem Profil nicht geändert werden.</string>
