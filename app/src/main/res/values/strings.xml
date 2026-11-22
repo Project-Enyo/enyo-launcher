@@ -203,4 +203,6 @@
     <string name="task_close_title">Close apps from Cards</string>
     <string name="task_close_description">With Shizuku access, swiping a card away also closes its matching Android task.</string>
     <string name="default_assistant_unavailable">%1$s is unavailable. Enyo will use the selected app until it returns.</string>
+    <string name="search_history_clear">Clear search history</string>
+    <string name="search_history_clear_message">Delete all saved searches from Enyo?</string>
 </resources>

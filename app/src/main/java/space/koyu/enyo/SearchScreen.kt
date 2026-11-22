@@ -441,6 +441,8 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val appearance = context.appearancePreferences
     val originals = LocalOriginalIcons.current
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
+    val hasHistory by remember(store) { store.data.map { !it[searchHistory].isNullOrBlank() } }.collectAsState(false)
+    var confirmClearHistory by remember { mutableStateOf(false) }
     LazyColumn(
         Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding(),
         contentPadding = PaddingValues(tokens.margin),
@@ -466,6 +468,10 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                         }
                     }
                 }
+                TextButton(
+                    enabled = hasHistory,
+                    onClick = { confirmClearHistory = true }
+                ) { Text(stringResource(R.string.search_history_clear)) }
             }
         }
         if (installed.isNotEmpty()) item {
@@ -479,6 +485,18 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
             SettingsPanel(null) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
                     Glyph.Settings, setup)
+            }
+        }
+    }
+    if (confirmClearHistory) {
+        EnyoSheet(stringResource(R.string.search_history_clear), { confirmClearHistory = false }) {
+            Text(stringResource(R.string.search_history_clear_message), style = tokens.secondary)
+            Row {
+                SearchButton(R.string.cancel) { confirmClearHistory = false }
+                SearchButton(R.string.search_history_clear) {
+                    confirmClearHistory = false
+                    scope.launch { store.edit { it.remove(searchHistory) } }
+                }
             }
         }
     }
