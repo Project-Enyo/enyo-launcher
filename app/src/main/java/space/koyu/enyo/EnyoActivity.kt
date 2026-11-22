@@ -86,6 +86,8 @@ class EnyoActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The launcher in front is allowed to start the push connection; it then keeps itself running.
+        if (PushDistributor.enabled(this) && PushDistributor.load(this).isNotEmpty()) PushConnection.start(this)
         if (savedInstanceState == null && isWeatherWidgetIntent(intent)) weatherTap = SystemClock.elapsedRealtime()
         if (savedInstanceState == null) todayActionKind(intent)?.let { todayActionRequest.value = it }
         if (savedInstanceState == null) newsRequest(intent)?.let { NewsStore.requested.value = it }

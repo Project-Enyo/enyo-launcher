@@ -304,4 +304,16 @@
     <string name="contact_details_of">Details for %1$s</string>
     <string name="inbox_api_permission">Share chats with the Enyo inbox</string>
     <string name="inbox_api_permission_description">Lets the app add its conversations to Enyo\'s unified inbox and read back its own conversations there.</string>
+    <string name="push_title">Push notifications</string>
+    <string name="push_enable">Deliver push for other apps</string>
+    <string name="push_summary">Enyo works as a UnifiedPush distributor through ntfy, so apps like Anura get notifications without Google services.</string>
+    <string name="push_server">ntfy server</string>
+    <string name="push_server_note">Apps get new push addresses on the new server right away.</string>
+    <string name="push_server_default">Use ntfy.sh</string>
+    <string name="push_no_apps">No app uses Enyo for push yet. Pick Enyo in an app\'s push settings.</string>
+    <string name="push_connected">Connected</string>
+    <string name="push_connecting">Connecting…</string>
+    <string name="push_channel">Push connection</string>
+    <string name="push_running">Push notifications are active</string>
+    <string name="push_running_detail">Delivering for %1$d apps</string>
 </resources>

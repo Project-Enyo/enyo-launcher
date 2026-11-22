@@ -702,6 +702,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
         }
         item { OverlayPreference() }
         item { TaskClosePreference() }
+        item { PushPreference() }
         item {
             SettingsPanel(stringResource(R.string.settings_system)) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
