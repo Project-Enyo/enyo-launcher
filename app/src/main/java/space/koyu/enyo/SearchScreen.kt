@@ -23,6 +23,8 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -91,7 +93,7 @@ private fun installedAssistants(packageCycle: Int): List<InstalledAssistant> {
                 runCatching {
                     val intent = manager.getLaunchIntentForPackage(assistant.appId) ?: return@mapNotNull null
                     val activity = manager.resolveActivity(intent, 0)?.activityInfo ?: return@mapNotNull null
-                    if (!activity.enabled || !activity.applicationInfo.enabled) return@mapNotNull null
+                    if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) return@mapNotNull null
                     val drawable = activity.loadIcon(manager)
                     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                     drawable.setBounds(0, 0, size, size)
@@ -168,8 +170,8 @@ internal fun SearchScreen(
     val preferred by remember(store) { store.data.map { it[defaultAssistant] } }.collectAsState(null)
     val scope = rememberCoroutineScope()
     val history by remember(store) { store.data.map { it[searchHistory].orEmpty() } }.collectAsState("")
-    val matchesPreferred = installed.find { it.assistant.appId == preferred }
-    val activeAssistant = selected?.let { choice -> installed.find { it.assistant == choice } ?: matchesPreferred ?: installed.firstOrNull() }
+    val defaultOption = installed.defaultOption(preferred)
+    val activeAssistant = selected?.let { choice -> installed.find { it.assistant == choice } ?: defaultOption }
     fun record(term: String) {
         if (term.isBlank()) return
         scope.launch {
@@ -373,7 +375,7 @@ internal fun SearchScreen(
             }
             if (active && installed.isNotEmpty()) item {
                 SearchButton(R.string.assistant_search) {
-                    if (selected == null) selected = (matchesPreferred ?: installed.first()).assistant
+                    if (selected == null) selected = (defaultOption ?: installed.first()).assistant
                     else choosing = true
                 }
                 activeAssistant?.let {
@@ -391,7 +393,7 @@ internal fun SearchScreen(
         }
     }
     if (choosing && installed.isNotEmpty()) {
-        val ordered = installed.sortedByDescending { it.assistant.appId == preferred }
+        val ordered = installed.sortedByDescending { it == defaultOption }
         EnyoSheet(stringResource(R.string.assistant_search), { choosing = false }) {
             ordered.forEach { option -> AssistantButton(option) { selected = option.assistant; choosing = false } }
         }
@@ -464,14 +466,11 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                         }
                     }
                 }
-                if (installed.isNotEmpty()) {
-                    Text(stringResource(R.string.default_assistant), style = tokens.label)
-                    installed.forEach { option ->
-                        val isSelected = preferred == option.assistant.appId
-                        AssistantButton(option) { scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } } }
-                        if (isSelected) Text(stringResource(R.string.setup_enabled), style = tokens.label)
-                    }
-                }
+            }
+        }
+        if (installed.isNotEmpty()) item {
+            DefaultAssistantCard(installed, preferred) { option ->
+                scope.launch { store.edit { it[defaultAssistant] = option.assistant.appId } }
             }
         }
         item { OverlayPreference() }
@@ -480,6 +479,67 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
             SettingsPanel(null) {
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
                     Glyph.Settings, setup)
+            }
+        }
+    }
+}
+
+private fun List<InstalledAssistant>.defaultOption(preferred: String?): InstalledAssistant? =
+    firstOrNull { it.assistant.appId == preferred } ?: firstOrNull()
+
+@Composable
+private fun DefaultAssistantCard(
+    installed: List<InstalledAssistant>,
+    preferred: String?,
+    select: (InstalledAssistant) -> Unit
+) {
+    val tokens = LocalTokens.current
+    val active = installed.defaultOption(preferred)
+    SettingsPanel(stringResource(R.string.default_assistant)) {
+        if (preferred != null && installed.none { it.assistant.appId == preferred }) {
+            Assistant.entries.firstOrNull { it.appId == preferred }?.let { previous ->
+                Text(
+                    stringResource(R.string.default_assistant_unavailable, stringResource(previous.label)),
+                    style = tokens.secondary,
+                    color = tokens.onAccentContainer
+                )
+            }
+        }
+        Column(Modifier.fillMaxWidth().selectableGroup()) {
+            installed.forEach { option ->
+                val selected = option == active
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = tokens.touch)
+                        .selectable(
+                            selected = selected,
+                            interactionSource = null,
+                            indication = null,
+                            role = Role.RadioButton,
+                            onClick = { select(option) }
+                        ).padding(vertical = tokens.gap),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.padding),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        remember(option.icon) { option.icon.asImageBitmap() },
+                        contentDescription = null,
+                        modifier = Modifier.size(tokens.touch)
+                    )
+                    Text(
+                        stringResource(option.assistant.label),
+                        Modifier.weight(1f),
+                        style = tokens.state,
+                        color = tokens.onAccentContainer
+                    )
+                    RadioButton(
+                        selected = selected,
+                        onClick = null,
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = tokens.accent,
+                            unselectedColor = tokens.onAccentContainer
+                        )
+                    )
+                }
             }
         }
     }

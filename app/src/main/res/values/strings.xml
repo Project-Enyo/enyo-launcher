@@ -202,4 +202,5 @@
     <string name="running_tasks_close_failed">Android did not confirm that the task closed</string>
     <string name="task_close_title">Close apps from Cards</string>
     <string name="task_close_description">With Shizuku access, swiping a card away also closes its matching Android task.</string>
+    <string name="default_assistant_unavailable">%1$s is unavailable. Enyo will use the selected app until it returns.</string>
 </resources>
