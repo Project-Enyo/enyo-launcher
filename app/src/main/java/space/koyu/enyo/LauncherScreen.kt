@@ -34,6 +34,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.ui.layout.layout
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -169,11 +171,14 @@ internal fun LauncherScreen(
     var searchPullFraction by remember { mutableFloatStateOf(0f) }
     var appsAtTop by remember { mutableStateOf(true) }
     val searchVisible = surface == 1 && !transitPicker && !messagesPicker && appMenu == null
-    val searchReveal by animateFloatAsState(
-        if (searchVisible) 1f else searchPullFraction,
-        tween(tokens.searchPullAnimationMillis),
-        label = "search reveal"
-    )
+    // The reveal follows the pull outside composition, so dragging and animating never recompose the launcher.
+    val searchReveal = remember { Animatable(0f) }
+    LaunchedEffect(searchVisible) {
+        snapshotFlow { if (searchVisible) 1f else searchPullFraction }
+            .collectLatest { searchReveal.animateTo(it, tween(tokens.searchPullAnimationMillis)) }
+    }
+    val searchShown by remember { derivedStateOf { searchReveal.value > 0f } }
+    val searchPulling by remember { derivedStateOf { searchPullFraction != 0f } }
     val setupComplete by remember(context) { context.searchPreferences.data.map { it[setupSeen] == true } }
         .collectAsState(null)
     fun closeSetup() {
@@ -241,6 +246,9 @@ internal fun LauncherScreen(
         if (launched) recentStore.launched(app.componentName)
         else recentStore.capture = null
     }
+    // One stable action, so recomposing the launcher never hands every page and tile a new callback.
+    val currentOpenApp by rememberUpdatedState<(LauncherActivityInfo) -> Unit>(::openApp)
+    val openAppAction = remember { { app: LauncherActivityInfo -> currentOpenApp(app) } }
 
     if (transitPicker && transit.isNotEmpty() && appMenu == null) AppFolder(
         title = stringResource(R.string.transit),
@@ -285,6 +293,20 @@ internal fun LauncherScreen(
     BackHandler(surface != 0 || pager.currentPage != 2) {
         if (surface != 0) surface = 0 else scope.launch { pager.animateScrollToPage(2) }
     }
+    // Remembered tile content keeps one lambda instance, so launcher recompositions never rerun every app tile.
+    val messagesTile = remember<@Composable () -> Unit>(messagesLabel) {
+        { AppTile(messagesLabel, { messagesPicker = true }) { MessagesAppIcon() } }
+    }
+    val appTile = remember<@Composable (LauncherActivityInfo) -> Unit>(transitLabel, labels, openAppAction) {
+        { app ->
+            val consolidated = app.componentName.packageName == transitPackage
+            AppTile(
+                label = if (consolidated) transitLabel else labels[app.componentName].orEmpty(),
+                open = { if (consolidated) transitPicker = true else openAppAction(app) },
+                actions = if (consolidated) null else ({ appMenu = app })
+            ) { AppIcon(app, label = labels[app.componentName]) }
+        }
+    }
     val screen = if (setupComplete == false) 4 else surface
     val settingsOpen = screen in fullScreens
     // Settings stays composed and drawn from startup, so opening it only slides an existing layer.
@@ -314,8 +336,12 @@ internal fun LauncherScreen(
                 ) { query = TextFieldValue(); surface = 1 }
 
         ) {
-            if (surface == 1 || searchReveal > 0f) Spacer(Modifier.height(tokens.touch))
-            else Row(Modifier.fillMaxWidth().padding(horizontal = tokens.margin), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Search draws its own bar in this place, so the header only fades in the draw phase.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = tokens.margin)
+                    .graphicsLayer { alpha = 1f - searchReveal.value },
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 val searchLabel = stringResource(R.string.search)
                 val preferencesLabel = stringResource(R.string.preferences)
                 IconButton(
@@ -332,34 +358,26 @@ internal fun LauncherScreen(
             HorizontalPager(
                 pager, Modifier.weight(1f),
                 beyondViewportPageCount = pages.size - 1,
-                userScrollEnabled = surface == 0 && searchPullFraction == 0f
+                userScrollEnabled = !searchPulling
             ) { page ->
                 when (page) {
-                    0 -> TodayBoard(foreground, pager.settledPage == 0 && surface == 0, weatherTap)
-                    1 -> AppsGrid(library, messagesIndex, onAtTopChanged = { appsAtTop = it }, extra = {
-                        AppTile(messagesLabel, { messagesPicker = true }) { MessagesAppIcon() }
-                    }) { app ->
-                        val consolidated = app.componentName.packageName == transitPackage
-                        AppTile(
-                            label = appLabel(app),
-                            open = { if (consolidated) transitPicker = true else openApp(app) },
-                            actions = if (consolidated) null else ({ appMenu = app })
-                        ) { AppIcon(app, label = labels[app.componentName]) }
-                    }
+                    0 -> TodayBoard(foreground, pager.settledPage == 0 && screen !in fullScreens, weatherTap)
+                    1 -> AppsGrid(library, messagesIndex, onAtTopChanged = { appsAtTop = it }, extra = messagesTile, tile = appTile)
                     2 -> Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { CardsPage(apps, ::openApp, cardsFocus, surface == 0 && searchPullFraction == 0f) }
+                        Box(Modifier.weight(1f)) { CardsPage(apps, openAppAction, cardsFocus, !searchPulling) }
                         PinnedDock(
                             pinned, { scope.launch { pager.animateScrollToPage(1) } },
-                            ::openApp, { appMenu = it }, labels,
+                            openAppAction, { appMenu = it }, labels,
                             move = { component, anchor, after -> scope.launch { context.movePin(component, anchor, after) } },
                             remove = { component -> scope.launch { context.changePin(component, false, installed) } }
                         )
                     }
-                    3 -> InboxPage(apps, ::openApp)
-                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = surface == 1, visible = pager.currentPage == 4 && screen !in 2..4)
+                    3 -> InboxPage(apps, openAppAction)
+                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = { surface == 1 }, visible = pager.currentPage == 4 && screen !in 2..4)
                 }
             }
-            if (surface == 0) NotificationBanners(apps, ::openApp)
+            // Banners stay composed and are only unplaced under search or settings.
+            Box(Modifier.placedWhen(surface == 0)) { NotificationBanners(apps, openAppAction) }
             Row(Modifier.fillMaxWidth()) {
                 pages.forEachIndexed { index, label ->
                     val labelText = stringResource(label)
@@ -381,10 +399,11 @@ internal fun LauncherScreen(
                 drawCircle(tokens.accent, radius = tokens.navigationDotSize.toPx() / 2f, center = Offset(x, size.height / 2f))
             }
         }
-        if (searchVisible || (surface == 0 && searchReveal > 0f)) {
-            SearchOverlay(searchReveal, searchVisible, { surface = 0 }) {
+        // Search stays composed from startup and is only placed while it is revealed.
+        Box(Modifier.placedWhen(searchVisible || (surface == 0 && searchShown))) {
+            SearchOverlay({ searchReveal.value }, searchVisible, { surface = 0 }) {
                 SearchScreen(
-                    query, { query = it }, library, ::openApp, { surface = 0 }, { surface = 2 },
+                    query, { query = it }, library, openAppAction, { surface = 0 }, { surface = 2 },
                     packageCycle, transit, { transitPicker = true }, { messagesPicker = true }, searchVisible
                 )
             }
@@ -425,6 +444,12 @@ private val fullScreens = 2..4
 private fun Modifier.inert(inert: Boolean) = then(if (inert) Modifier.clearAndSetSemantics {} else Modifier)
     .focusProperties { onEnter = { if (inert) cancelFocusChange() } }
     .focusGroup()
+
+/** Measures the content but leaves it unplaced while hidden, so it keeps its state without drawing or taking input. */
+private fun Modifier.placedWhen(shown: Boolean) = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) { if (shown) placeable.place(0, 0) }
+}
 
 /** Claims every pointer over a full screen surface so blank areas never reach the launcher below. */
 private fun Modifier.blockPointersBelow() = pointerInput(Unit) {

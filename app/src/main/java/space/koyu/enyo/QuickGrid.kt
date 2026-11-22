@@ -4,20 +4,28 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun QuickGrid(
-    ignoreIme: Boolean,
+    ignoreIme: () -> Boolean,
     hasSeekBar: Boolean,
     held: @Composable (Modifier) -> Unit,
     rows: List<List<@Composable (Modifier) -> Unit>>,
     strip: (@Composable (Modifier) -> Unit)?
 ) {
     val tokens = LocalTokens.current
-    val keyboard = !ignoreIme && WindowInsets.isImeVisible
+    // Derived, so the keyboard sliding in for search never recomposes the grid unless the result changes.
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    val ignore by rememberUpdatedState(ignoreIme)
+    val keyboard by remember(ime, density) { derivedStateOf { !ignore() && ime.getBottom(density) > 0 } }
     BoxWithConstraints(
         Modifier.fillMaxSize().padding(tokens.margin)
     ) {

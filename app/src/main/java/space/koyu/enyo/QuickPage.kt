@@ -78,7 +78,7 @@ private enum class BrightnessLevel(val fraction: Float, val label: Int) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: Boolean, visible: Boolean) {
+internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverlay: () -> Boolean, visible: Boolean) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle

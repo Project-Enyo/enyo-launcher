@@ -35,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -138,7 +139,7 @@ private enum class Command { Call, Message, Calendar, Web, Settings }
 private data class Confirmation(val title: String, val intent: Intent)
 
 @Composable
-internal fun SearchOverlay(reveal: Float, active: Boolean, close: () -> Unit, content: @Composable () -> Unit) {
+internal fun SearchOverlay(reveal: () -> Float, active: Boolean, close: () -> Unit, content: @Composable () -> Unit) {
     val tokens = LocalTokens.current
     val dismiss by rememberUpdatedState(close)
     val blankTap = if (active) Modifier.pointerInput(Unit) {
@@ -148,20 +149,23 @@ internal fun SearchOverlay(reveal: Float, active: Boolean, close: () -> Unit, co
         }
     } else Modifier
     Box(Modifier.fillMaxSize().then(blankTap)) {
+        // The scrim fades through its own layer, so the reveal never re-records the launcher drawing.
         Box(Modifier.matchParentSize()
-            .drawBehind { drawRect(tokens.widgetSurface.copy(alpha = tokens.searchScrim * reveal)) })
+            .graphicsLayer { alpha = tokens.searchScrim * reveal() }
+            .background(tokens.widgetSurface))
         Box(
             Modifier.fillMaxSize()
                 .then(if (active) Modifier else Modifier.clearAndSetSemantics {})
                 .graphicsLayer {
                     val distance = tokens.searchPullDistance.toPx()
-                    translationY = -(1f - reveal) * distance
-                    alpha = reveal
+                    translationY = -(1f - reveal()) * distance
+                    alpha = reveal()
                 }
         ) { content() }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SearchScreen(
     query: TextFieldValue,
@@ -252,11 +256,13 @@ internal fun SearchScreen(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    var fieldFocused by remember { mutableStateOf(false) }
     LaunchedEffect(active) {
         if (active) {
             focus.requestFocus()
             keyboard?.show()
-        } else if (query.text.isNotEmpty()) {
+        } else if (fieldFocused) {
+            // Search stays composed while hidden, so the field must not keep launcher typing.
             focusManager.clearFocus()
             keyboard?.hide()
         }
@@ -274,7 +280,10 @@ internal fun SearchScreen(
         )
     }
     Column(
-        Modifier.fillMaxSize().safeDrawingPadding().imePadding()
+        // Pads for the keyboard's final height once, instead of relaying out search on every keyboard animation frame.
+        Modifier.fillMaxSize().windowInsetsPadding(
+            WindowInsets.systemBars.union(WindowInsets.displayCutout).union(WindowInsets.imeAnimationTarget)
+        )
             .padding(horizontal = tokens.margin).padding(top = tokens.gap),
         verticalArrangement = Arrangement.spacedBy(tokens.gap)
     ) {
@@ -304,6 +313,7 @@ internal fun SearchScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     cursorBrush = SolidColor(tokens.accent),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                        .onFocusChanged { fieldFocused = it.isFocused }
                         .semantics { contentDescription = searchLabel },
                     decorationBox = { field ->
                         Row(
