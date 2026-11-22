@@ -55,6 +55,9 @@ internal object PushDistributor {
     private const val actionFailed = "org.unifiedpush.android.connector.REGISTRATION_FAILED"
     private const val actionUnregistered = "org.unifiedpush.android.connector.UNREGISTERED"
     private const val actionMessage = "org.unifiedpush.android.connector.MESSAGE"
+    private const val actionRaise = "org.unifiedpush.android.connector.RAISE_TO_FOREGROUND"
+    private const val raiseMillis = 5_000L
+    private const val deliveryWakeMillis = 10_000L
 
     val registrations = MutableStateFlow<List<PushRegistration>>(emptyList())
     val connected = MutableStateFlow(false)
@@ -140,15 +143,68 @@ internal object PushDistributor {
         }
     }
 
+    /**
+     * Hands one push to its app. While Enyo's push service runs in the foreground it first binds to
+     * the app's RAISE_TO_FOREGROUND service, as the UnifiedPush spec describes, so the app leaves the
+     * cached state and may use the network and start work at once, even in Doze. The broadcast goes
+     * on the foreground queue, and a short wake lock keeps the device awake until it is handed over.
+     */
     fun deliver(context: Context, topic: String, id: String, body: ByteArray) {
         val registration = load(context).firstOrNull { it.topic == topic } ?: return
+        val power = context.getSystemService(android.os.PowerManager::class.java)
+        val wake = power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Enyo:push").apply { acquire(deliveryWakeMillis) }
+        raise(context, registration.packageName)
         send(context, registration.packageName, Intent(actionMessage)
             .putExtra("token", registration.token).putExtra("bytesMessage", body).putExtra("id", id))
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (wake.isHeld) wake.release() }, deliveryWakeMillis)
+    }
+
+    private val raised = mutableMapOf<String, android.content.ServiceConnection>()
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    /** Binds with foreground importance to the app's connector for a few seconds after each push. */
+    private fun raise(context: Context, packageName: String) {
+        val app = context.applicationContext
+        mainHandler.post {
+            synchronized(raised) {
+                raised.remove(packageName)?.let { previous -> runCatching { app.unbindService(previous) } }
+                val connection = object : android.content.ServiceConnection {
+                    override fun onServiceConnected(name: ComponentName, service: IBinder) = Unit
+                    override fun onServiceDisconnected(name: ComponentName) = Unit
+                }
+                val bound = runCatching {
+                    app.bindService(
+                        Intent(actionRaise).setPackage(packageName), connection,
+                        Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT or Context.BIND_INCLUDE_CAPABILITIES
+                    )
+                }.getOrDefault(false)
+                if (!bound) { runCatching { app.unbindService(connection) }; return@post }
+                raised[packageName] = connection
+                mainHandler.postDelayed({
+                    synchronized(raised) {
+                        if (raised[packageName] === connection) {
+                            raised.remove(packageName)
+                            runCatching { app.unbindService(connection) }
+                        }
+                    }
+                }, raiseMillis)
+            }
+        }
     }
 
     private fun send(context: Context, packageName: String, intent: Intent) {
-        context.sendBroadcast(intent.setPackage(packageName))
+        context.sendBroadcast(intent.setPackage(packageName).addFlags(Intent.FLAG_RECEIVER_FOREGROUND or Intent.FLAG_INCLUDE_STOPPED_PACKAGES))
     }
+
+    /** Whether Android lets Enyo keep its push connection through Doze. */
+    fun unrestricted(context: Context): Boolean =
+        context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+
+    /** Android's own prompt to let Enyo run unrestricted, as push apps like ntfy ask for. */
+    fun unrestrictIntent(context: Context) = Intent(
+        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        android.net.Uri.fromParts("package", context.packageName, null)
+    )
 
     private fun newTopic(): String {
         val random = SecureRandom()

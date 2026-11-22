@@ -36,6 +36,18 @@ internal fun PushPreference() {
             PushDistributor.setEnabled(context, it)
         }
         if (enabled) {
+            val foreground = foregroundCycle()
+            val unrestricted = remember(foreground) { PushDistributor.unrestricted(context) }
+            if (!unrestricted) ListRow(
+                stringResource(R.string.push_battery), Modifier.appPress({
+                    context.launchSafely(PushDistributor.unrestrictIntent(context).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }),
+                summary = stringResource(R.string.push_battery_summary),
+                leading = { EnyoGlyph(Glyph.Battery, color = tokens.accent) },
+                trailing = { PillButton(stringResource(R.string.running_tasks_allow), filled = true) {
+                    context.launchSafely(PushDistributor.unrestrictIntent(context).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                } }
+            )
             ListRow(
                 stringResource(R.string.push_server), Modifier.appPress({ editing = true }),
                 summary = PushDistributor.server(context), summaryLines = 1,
