@@ -360,7 +360,8 @@ internal fun LauncherScreen(
                 beyondViewportPageCount = pages.size - 1,
                 userScrollEnabled = !searchPulling
             ) { page ->
-                when (page) {
+                // Each page lives in its own view, so a swipe leaves the page semantics trees untouched.
+                PageHost { when (page) {
                     0 -> TodayBoard(foreground, pager.settledPage == 0 && screen !in fullScreens, weatherTap)
                     1 -> AppsGrid(library, messagesIndex, onAtTopChanged = { appsAtTop = it }, extra = messagesTile, tile = appTile)
                     2 -> Column(Modifier.fillMaxSize()) {
@@ -373,8 +374,9 @@ internal fun LauncherScreen(
                         )
                     }
                     3 -> InboxPage(apps, openAppAction)
-                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = { surface == 1 }, visible = pager.currentPage == 4 && screen !in 2..4)
-                }
+                    // Quick listeners start once Inbox or Quick has settled, never in the middle of a swipe.
+                    4 -> QuickPage(openPanel, quickFocus, searchOverlay = { surface == 1 }, visible = pager.settledPage >= 3 && screen !in 2..4)
+                } }
             }
             // Banners stay composed and are only unplaced under search or settings.
             Box(Modifier.placedWhen(surface == 0)) { NotificationBanners(apps, openAppAction) }

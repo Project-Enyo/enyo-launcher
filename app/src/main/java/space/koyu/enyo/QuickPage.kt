@@ -145,9 +145,9 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverl
     fun overrideWindow(value: Float) {
         window?.let { it.attributes = it.attributes.apply { screenBrightness = value } }
     }
-    fun brightness(level: BrightnessLevel) {
+    fun brightness(value: Float) {
         draft = null
-        if (model.setBrightness(level.fraction)) overrideWindow(level.fraction)
+        if (model.setBrightness(value)) overrideWindow(value)
         else grantExplanation = true
     }
     DisposableEffect(window) {
@@ -198,20 +198,21 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverl
     }
     val volume: @Composable (Modifier) -> Unit = { modifier ->
         ControlCard(stringResource(R.string.media_volume), state.volume, model::volume, modifier.then(order(2, 1, 3)),
-            onLongPress = {
+            // A hold only starts adjusting, so the volume panel moved from long press to tap.
+            onTap = {
                 context.launchSafely(Intent(Settings.Panel.ACTION_VOLUME))
             })
     }
     val brightnessCard: @Composable (Modifier) -> Unit = { modifier ->
         val displayed = draft ?: state.brightness
         ControlCard(
-            stringResource(R.string.brightness), displayed, { draft = it }, modifier.then(order(3, 2, if (state.hasTorch) 4 else 5)),
+            stringResource(R.string.brightness), displayed,
+            // Continuous like volume: the window previews the value while dragging, the system value is written on release.
+            { draft = it; overrideWindow(it) },
+            modifier.then(order(3, 2, if (state.hasTorch) 4 else 5)),
             onTap = { brightnessMenu = true },
             valueLabel = if (state.automatic && draft == null) stringResource(R.string.automatic_short) else null,
-            onDragSettled = {
-                val requested = draft ?: state.brightness
-                brightness(BrightnessLevel.entries.minBy { abs(it.fraction - requested) })
-            }
+            onDragSettled = { draft?.let(::brightness) }
         )
     }
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
@@ -228,7 +229,7 @@ internal fun QuickPage(openPanel: () -> Unit, first: FocusRequester, searchOverl
 
     if (brightnessMenu) EnyoSheet(stringResource(R.string.brightness), { brightnessMenu = false }) {
         BrightnessLevel.entries.forEach { option ->
-            TextButton(onClick = { brightnessMenu = false; brightness(option) }) {
+            TextButton(onClick = { brightnessMenu = false; brightness(option.fraction) }) {
                 Text(stringResource(option.label))
             }
         }
@@ -499,6 +500,8 @@ private fun MediaProgress(media: MediaSnapshot, seekable: Boolean, seek: (MediaS
     val sendSeek by rememberUpdatedState(seek)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val strokeWidth = tokens.stroke
+    val holdMillis = tokens.controlHoldMillis
+    val hold = rememberHoldHaptic()
     fun fraction(x: Float, width: Int, stroke: Float): Float {
         val fromStart = if (rtl) width - x else x
         return ((fromStart - stroke / 2) / (width - stroke).coerceAtLeast(1f)).coerceIn(0f, 1f)
@@ -509,17 +512,17 @@ private fun MediaProgress(media: MediaSnapshot, seekable: Boolean, seek: (MediaS
             detectTapGestures { seekTo(fraction(it.x, size.width, strokeWidth.toPx())) }
         }
         .pointerInput(media.token, media.duration, rtl, strokeWidth) {
-            detectHorizontalDragGestures(
-                onDragStart = { scrub = fraction(it.x, size.width, strokeWidth.toPx()) },
-                onDragEnd = {
+            // Scrubbing also starts after a still hold, so swiping across the card switches pages.
+            detectHeldHorizontalDrag(
+                holdMillis = holdMillis,
+                onHold = hold,
+                onStart = { scrub = fraction(it.x, size.width, strokeWidth.toPx()) },
+                onDrag = { change, _ -> scrub = fraction(change.position.x, size.width, strokeWidth.toPx()) },
+                onEnd = {
                     scrub?.let(::seekTo)
                     scrub = null
                 },
-                onDragCancel = { scrub = null },
-                onHorizontalDrag = { change, _ ->
-                    change.consume()
-                    scrub = fraction(change.position.x, size.width, strokeWidth.toPx())
-                }
+                onCancel = { scrub = null }
             )
         }
     fun displayedPosition() = scrub?.let { media.duration * it.toDouble() }

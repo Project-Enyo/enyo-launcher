@@ -139,6 +139,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Sy
     val settingsTitle = TextStyle(fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = ink)
     val folderMaxHeight = 300.dp
     val dockHoldMillis = 500L
+    val controlHoldMillis = 250L
     val dockIconSize = 46.dp
     val dockBottomSpace = 36.dp
     val dockInnerPadding = 7.dp

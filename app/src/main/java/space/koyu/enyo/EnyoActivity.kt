@@ -180,7 +180,6 @@ internal fun ControlCard(
     onValue: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onTap: (() -> Unit)? = null,
-    onLongPress: (() -> Unit)? = null,
     valueLabel: String? = null,
     onDragSettled: (() -> Unit)? = null
 ) {
@@ -188,28 +187,33 @@ internal fun ControlCard(
     val currentValue by rememberUpdatedState(value)
     val change by rememberUpdatedState(onValue)
     val settled by rememberUpdatedState(onDragSettled)
-    val click = if (onTap != null || onLongPress != null) {
-        Modifier.combinedClickable(onClick = onTap ?: {}, onLongClick = onLongPress)
+    val hold = rememberHoldHaptic()
+    val click = if (onTap != null) {
+        Modifier.combinedClickable(onClick = onTap)
     } else Modifier
     ContentCard(
         modifier.fillMaxWidth().heightIn(min = maxOf(tokens.cardHeight, tokens.touch))
-            .cardInput(ownFocusTarget = onTap == null && onLongPress == null, activate = onTap ?: onLongPress)
+            .cardInput(ownFocusTarget = onTap == null, activate = onTap)
             .then(click).semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
             setProgress {
                 change(it.coerceIn(0f, 1f))
+                settled?.invoke()
                 true
             }
-        }.pointerInput(Unit) {
+        }.pointerInput(tokens.controlHoldMillis) {
             var position = 0f
-            detectHorizontalDragGestures(
-                onDragStart = { position = currentValue },
-                onDragEnd = { settled?.invoke() },
-                onHorizontalDrag = { event, amount ->
-                    event.consume()
+            // A brief still hold starts adjusting, so a plain swipe across the card still switches pages.
+            detectHeldHorizontalDrag(
+                holdMillis = tokens.controlHoldMillis,
+                onHold = hold,
+                onStart = { position = currentValue },
+                onDrag = { _, amount ->
                     position = (position + amount / size.width).coerceIn(0f, 1f)
                     change(position)
-                }
+                },
+                onEnd = { settled?.invoke() },
+                onCancel = { settled?.invoke() }
             )
         }
     ) {
