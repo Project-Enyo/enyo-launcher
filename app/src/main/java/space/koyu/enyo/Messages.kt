@@ -63,8 +63,9 @@ internal fun InboxPage(
     Column(Modifier.fillMaxSize()) {
         if (group == null) {
             if (providers.isNotEmpty()) LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(top = tokens.margin),
                 contentPadding = PaddingValues(horizontal = tokens.margin),
-                horizontalArrangement = Arrangement.spacedBy(tokens.gap)
+                horizontalArrangement = Arrangement.spacedBy(tokens.margin)
             ) {
                 items(providers, key = { it.componentName.flattenToString() }) { app ->
                     val name = labels.getValue(app.componentName.packageName)
