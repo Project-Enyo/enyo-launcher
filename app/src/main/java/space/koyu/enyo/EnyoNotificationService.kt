@@ -32,7 +32,7 @@ class EnyoNotificationService : NotificationListenerService() {
         }
         val current = entries.value.firstOrNull { it.key == sbn.key }
         val announce = current != null && current.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
-            (previous == null || previous.noticePayload() != current.noticePayload())
+            (previous == null || (!sbn.isModelDownload(packageName) && previous.noticePayload() != current.noticePayload()))
         if (!sbn.isMessagingNotice()) {
             if (announce) arrivals.tryEmit(current!!)
             return

@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -97,36 +98,57 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
     private var owner: BannerOwner? = null
     private var windowManager: WindowManager? = null
     private var expiration: Job? = null
+    private var downloadKey: String? = null
+    private val closedDownloads = mutableSetOf<String>()
     private val screen = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { dismiss() }
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) dismiss() else showDownloadIfNeeded()
+        }
     }
     private val permission = AppOpsManager.OnOpChangedListener { _, _ ->
         scope.launch { if (!Settings.canDrawOverlays(context)) dismiss() }
     }
 
     init {
-        ContextCompat.registerReceiver(context, screen, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)
+        val screenEvents = IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_USER_PRESENT) }
+        ContextCompat.registerReceiver(context, screen, screenEvents, ContextCompat.RECEIVER_NOT_EXPORTED)
         runCatching { appOps.startWatchingMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, context.packageName, permission) }
         scope.launch {
             context.appearancePreferences.data.map { it[systemBanners] == true }.distinctUntilChanged().collect {
                 enabled = it
-                if (!it) dismiss()
+                if (!it) dismiss() else showDownloadIfNeeded()
             }
         }
-        scope.launch { launcherVisible.collect { if (it) dismiss() } }
+        scope.launch { launcherVisible.collect { if (it) dismiss() else showDownloadIfNeeded() } }
+        scope.launch {
+            EnyoNotificationService.entries.collect { active ->
+                closedDownloads.retainAll(active.mapTo(mutableSetOf()) { it.key })
+                if (downloadKey != null && active.none { it.key == downloadKey }) dismiss()
+                showDownloadIfNeeded()
+            }
+        }
         scope.launch {
             EnyoNotificationService.arrivals.collect { entry ->
                 val overlayNotice = entry.packageName == "android" &&
                     entry.tag == "com.android.server.wm.AlertWindowNotification - ${context.packageName}"
-                if (!overlayNotice && enabled && !launcherVisible.value && power.isInteractive &&
-                    !keyguard.isKeyguardLocked && Settings.canDrawOverlays(context)
-                ) show(entry)
+                if (!overlayNotice && !entry.isModelDownload(context.packageName) && canShow()) show(entry)
             }
         }
     }
 
+    private fun canShow() = enabled && !launcherVisible.value && power.isInteractive &&
+        !keyguard.isKeyguardLocked && Settings.canDrawOverlays(context)
+
+    private fun showDownloadIfNeeded() {
+        if (view != null || !canShow()) return
+        EnyoNotificationService.entries.value.firstOrNull {
+            it.key !in closedDownloads && it.isModelDownload(context.packageName)
+        }?.let(::show)
+    }
+
     private fun show(entry: StatusBarNotification) {
         dismiss()
+        val downloading = entry.isModelDownload(context.packageName)
         val overlayType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         val display = context.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY) ?: return
         val overlayContext = runCatching {
@@ -160,14 +182,20 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
                 val dark = isSystemInDarkTheme()
                 val tokens = rememberTokens(dark, size)
                 CompositionLocalProvider(LocalTokens provides tokens) {
-                    OverlayCard(entry, close = ::dismiss, startReply = { startReply(params) }) {
+                    val active by EnyoNotificationService.entries.collectAsState()
+                    val current = if (downloading) active.firstOrNull { it.key == entry.key } ?: entry else entry
+                    fun closeOverlay() {
+                        if (downloading) closedDownloads.add(entry.key)
+                        dismiss()
+                    }
+                    OverlayCard(current, close = ::closeOverlay, startReply = { startReply(params) }) {
                         if (!keyguard.isKeyguardLocked) {
-                            // The notification's own target first, then its app, and Enyo only when neither opens.
-                            val opened = entry.openFromForeground(context) || context.launchNotifyingApp(entry.packageName)
+                            // The notification target comes first, followed by its app.
+                            val opened = current.openFromForeground(context) || context.launchNotifyingApp(current.packageName)
                             if (!opened) context.launchSafely(Intent(context, EnyoActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
-                        dismiss()
+                        closeOverlay()
                     }
                 }
             }
@@ -180,9 +208,11 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
         view = banner
         owner = bannerOwner
         windowManager = manager
-        expiration = scope.launch {
+        if (downloading) downloadKey = entry.key
+        else expiration = scope.launch {
             delay(bannerLifetimeMillis)
             dismiss()
+            showDownloadIfNeeded()
         }
     }
 
@@ -202,6 +232,7 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
         view?.let { banner -> runCatching { windowManager?.removeViewImmediate(banner) } }
         owner?.destroy()
         owner = null
+        downloadKey = null
         view = null
         windowManager = null
     }
@@ -260,6 +291,10 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, startRe
                 Modifier.size(tokens.touch).appPress(close).semantics { contentDescription = label },
                 contentAlignment = Alignment.Center
             ) { EnyoGlyph(Glyph.Close) }
+        }
+        entry.modelDownloadProgress(context.packageName)?.let { progress ->
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(),
+                color = tokens.accent, trackColor = tokens.widgetTrack)
         }
         if (action != null && !replying) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
             PillButton(stringResource(R.string.message_reply), filled = true) { replying = true; startReply() }

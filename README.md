@@ -18,11 +18,13 @@ Under **Settings → Search**, choose a folder or enable **All files access** in
 
 On supported ARM64 devices, **Settings → Search** can download the models for natural language image and document search. The download is about 178 MB. Enyo builds the index while the device is charging and idle. It uses quantized CLIP for images and MiniLM for document passages. The index stays in the encrypted archive on the device.
 
-For local chat, import a compatible quantized LiteRT LM model under **Settings → Local AI**. Start with the [Gemma 3 1B IT model collection](https://huggingface.co/litert-community/Gemma3-1B-IT) and choose its portable INT4 LiteRT LM file. Once imported, select **Local AI** as the default assistant. Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox.
+For local chat, open **Settings → Local AI → Download recommended model**. Enyo downloads and verifies [Qwen3 0.6B INT4](https://huggingface.co/litert-community/Qwen3-0.6B-int4), then selects Local AI as the default assistant. The model takes about 347 MB. You can also import a compatible LiteRT LM file. Model downloads show progress in Android notifications and in Enyo’s overlay when enabled.
+
+Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox.
 
 ## Build
 
-With JDK 21 and Android SDK 36 installed, run:
+With JDK 21 and Android SDK 36 installed, build the debug APK.
 
 ```sh
 ./gradlew :app:assembleDebug

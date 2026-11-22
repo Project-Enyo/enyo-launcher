@@ -9,6 +9,8 @@ import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.os.Bundle
+import android.os.PowerManager
+import android.view.ViewTreeObserver
 import android.service.notification.StatusBarNotification
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -102,7 +105,9 @@ internal fun InboxPage(
     }
     val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
     val listening by EnyoNotificationService.listening.collectAsState()
-    val threads = if (group == null) rememberArchive(emptyList<ThreadSummary>()) { ArchiveData.threads(it) } else emptyList()
+    val threads = if (group == null && !locked) {
+        rememberArchive(emptyList<ThreadSummary>()) { ArchiveData.threads(it) }
+    } else emptyList()
     val heads = remember(threads) { threads.filter { it.ref is ThreadRef.Person }.take(ArchiveData.recentHeadCount) }
     var openThread by remember { mutableStateOf<ThreadRef?>(null) }
     var allThreads by remember { mutableStateOf(false) }
@@ -223,16 +228,26 @@ internal fun InboxPage(
 @Composable
 private fun rememberInboxLocked(): Boolean {
     val context = LocalContext.current
+    val view = LocalView.current
     val keyguard = remember(context) { context.getSystemService(KeyguardManager::class.java) }
+    val power = remember(context) { context.getSystemService(PowerManager::class.java) }
     val foreground = foregroundCycle()
-    var locked by remember(keyguard) { mutableStateOf(keyguard.isKeyguardLocked) }
-    LaunchedEffect(foreground, keyguard) {
-        locked = keyguard.isKeyguardLocked
-    }
-    DisposableEffect(context, keyguard) {
+    fun isLocked() = !power.isInteractive || (!view.hasWindowFocus() && keyguard.isKeyguardLocked)
+    var locked by remember(view, keyguard) { mutableStateOf(isLocked()) }
+    LaunchedEffect(foreground, view) { locked = isLocked() }
+    DisposableEffect(context, view, keyguard, power) {
+        val focus = ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+            locked = !power.isInteractive || (!focused && keyguard.isKeyguardLocked)
+        }
+        val observer = view.viewTreeObserver
+        observer.addOnWindowFocusChangeListener(focus)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                locked = keyguard.isKeyguardLocked
+                locked = when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> true
+                    Intent.ACTION_USER_PRESENT -> false
+                    else -> isLocked()
+                }
             }
         }
         val filter = IntentFilter().apply {
@@ -241,8 +256,11 @@ private fun rememberInboxLocked(): Boolean {
             addAction(Intent.ACTION_USER_PRESENT)
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        locked = keyguard.isKeyguardLocked
-        onDispose { context.unregisterReceiver(receiver) }
+        locked = isLocked()
+        onDispose {
+            (if (observer.isAlive) observer else view.viewTreeObserver).removeOnWindowFocusChangeListener(focus)
+            context.unregisterReceiver(receiver)
+        }
     }
     return locked
 }

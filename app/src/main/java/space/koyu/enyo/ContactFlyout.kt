@@ -23,11 +23,14 @@ internal fun ContactFlyout(
     summary: ThreadSummary,
     launchers: Map<String, android.content.pm.LauncherActivityInfo>,
     openThread: (() -> Unit)?,
+    relatedThreads: List<ThreadRef> = listOf(summary.ref),
     close: () -> Unit
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
-    val routes = rememberArchive(emptyList<ChatRoute>(), summary.ref) { ArchiveData.routes(it, summary.ref) }
+    val routes = rememberArchive(emptyList<ChatRoute>(), relatedThreads) { context ->
+        relatedThreads.flatMap { ArchiveData.routes(context, it) }
+    }
     val details by produceState<ContactDetails?>(null, summary.contactLookup) {
         value = summary.contactLookup?.let { lookup -> withContext(Dispatchers.IO) { ArchiveData.contactDetails(context, lookup) } }
     }

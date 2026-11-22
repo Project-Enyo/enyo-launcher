@@ -2,7 +2,6 @@ package space.koyu.enyo
 
 import android.content.Context
 import android.net.Uri
-import android.util.AtomicFile
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -27,10 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URI
 import java.nio.ByteBuffer
-import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
@@ -40,7 +36,6 @@ internal val semanticRevision = intPreferencesKey("semantic_revision")
 private const val periodicIndex = "periodic_file_index"
 private const val immediateIndex = "initial_file_index"
 
-private data class ModelAsset(val repository: String, val path: String, val name: String, val bytes: Int, val sha256: String)
 private const val clip = "Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/"
 private const val miniLm = "sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/"
 private val semanticAssets = listOf(
@@ -54,44 +49,10 @@ private val semanticAssets = listOf(
 
 private fun modelDirectory(context: Context) = File(context.noBackupFilesDir, "file_search_models")
 
-private suspend fun downloadSemanticModels(context: Context) = withContext(Dispatchers.IO) {
-    val folder = modelDirectory(context).apply { mkdirs() }
-    for (asset in semanticAssets) {
-        ensureActive()
-        val file = File(folder, asset.name)
-        if (file.length() == asset.bytes.toLong()) continue
-        val atomic = AtomicFile(file)
-        val connection = URI("https://huggingface.co/${asset.repository}${asset.path}").toURL()
-            .openConnection() as HttpURLConnection
-        connection.connectTimeout = 20_000
-        connection.readTimeout = 20_000
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            connection.inputStream.use { input ->
-                val output = atomic.startWrite()
-                try {
-                    val buffer = ByteArray(64 * 1024)
-                    var size = 0
-                    while (true) {
-                        ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        size += count
-                        check(size <= asset.bytes)
-                        digest.update(buffer, 0, count)
-                        output.write(buffer, 0, count)
-                    }
-                    check(size == asset.bytes && digest.digest().joinToString("") { "%02x".format(it) } == asset.sha256)
-                    atomic.finishWrite(output)
-                } catch (error: Throwable) {
-                    atomic.failWrite(output)
-                    throw error
-                }
-            }
-        } finally {
-            connection.disconnect()
-        }
-    }
+internal suspend fun installSemanticModels(context: Context, progress: suspend (Int) -> Unit) {
+    downloadModels(modelDirectory(context), semanticAssets, progress)
+    context.searchPreferences.edit { it[semanticEnabled] = true }
+    scheduleFileIndex(context)
 }
 
 @Composable
@@ -108,27 +69,11 @@ internal fun SemanticSearchPreference() {
     val enabled = semanticSearchEnabled()
     val scope = rememberCoroutineScope()
     val store = context.searchPreferences
-    var downloading by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
-    if (!enabled) SettingsAction(stringResource(R.string.search_semantic_enable), Glyph.Sparkles,
-        enabled = !downloading && source != null,
-        summary = stringResource(if (downloading) R.string.search_semantic_downloading else R.string.search_semantic_summary)) {
-        downloading = true
-        failed = false
-        scope.launch {
-            try {
-                downloadSemanticModels(context)
-                store.edit { it[semanticEnabled] = true }
-                scheduleFileIndex(context)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                failed = true
-            } finally {
-                downloading = false
-            }
-        }
-    } else {
+    val download = modelDownloadState(ModelDownloadKind.Search)
+    if (!enabled && !download.active) {
+        SettingsAction(stringResource(R.string.search_semantic_enable), Glyph.Sparkles,
+            enabled = source != null, summary = stringResource(R.string.search_semantic_summary), run = download.start)
+    } else if (enabled) {
         SettingsAction(stringResource(R.string.search_semantic_refresh), Glyph.Refresh, enabled = source != null,
             summary = stringResource(R.string.search_semantic_schedule)) { scheduleFileIndex(context, replace = true) }
         SettingsAction(stringResource(R.string.search_semantic_disable), Glyph.Trash) {
@@ -147,7 +92,7 @@ internal fun SemanticSearchPreference() {
             }
         }
     }
-    if (failed) ListNote(stringResource(R.string.action_unavailable))
+    ModelDownloadStatus(ModelDownloadKind.Search, download)
 }
 
 internal fun scheduleFileIndex(context: Context, replace: Boolean = false) {

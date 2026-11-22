@@ -72,12 +72,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import java.text.Normalizer
+import java.util.Locale
 
 internal val Context.searchPreferences by preferencesDataStore("search")
 private val searchHistoryEnabled = booleanPreferencesKey("history_enabled")
 private val searchHistory = stringPreferencesKey("history")
 internal val setupSeen = booleanPreferencesKey("setup_seen")
-private val defaultAssistant = stringPreferencesKey("assistant")
+internal val defaultAssistant = stringPreferencesKey("assistant")
 
 private enum class Assistant(val appId: String, val label: Int) {
     Claude("com.anthropic.claude", R.string.assistant_claude),
@@ -134,6 +136,43 @@ private fun installedAssistants(packageCycle: Int): List<InstalledAssistant> {
 
 /** A person in search: an address book contact, a person from the message archive, or both. */
 private data class Contact(val name: String, val number: String, val person: ThreadSummary)
+
+private data class SearchPerson(val summary: ThreadSummary, val contact: Contact?, val threads: List<ThreadRef>)
+
+private fun consolidatePeople(contacts: List<Contact>, archived: List<ThreadSummary>): List<SearchPerson> {
+    val summaries = (contacts.map { it.person } + archived).distinctBy { it.ref }
+    val byName = summaries.groupBy { person ->
+        Normalizer.normalize(person.name.trim(), Normalizer.Form.NFC)
+            .replace(Regex("""\s+"""), " ").lowercase(Locale.ROOT)
+    }
+    val groups = mutableMapOf<String, MutableList<ThreadSummary>>()
+    for ((name, matches) in byName) {
+        val lookups = matches.mapNotNull { it.contactLookup }.distinct()
+        val appSources = matches.flatMap { it.packages }
+        val ambiguous = lookups.size > 1 || appSources.distinct().size != appSources.size
+        for (person in matches) {
+            val lookup = person.contactLookup ?: lookups.singleOrNull()?.takeUnless { ambiguous }
+            val id = when {
+                lookup != null -> "contact:$lookup"
+                ambiguous || name.isBlank() -> person.ref.toString()
+                else -> "name:$name"
+            }
+            groups.getOrPut(id) { mutableListOf() }.add(person)
+        }
+    }
+    return groups.values.map { group ->
+        val contact = contacts.firstOrNull { candidate -> group.any { it.ref == candidate.person.ref } }
+        val real = group.filter { (it.ref as? ThreadRef.Person)?.id?.let { id -> id >= 0 } == true }
+        val primary = real.firstOrNull { it.contactLookup != null } ?: real.firstOrNull() ?: group.first()
+        SearchPerson(primary.copy(
+            name = contact?.name?.ifBlank { null } ?: primary.name,
+            contactLookup = contact?.person?.contactLookup ?: primary.contactLookup,
+            avatar = primary.avatar ?: group.firstNotNullOfOrNull { it.avatar },
+            packages = group.flatMap { it.packages }.distinct()
+        ), contact, real.map { it.ref })
+    }
+}
+
 private data class CalendarHit(val id: Long, val title: String, val begin: Long, val end: Long, val allDay: Boolean, val location: String?)
 
 /**
@@ -383,7 +422,8 @@ internal fun SearchScreen(
         }
     }
     val contacts = contactResults.second.takeIf { contactResults.first == term }.orEmpty()
-    var flyout by remember { mutableStateOf<ThreadSummary?>(null) }
+    val searchPeople = remember(contacts, archivePeople) { consolidatePeople(contacts, archivePeople) }
+    var flyout by remember { mutableStateOf<SearchPerson?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
@@ -409,6 +449,15 @@ internal fun SearchScreen(
             if (message) Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", contact.number, null))
             else Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.number, null))
         )
+    }
+    fun openPerson(person: SearchPerson) {
+        val contact = person.contact
+        if (contact != null && command?.first in listOf(Command.Call, Command.Message)) {
+            reachContact(contact, command?.first == Command.Message)
+        } else {
+            record(input)
+            flyout = person
+        }
     }
     val showMessages = input.isNotBlank() && command == null && messagesLabel.contains(input, ignoreCase = true)
     val settingsResults = if (input.isNotBlank() && command?.first in listOf(null, Command.Settings)) settingsDestinations.filter {
@@ -470,8 +519,7 @@ internal fun SearchScreen(
         showMessages -> openMessages
         appResults.isNotEmpty() -> appResults.first().let { app -> { launchResult(app) } }
         settingsResults.isNotEmpty() -> settingsResults.first().let { destination -> { open(Intent(destination.action)) } }
-        contacts.isNotEmpty() -> contacts.first().let { contact -> { reachContact(contact, command?.first == Command.Message) } }
-        archivePeople.isNotEmpty() -> archivePeople.first().let { person -> { record(input); flyout = person } }
+        searchPeople.isNotEmpty() -> { { openPerson(searchPeople.first()) } }
         messageHits.isNotEmpty() -> messageHits.first().let { hit -> { openHit(hit) } }
         events.isNotEmpty() -> events.first().let { event -> { openEvent(event) } }
         files.isNotEmpty() -> { { open(files.first().file.viewIntent()) } }
@@ -594,36 +642,30 @@ internal fun SearchScreen(
                         }
                     }
                 }
-                val extraPeople = archivePeople.filter { person -> contacts.none { it.person.ref == person.ref } }
-                if (contacts.isNotEmpty() || extraPeople.isNotEmpty()) item {
+                if (searchPeople.isNotEmpty()) item {
                     SettingsPanel(stringResource(R.string.contacts_results)) {
                         val callLabel = stringResource(R.string.call)
                         val messageLabel = stringResource(R.string.message)
-                        contacts.forEach { contact ->
+                        searchPeople.forEach { person ->
+                            val summary = person.summary
+                            val contact = person.contact
+                            val messengers = summary.packages.map { pkg ->
+                                apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: sourceLabel(context, pkg)
+                            }
                             ListRow(
-                                contact.name.ifBlank { contact.number },
-                                Modifier.appPress({ record(input); flyout = contact.person }),
-                                summary = listOf(contact.number, contact.person.packages.joinToString(" · ") { pkg ->
-                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: sourceLabel(context, pkg)
-                                }).filter { it.isNotBlank() }.joinToString(" · "),
+                                summary.name,
+                                Modifier.appPress({ openPerson(person) }),
+                                summary = (listOfNotNull(contact?.number) + messengers).joinToString(" · ").ifBlank { null },
                                 summaryLines = 1,
-                                leading = { PersonAvatar(contact.person, tokens.listAvatar, contact.name.ifBlank { contact.number }) },
-                                trailing = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
-                                        if (command?.first != Command.Message) RoundIconButton(Glyph.Phone, callLabel) { reachContact(contact, false) }
-                                        if (command?.first != Command.Call) RoundIconButton(Glyph.Message, messageLabel) { reachContact(contact, true) }
+                                leading = { PersonAvatar(summary, tokens.listAvatar) },
+                                trailing = contact?.let {
+                                    {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
+                                            if (command?.first != Command.Message) RoundIconButton(Glyph.Phone, callLabel) { reachContact(it, false) }
+                                            if (command?.first != Command.Call) RoundIconButton(Glyph.Message, messageLabel) { reachContact(it, true) }
+                                        }
                                     }
                                 }
-                            )
-                        }
-                        extraPeople.forEach { person ->
-                            ListRow(
-                                person.name, Modifier.appPress({ record(input); flyout = person }),
-                                summary = person.packages.joinToString(" · ") { pkg ->
-                                    apps.firstOrNull { it.componentName.packageName == pkg }?.label?.toString() ?: sourceLabel(context, pkg)
-                                }.ifBlank { null },
-                                summaryLines = 1,
-                                leading = { PersonAvatar(person, tokens.listAvatar) }
                             )
                         }
                     }
@@ -715,11 +757,10 @@ internal fun SearchScreen(
     if (active) localPrompt?.let { AssistantChats.Chat(null, it) { localPrompt = null } }
     flyout?.let { person ->
         val launchers = remember(apps) { apps.associateBy { it.componentName.packageName } }
-        val inArchive = (person.ref as? ThreadRef.Person)?.id?.let { it >= 0 } == true
-        ContactFlyout(person, launchers, openThread = if (inArchive) ({
-            ArchiveData.requestedThread.value = person.ref
-            openInbox()
-        }) else null) { flyout = null }
+        val thread = person.summary.ref.takeIf { it in person.threads }
+        ContactFlyout(person.summary, launchers, openThread = thread?.let {
+            { ArchiveData.requestedThread.value = it; openInbox() }
+        }, relatedThreads = person.threads) { flyout = null }
     }
     if (confirmClear) {
         EnyoSheet(stringResource(R.string.search_history_clear), { confirmClear = false }) {

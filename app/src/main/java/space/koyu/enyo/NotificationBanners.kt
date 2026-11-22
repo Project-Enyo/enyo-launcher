@@ -11,6 +11,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -88,7 +89,10 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
         enter = slideInVertically { it } + fadeIn(),
         exit = slideOutVertically { it } + fadeOut()
     ) {
-        (shown ?: exiting)?.let { entry ->
+        (shown ?: exiting)?.let { initial ->
+            val entry = if (initial.isModelDownload(context.packageName)) {
+                active.firstOrNull { it.key == initial.key } ?: initial
+            } else initial
             val group = entry.noticeGroup()
             val label = if (group.messaging) stringResource(R.string.messages) else
                 apps.firstOrNull { it.componentName.packageName == entry.packageName }?.label?.toString()
@@ -112,6 +116,11 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
                         Text(label, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         payload.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         payload.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        entry.modelDownloadProgress(context.packageName)?.let { progress ->
+                            LinearProgressIndicator(progress = { progress },
+                                modifier = Modifier.fillMaxWidth().padding(top = tokens.gap / 2),
+                                color = tokens.accent, trackColor = tokens.widgetTrack)
+                        }
                     }
                     EnyoGlyph(Glyph.Forward, color = tokens.quiet)
                 }

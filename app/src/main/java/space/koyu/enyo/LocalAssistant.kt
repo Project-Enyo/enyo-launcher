@@ -31,6 +31,7 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -42,6 +43,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
@@ -60,6 +63,28 @@ internal fun supportsLocalAssistant(context: Context): Boolean {
         memory.totalMem >= 5L * 1024 * 1024 * 1024
 }
 
+private val recommendedAssistant = ModelAsset(
+    "litert-community/Qwen3-0.6B-int4/resolve/01d8620f3233a158edc2aa2c84f5d5e3fa0c02c0/",
+    "qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm", "qwen3.litertlm", 347251840,
+    "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139"
+)
+
+internal suspend fun installRecommendedAssistant(context: Context, progress: suspend (Int) -> Unit) =
+    withContext(Dispatchers.IO) {
+        localModelImport.withLock {
+            val staging = File(context.noBackupFilesDir, "model_downloads")
+            downloadModels(staging, listOf(recommendedAssistant), progress)
+            localInference.withLock {
+                Files.move(File(staging, recommendedAssistant.name).toPath(), modelFile(context).toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            }
+            context.searchPreferences.edit {
+                it[localAssistantEnabled] = true
+                it[defaultAssistant] = localAssistantId
+            }
+        }
+    }
+
 @Composable
 internal fun localAssistantReady(): Boolean {
     val context = LocalContext.current
@@ -75,6 +100,7 @@ internal fun LocalAssistantPreference() {
     val store = context.searchPreferences
     val ready = localAssistantReady()
     val supported = remember(context) { supportsLocalAssistant(context) }
+    val download = modelDownloadState(ModelDownloadKind.Chat)
     var importing by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -125,7 +151,9 @@ internal fun LocalAssistantPreference() {
     SettingsPanel(stringResource(R.string.local_ai)) {
         if (!supported) ListNote(stringResource(R.string.local_ai_unsupported))
         else {
-            SettingsAction(stringResource(R.string.local_ai_import), Glyph.Sparkles, enabled = !importing,
+            if (!ready && !download.active) SettingsAction(stringResource(R.string.local_ai_download), Glyph.Sparkles,
+                enabled = !importing, summary = stringResource(R.string.local_ai_download_summary), run = download.start)
+            SettingsAction(stringResource(R.string.local_ai_import), Glyph.Folder, enabled = !importing && !download.active,
                 summary = stringResource(if (importing) R.string.local_ai_importing else R.string.local_ai_summary)) {
                 picker.launch(arrayOf("*/*"))
             }
@@ -140,6 +168,7 @@ internal fun LocalAssistantPreference() {
                 }
             }
         }
+        ModelDownloadStatus(ModelDownloadKind.Chat, download)
         if (failed) ListNote(stringResource(R.string.local_ai_failed))
     }
 }
@@ -305,14 +334,16 @@ private suspend fun generateReply(
     localInference.withLock {
         check(supportsLocalAssistant(context))
         val engineConfig = EngineConfig(modelPath = modelFile(context).absolutePath,
-            backend = Backend.CPU(threadCount = 2), maxNumTokens = 2048, cacheDir = context.cacheDir.absolutePath)
-        val messages = history.takeLast(2).flatMap {
+            backend = Backend.CPU(threadCount = 2), maxNumTokens = 1280, cacheDir = context.cacheDir.absolutePath)
+        val messages = history.takeLast(1).flatMap {
             listOf(Message.user(it.prompt.take(480)), Message.model(it.reply.take(480)))
         }
         Engine(engineConfig).use { engine ->
             engine.initialize()
             coroutineContext.ensureActive()
-            engine.createConversation(ConversationConfig(initialMessages = messages, maxOutputToken = 384)).use { chat ->
+            val config = ConversationConfig(initialMessages = messages, maxOutputToken = 256,
+                samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.1))
+            engine.createConversation(config).use { chat ->
                 val response = StringBuilder()
                 chat.sendMessageAsync(prompt).collect { chunk ->
                     chunk.contents.contents.filterIsInstance<Content.Text>().forEach { response.append(it.text) }

@@ -143,8 +143,8 @@ internal object ArchiveData {
     fun people(context: Context, except: Long): List<ThreadSummary> = threads(context).filter { it.ref is ThreadRef.Person && (it.ref as ThreadRef.Person).id != except }
 
     fun search(context: Context, term: String, limit: Int = 20): List<MessageHit> {
-        val query = term.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-            .joinToString(" ") { word -> "\"" + word.replace("\"", "") + "\"*" }
+        val query = Regex("""[\p{L}\p{N}]+""").findAll(term)
+            .joinToString(" ") { word -> "text:${word.value}*" }
         if (query.isBlank()) return emptyList()
         return MessageArchive.get(context).read { db ->
             db.query(
