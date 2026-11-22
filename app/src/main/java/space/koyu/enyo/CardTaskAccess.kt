@@ -88,7 +88,7 @@ internal fun rememberCardTaskCloser(): suspend (List<ComponentName>) -> Boolean 
     DisposableEffect(context, access.granted) {
         if (!access.granted) return@DisposableEffect onDispose {}
         val args = Shizuku.UserServiceArgs(ComponentName(context, EnyoTaskService::class.java))
-            .processNameSuffix("tasks").daemon(false).version(3)
+            .processNameSuffix("tasks").daemon(false).version(4)
         var active = true
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -109,6 +109,15 @@ internal fun rememberCardTaskCloser(): suspend (List<ComponentName>) -> Boolean 
     }
 
     val currentAccess by rememberUpdatedState(access.granted)
+    // While task access is granted, Cards follows Android's running tasks each time the launcher returns.
+    val foreground = foregroundCycle()
+    LaunchedEffect(bridge, foreground) {
+        val service = bridge ?: return@LaunchedEffect
+        val running = withContext(Dispatchers.IO) {
+            runCatching { service.cardTasks() }.getOrNull()?.mapNotNull(ComponentName::unflattenFromString)
+        } ?: return@LaunchedEffect
+        RecentStore.get(context).sync(running)
+    }
     return close@{ components ->
         if (!currentAccess || components.isEmpty()) return@close true
         val service = withTimeoutOrNull(4000) {

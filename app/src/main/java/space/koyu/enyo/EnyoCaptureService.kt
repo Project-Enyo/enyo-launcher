@@ -30,16 +30,21 @@ class EnyoCaptureService : AccessibilityService() {
             onInterrupt()
             return
         }
-        val request = store.capture ?: return
         val source = event.packageName?.toString() ?: return
         if (source == packageName && event.className?.toString() == EnyoActivity::class.java.name) {
             captureBeforeLauncher()
             return
         }
         if (!windowExists(event.windowId, active = true)) return
-        if (source != request.component.packageName) {
+        var request = store.capture
+        if (request == null || source != request.component.packageName) {
             resetTracking()
-            return
+            // An app that came forward another way, such as from a widget or Android Settings, also gets a card.
+            if (source == packageName || source in ignoredPackages) return
+            val component = event.className?.toString()?.let { android.content.ComponentName(source, it) }
+                ?: android.content.ComponentName(source, "")
+            request = store.adopt(component) ?: return
+            if (source != request.component.packageName) return
         }
         if (trackedWindow?.request !== request) resetTracking()
         val target = TrackedWindow(request, event.windowId)
@@ -161,5 +166,8 @@ class EnyoCaptureService : AccessibilityService() {
     private companion object {
         const val captureInterval = 500L
         const val backupDelay = 650L
+        /** Windows that come forward over apps without being an app the person opened. */
+        val ignoredPackages = setOf("com.android.systemui", "com.android.permissioncontroller", "com.google.android.permissioncontroller",
+            "com.android.packageinstaller", "com.google.android.packageinstaller", "com.android.intentresolver", "android")
     }
 }

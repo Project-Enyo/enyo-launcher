@@ -8,6 +8,7 @@ import android.content.pm.LauncherActivityInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
@@ -110,6 +111,9 @@ internal class RecentStore private constructor(context: Context) {
     @Volatile private var targetWidth = 0
     @Volatile private var clearedAt = Long.MIN_VALUE
     private val dismissedAt = mutableMapOf<ComponentName, Long>()
+    private val launchedAt = mutableMapOf<ComponentName, Long>()
+    private val ownPackage = context.packageName
+    private val launcherApps = context.getSystemService(android.content.pm.LauncherApps::class.java)
 
     init {
         scope.launch {
@@ -136,6 +140,8 @@ internal class RecentStore private constructor(context: Context) {
         scope.launch {
             synchronized(lock) {
                 if (launchedAt <= clearedAt) return@synchronized
+                this@RecentStore.launchedAt[component] = launchedAt
+                dismissedAt.remove(component)
                 val existing = entries.value.ifEmpty(::readEntries)
                 val next = if (existing.any { it.component == component }) existing
                 else listOf(RecentEntry(component)) + existing
@@ -144,6 +150,45 @@ internal class RecentStore private constructor(context: Context) {
                 launchEvents.value = component to SystemClock.elapsedRealtimeNanos()
             }
         }
+    }
+
+    /**
+     * Matches Cards to Android's running tasks: cards whose app has no task leave, and tasks without
+     * a card gain one, unless the person dismissed that card since its app last came forward.
+     */
+    fun sync(running: List<ComponentName>) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        scope.launch {
+            synchronized(lock) {
+                val existing = entries.value.ifEmpty(::readEntries)
+                val cards = running.mapNotNull { cardComponent(it) }.distinct()
+                val packages = cards.mapTo(mutableSetOf()) { it.packageName }
+                // A card launched while the task list was read stays; its task may not be listed yet.
+                val recent = launchedAt.filterValues { it >= requestedAt - syncGraceMillis }.keys
+                val kept = existing.filter { it.component.packageName in packages || it.component in recent }
+                existing.filterNot { it in kept }.forEach { file(it.component).delete() }
+                val known = kept.mapTo(mutableSetOf()) { it.component.packageName }
+                val added = cards.filter { it.packageName !in known && it !in dismissedAt }.map { RecentEntry(it) }
+                val next = (kept + added.asReversed()).withoutSingleStacks().take(maxCards)
+                if (next != existing) persist(next)
+            }
+        }
+    }
+
+    /** The launcher entry that stands for an app's task: the activity itself, or the app's first entry. */
+    private fun cardComponent(component: ComponentName): ComponentName? {
+        if (component.packageName == ownPackage) return null
+        val activities = runCatching { launcherApps.getActivityList(component.packageName, Process.myUserHandle()) }.getOrNull().orEmpty()
+        return activities.firstOrNull { it.componentName == component }?.componentName ?: activities.firstOrNull()?.componentName
+    }
+
+    /** An app that came forward without Enyo opening it, such as from a widget, a notification or Android Settings. */
+    fun adopt(component: ComponentName): CaptureRequest? {
+        val card = cardComponent(component) ?: return null
+        if (capture?.component == card) return capture
+        prepare(card)
+        launched(card)
+        return capture
     }
 
     fun denied(request: CaptureRequest) {
@@ -334,6 +379,7 @@ internal class RecentStore private constructor(context: Context) {
     companion object {
         private const val thumbnailBucket = 64
         private const val maxCards = 32
+        private const val syncGraceMillis = 5_000L
         const val maxStack = 9
         private var instance: RecentStore? = null
 

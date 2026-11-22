@@ -37,6 +37,13 @@ class EnyoTaskService(context: Context) : ITaskBridge.Stub() {
         return false
     }
 
+    /** Components of the running app tasks, most recent first, or null when the list is unavailable. */
+    @Synchronized
+    override fun cardTasks(): Array<String>? {
+        checkOwner()
+        return tasks()?.values?.map { it.flattenToString() }?.distinct()?.toTypedArray()
+    }
+
     private fun checkOwner() {
         check(Process.myUid() == shellUid &&
             Binder.getCallingUid() == ownerUid &&
