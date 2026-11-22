@@ -102,6 +102,8 @@ internal fun InboxPage(
     val heads = remember(threads) { threads.filter { it.ref is ThreadRef.Person }.take(ArchiveData.recentHeadCount) }
     var openThread by remember { mutableStateOf<ThreadRef?>(null) }
     var allThreads by remember { mutableStateOf(false) }
+    var personFlyout by remember { mutableStateOf<ThreadSummary?>(null) }
+    personFlyout?.let { person -> ContactFlyout(person, launchers, openThread = { openThread = person.ref }) { personFlyout = null } }
     if (group == null) LaunchedEffect(Unit) {
         ArchiveData.requestedThread.collect { requested ->
             if (requested != null) { openThread = requested; ArchiveData.requestedThread.value = null }
@@ -119,7 +121,7 @@ internal fun InboxPage(
             ) {
                 // Chat heads: the most recent people across every messenger, from the archive.
                 items(conversations, key = { it.ref.toString() }) { head ->
-                    ChatHead(head) { openThread = head.ref }
+                    ChatHead(head, open = { openThread = head.ref }, person = { personFlyout = head })
                 }
                 items(providers, key = { it.componentName.flattenToString() }) { app ->
                     val name = labels.getValue(app.componentName.packageName)
@@ -150,7 +152,7 @@ internal fun InboxPage(
             if (visibleThreads.isNotEmpty()) item(key = "threads") {
                 SettingsPanel(stringResource(R.string.inbox_conversations)) {
                     val shown = if (allThreads) visibleThreads else visibleThreads.take(tokens.inboxThreadPreview)
-                    shown.forEach { summary -> key(summary.ref.toString()) { ThreadRow(summary, launchers) { openThread = summary.ref } } }
+                    shown.forEach { summary -> key(summary.ref.toString()) { ThreadRow(summary, launchers, person = { personFlyout = summary }) { openThread = summary.ref } } }
                     if (!allThreads && visibleThreads.size > shown.size) {
                         SettingsAction(stringResource(R.string.inbox_show_all, visibleThreads.size), Glyph.Messages) { allThreads = true }
                     }

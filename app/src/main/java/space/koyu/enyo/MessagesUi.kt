@@ -73,9 +73,9 @@ internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.uni
 
 /** One chat head: the person's avatar with an unread dot. */
 @Composable
-internal fun ChatHead(summary: ThreadSummary, open: () -> Unit) {
+internal fun ChatHead(summary: ThreadSummary, open: () -> Unit, person: () -> Unit) {
     val tokens = LocalTokens.current
-    Box(Modifier.size(tokens.iconSize).clip(CircleShape).appPress(open).semantics { contentDescription = summary.name }) {
+    Box(Modifier.size(tokens.iconSize).clip(CircleShape).appPress(open, person).semantics { contentDescription = summary.name }) {
         PersonAvatar(summary, tokens.iconSize)
         if (summary.unread > 0) Box(
             Modifier.align(Alignment.TopEnd).size(tokens.unreadDot).clip(CircleShape).background(tokens.accent)
@@ -85,14 +85,17 @@ internal fun ChatHead(summary: ThreadSummary, open: () -> Unit) {
 
 /** A thread row in the unified inbox list. */
 @Composable
-internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.content.pm.LauncherActivityInfo>, open: () -> Unit) {
+internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.content.pm.LauncherActivityInfo>, person: () -> Unit, open: () -> Unit) {
     val tokens = LocalTokens.current
     val time = remember(summary.lastAt) {
         DateUtils.getRelativeTimeSpanString(summary.lastAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE).toString()
     }
     ListRow(
         summary.name, Modifier.appPress(open), summary = summary.preview, summaryLines = 2,
-        leading = { PersonAvatar(summary, tokens.listAvatar) },
+        leading = {
+            val personLabel = stringResource(R.string.contact_details_of, summary.name)
+            Box(Modifier.clip(CircleShape).appPress(person).semantics { contentDescription = personLabel }) { PersonAvatar(summary, tokens.listAvatar) }
+        },
         trailing = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
                 Text(time, style = tokens.rowSummary, maxLines = 1)
@@ -149,6 +152,8 @@ internal fun ThreadScreen(
     val label = { pkg: String -> launchers[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
 
     var accounts by remember { mutableStateOf(false) }
+    var flyout by remember { mutableStateOf(false) }
+    val routes = rememberArchive(emptyList<ChatRoute>(), thread) { ArchiveData.routes(it, thread) }
     val list = rememberLazyListState()
     // The list is laid out from the newest message up, so the newest stays in view as messages arrive.
     LaunchedEffect(messages.lastOrNull()?.id) { if (messages.isNotEmpty()) list.scrollToItem(0) }
@@ -161,7 +166,10 @@ internal fun ThreadScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ThreadIconButton(Glyph.Back, stringResource(R.string.back), run = close)
-                PersonAvatar(summary, tokens.listAvatar)
+                val personLabel = stringResource(R.string.contact_details_of, summary?.name.orEmpty())
+                Box(Modifier.clip(CircleShape).appPress({ if (summary != null) flyout = true }).semantics { contentDescription = personLabel }) {
+                    PersonAvatar(summary, tokens.listAvatar)
+                }
                 Column(Modifier.weight(1f).padding(start = tokens.gap / 2)) {
                     Text(summary?.name.orEmpty(), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(summary?.packages.orEmpty().joinToString(" · ") { label(it) }, style = tokens.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -261,7 +269,9 @@ internal fun ThreadScreen(
                     openable.take(3).forEach { pkg ->
                         PillButton(stringResource(R.string.thread_open_in, label(pkg))) {
                             val entry = live.firstOrNull { it.packageName == pkg }
-                            val opened = entry?.openFromForeground(context) == true || launchers[pkg]?.let { openApp(it); true } == true
+                            val route = routes.firstOrNull { it.packageName == pkg }
+                            val opened = (route != null && context.openChat(route, entry)) || entry?.openFromForeground(context) == true ||
+                                launchers[pkg]?.let { openApp(it); true } == true
                             failed = !opened
                         }
                     }
@@ -269,6 +279,7 @@ internal fun ThreadScreen(
             }
         }
     }
+    if (flyout && summary != null) ContactFlyout(summary, launchers, openThread = null) { flyout = false }
     if (accounts) EnyoSheet(stringResource(R.string.thread_options), { accounts = false }) {
         if (personId != null) SettingsPanel(stringResource(R.string.thread_people_section)) {
             identities.forEach { identity ->

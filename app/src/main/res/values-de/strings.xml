@@ -296,4 +296,10 @@
     <string name="notes_unpin">Lösen</string>
     <string name="notes_done">Fertig</string>
     <string name="backup_category_notes">Notizen und To-dos</string>
+    <string name="contact_email">E-Mail</string>
+    <string name="contact_thread">Nachrichten</string>
+    <string name="contact_details">Telefon und E-Mail</string>
+    <string name="contact_services">Chats</string>
+    <string name="contact_open">In Kontakten öffnen</string>
+    <string name="contact_details_of">Details zu %1$s</string>
 </resources>

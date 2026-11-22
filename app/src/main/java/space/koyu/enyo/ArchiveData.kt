@@ -42,6 +42,8 @@ internal data class ThreadIdentity(val id: Long, val packageName: String, val na
 
 internal data class LinkSuggestion(val identityId: Long, val packageName: String, val lookup: String, val contactName: String?)
 
+internal data class ContactDetails(val uri: Uri, val phones: List<String>, val emails: List<String>)
+
 internal data class MessageHit(val message: ArchivedMessage, val thread: ThreadRef, val threadName: String)
 
 /** Read queries and edits on the archive. Reads run on the caller's background dispatcher. */
@@ -251,6 +253,51 @@ internal object ArchiveData {
         context.contentResolver.query(uri, arrayOf(ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME), null, null, null)
             ?.use { if (it.moveToFirst()) PeopleResolver.ContactMatch(it.getString(0), it.stringOrNull(1)) else null }
     }.getOrNull()
+
+    /** Every app conversation behind a thread, most recent first. */
+    fun routes(context: Context, thread: ThreadRef): List<ChatRoute> = MessageArchive.get(context).read { db ->
+        val (sql, arg) = when (thread) {
+            is ThreadRef.Person -> """SELECT c.package, c.key, i.key, COALESCE(i.name, c.title), i.phone, i.uri, c.last_at
+                FROM conversations c JOIN identities i ON i.id = c.identity_id WHERE i.person_id = ? AND c.is_group = 0
+                ORDER BY c.last_at DESC""" to thread.id
+            is ThreadRef.Group -> """SELECT c.package, c.key, NULL, c.title, NULL, NULL, c.last_at FROM conversations c WHERE c.id = ?""" to thread.conversationId
+        }
+        db.query(sql, arrayOf(arg)).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(ChatRoute(
+                    cursor.getString(0), cursor.getString(1), cursor.stringOrNull(2), cursor.stringOrNull(3),
+                    cursor.stringOrNull(4), cursor.stringOrNull(5), cursor.getLong(6)
+                ))
+            }
+        }
+    }.orEmpty()
+
+    /** Phone numbers and e-mail addresses of a linked contact, when contacts access is granted. */
+    fun contactDetails(context: Context, lookup: String): ContactDetails? {
+        if (context.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
+        return runCatching {
+            val contact = ContactsContract.Contacts.lookupContact(
+                context.contentResolver, Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_LOOKUP_URI, lookup)
+            ) ?: return null
+            val id = contact.lastPathSegment ?: return null
+            val phones = mutableListOf<String>()
+            val emails = mutableListOf<String>()
+            context.contentResolver.query(
+                ContactsContract.Data.CONTENT_URI,
+                arrayOf(ContactsContract.Data.MIMETYPE, ContactsContract.Data.DATA1),
+                "${ContactsContract.Data.CONTACT_ID} = ?", arrayOf(id), null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val value = cursor.getString(1)?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+                    when (cursor.getString(0)) {
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE -> phones += value
+                        ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE -> emails += value
+                    }
+                }
+            }
+            ContactDetails(contact, phones.distinctBy { it.filter(Char::isDigit) }, emails.distinct())
+        }.getOrNull()
+    }
 
     private fun android.database.Cursor.message() = ArchivedMessage(
         getLong(0), getString(1), stringOrNull(2), getString(3), getLong(4), getInt(5) == 1, getLong(6), stringOrNull(7)
