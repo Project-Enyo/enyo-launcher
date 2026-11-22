@@ -198,7 +198,8 @@ internal class RecentStore private constructor(context: Context) {
     fun bitmap(entry: RecentEntry): Bitmap? =
         if (entry.aspect == null) null else runCatching { BitmapFactory.decodeFile(file(entry.component).path) }.getOrNull()
 
-    fun group(dragged: ComponentName, destination: ComponentName) {
+    /** Stacks [dragged], or its whole stack when [wholeStack], onto [destination], up to [maxStack] cards. */
+    fun group(dragged: ComponentName, destination: ComponentName, wholeStack: Boolean = false) {
         if (dragged == destination) return
         scope.launch {
             synchronized(lock) {
@@ -206,11 +207,17 @@ internal class RecentStore private constructor(context: Context) {
                 val from = current.find { it.component == dragged } ?: return@synchronized
                 val into = current.find { it.component == destination } ?: return@synchronized
                 if (from.stack != null && from.stack == into.stack) return@synchronized
+                val moving = if (wholeStack && from.stack != null) current.filter { it.stack == from.stack } else listOf(from)
+                val target = if (into.stack != null) current.filter { it.stack == into.stack } else listOf(into)
+                if (moving.size + target.size > maxStack) return@synchronized
                 val stack = into.stack ?: UUID.randomUUID().toString()
-                persist(current.map {
-                    if (it.component == from.component || it.component == into.component)
-                        it.copy(stack = stack) else it
-                }.withoutSingleStacks())
+                val joining = moving.mapTo(mutableSetOf()) { it.component } + into.component
+                // The moved cards go on top of the stack they join.
+                val rest = current.filterNot { it.component in joining }.toMutableList()
+                val anchor = rest.indexOfFirst { it.stack == stack }.takeIf { it >= 0 } ?: current.indexOf(into).coerceAtMost(rest.size)
+                val placed = moving.map { it.copy(stack = stack) } + (if (into.stack == null) listOf(into.copy(stack = stack)) else emptyList())
+                rest.addAll(anchor, placed)
+                persist(rest.withoutSingleStacks())
             }
         }
     }
@@ -327,6 +334,7 @@ internal class RecentStore private constructor(context: Context) {
     companion object {
         private const val thumbnailBucket = 64
         private const val maxCards = 32
+        const val maxStack = 9
         private var instance: RecentStore? = null
 
         @Synchronized fun get(context: Context): RecentStore =
@@ -493,12 +501,14 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                     else tokens.stackFanDrop * fanDepth,
                                     label = "stack y"
                                 )
+                                val stackSize = { head: BoardCard -> groups.firstOrNull { head in it }?.size ?: 1 }
                                 val targets = heads.filter { target ->
-                                    cluster.none { it.entry.component == target.entry.component }
+                                    cluster.none { it.entry.component == target.entry.component } &&
+                                        stackSize(target) + (if (cluster.size > 1 && !expanded) cluster.size else 1) <= RecentStore.maxStack
                                 }
                                 val actions = targets.map { target ->
                                     CustomAccessibilityAction(context.getString(R.string.cards_stack_action, groupLabel, target.app.label)) {
-                                        store.group(entry.component, target.entry.component)
+                                        store.group(entry.component, target.entry.component, wholeStack = cluster.size > 1 && !expanded)
                                         true
                                     }
                                 } + buildList {
@@ -553,10 +563,12 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                                 it.entry.component != entry.component &&
                                                     bounds[it.entry.component]?.contains(point) == true
                                             } else null
-                                            val stackingTarget = if (!wholeStack && point.x > carouselBounds.left + edgeZone &&
+                                            val moving = if (wholeStack) cluster.size else 1
+                                            val stackingTarget = if (point.x > carouselBounds.left + edgeZone &&
                                                 point.x < carouselBounds.right - edgeZone
                                             ) visible.firstOrNull { (head, rect) ->
                                                 cluster.none { it.entry.component == head.entry.component } &&
+                                                    stackSize(head) + moving <= RecentStore.maxStack &&
                                                     rect.contains(point) &&
                                                     abs(point.x - rect.center.x) <= rect.width * tokens.stackDropCenterFraction
                                             } else null
@@ -572,7 +584,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                                 }
                                                 stackingTarget != null -> {
                                                     selected = null
-                                                    store.group(entry.component, stackingTarget.first.entry.component)
+                                                    store.group(entry.component, stackingTarget.first.entry.component, wholeStack)
                                                 }
                                                 !withinCluster && nearest != null && point.y in carouselBounds.top..carouselBounds.bottom -> {
                                                     val (head, rect) = nearest
