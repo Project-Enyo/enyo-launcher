@@ -88,6 +88,9 @@
     <string name="cards_stack_action">%1$s %2$s</string>
     <string name="cards_stack">Kartenstapel</string>
     <string name="cards_unstack">Aus Stapel holen</string>
+    <string name="cards_clear_all">Alle entfernen</string>
+    <string name="cards_move_earlier">Karte nach vorne verschieben</string>
+    <string name="cards_move_later">Karte nach hinten verschieben</string>
     <string name="cards_dismiss">Karte entfernen</string>
     <string name="older_cards">Ältere Karten</string>
     <string name="older_cards_back">Neuere Karten</string>

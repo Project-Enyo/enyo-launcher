@@ -158,6 +158,9 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val iconBackgroundTolerance = 20
     val recentVisible = 3
     val recentCarouselGap = 20.dp
+    val recentEdgeScrollZone = 56.dp
+    val recentEdgeScrollSpeed = 560.dp
+    val stackDropCenterFraction = 0.24f
     val stackSpread = 116.dp
     val stackLift = 10.dp
     val stackSpreadFraction = 0.46f
@@ -172,6 +175,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val recentOffset = 0.16f
     val recentDismissFraction = 0.23f
     val recentExitMillis = 350
+    val recentFlingVelocity = 850.dp
+    val recentFlingExitMillis = 180
     val elevation = listOf(1.dp, dimension(3, 2, 2).dp, dimension(8, 6, 5).dp)
 
     val state = TextStyle(fontSize = dimension(18, 17, 16).sp, fontWeight = FontWeight.SemiBold, color = ink)

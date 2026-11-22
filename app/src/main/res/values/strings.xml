@@ -88,6 +88,9 @@
     <string name="cards_stack_action">%1$s %2$s</string>
     <string name="cards_stack">Card stack</string>
     <string name="cards_unstack">Unstack</string>
+    <string name="cards_clear_all">Clear all</string>
+    <string name="cards_move_earlier">Move card earlier</string>
+    <string name="cards_move_later">Move card later</string>
     <string name="cards_dismiss">Remove card</string>
     <string name="older_cards">Older cards</string>
     <string name="older_cards_back">Newer cards</string>
