@@ -484,13 +484,13 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                                     label = "stack width"
                                 )
                                 val offsetX by animateDpAsState(
-                                    if (expanded) fan * (depth % 2 - 0.5f) else fan * fanDepth / 2,
+                                    if (expanded) fan * (depth % 2 - 0.5f) else fan * fanDepth * tokens.stackFanSideFraction,
                                     label = "stack x"
                                 )
                                 val offsetY by animateDpAsState(
                                     if (expanded) step * (depth - cluster.lastIndex / 2f) -
                                         (if (selected == entry.component) tokens.stackLift else androidx.compose.ui.unit.Dp(0f))
-                                    else tokens.gap * fanDepth,
+                                    else tokens.stackFanDrop * fanDepth,
                                     label = "stack y"
                                 )
                                 val targets = heads.filter { target ->

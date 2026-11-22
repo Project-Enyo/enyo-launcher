@@ -163,6 +163,8 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val stackDropCenterFraction = 0.24f
     val stackSpread = 116.dp
     val stackLift = 10.dp
+    val stackFanDrop = dimension(18, 16, 14).dp
+    val stackFanSideFraction = 0.68f
     val stackSpreadFraction = 0.46f
     val stackExpandedWidth = 0.82f
     val recentWidthFraction = 0.66f
@@ -171,7 +173,7 @@ internal class Tokens(private val dark: Boolean, val size: CardSize, palette: Ac
     val recentDefaultAspect = 0.66f
     val recentTallAspect = 0.45f
     val recentSquareAspect = 0.9f
-    val recentRotation = 3f
+    val recentRotation = 4f
     val recentOffset = 0.16f
     val recentDismissFraction = 0.23f
     val recentExitMillis = 350
