@@ -16,6 +16,8 @@ import android.provider.CalendarContract.Instances
 import android.text.format.DateFormat
 import java.time.Instant
 import java.time.ZoneOffset
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
@@ -25,7 +27,7 @@ private val wifiQuery = Regex("""\b(?:wi[ -]?fi|wlan|network status|internet con
 private val bluetoothQuery = Regex("""\b(?:bluetooth|connected devices|verbundene geräte)\b""", RegexOption.IGNORE_CASE)
 private val pairedQuery = Regex("""\b(?:paired|bonded|gekoppelt\w*)\b""", RegexOption.IGNORE_CASE)
 private val timeQuery = Regex(
-    """\b(?:current time|what time is it|local time|current date|today'?s date|what day is it|wie spät|uhrzeit|heutiges datum|welcher tag)\b""",
+    """\b(?:current time|what time is it|local time|current date|today'?s date|what day is it|wie spät|wieviel uhr|wie viel uhr|uhrzeit|heutiges datum|welcher tag)\b""",
     RegexOption.IGNORE_CASE
 )
 private val calendarQuery = Regex(
@@ -33,6 +35,20 @@ private val calendarQuery = Regex(
     RegexOption.IGNORE_CASE
 )
 private val weatherQuery = Regex("""\b(?:weather|forecast|temperature|wetter|temperatur|vorhersage)\b""", RegexOption.IGNORE_CASE)
+
+private val directClockQuery = Regex(
+    """^(?:(?:please|bitte)\s+)?(?:what(?:'s| is) the (?:current |local )?(?:time|date)|what time is it|what day is it|(?:current |local )(?:time|date)|(?:wie spät|wie ?viel uhr) ist es(?: gerade| jetzt)?|(?:aktuelle |lokale )?uhrzeit|heutiges datum|welcher tag ist heute)[.!?]*$""",
+    RegexOption.IGNORE_CASE
+)
+
+internal fun assistantClockAnswer(context: Context, query: String, now: Long = System.currentTimeMillis()): String? {
+    if (!directClockQuery.matches(query.trim())) return null
+    val date = Date(now)
+    val localTime = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
+    val offset = localTime.format(DateTimeFormatter.ofPattern("xxx"))
+    return context.getString(R.string.local_ai_clock_answer, DateFormat.getLongDateFormat(context).format(date),
+        DateFormat.getTimeFormat(context).format(date), localTime.zone.id, offset)
+}
 
 internal fun assistantDeviceContext(context: Context, query: String): String {
     if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return ""
@@ -47,7 +63,8 @@ internal fun assistantDeviceContext(context: Context, query: String): String {
         if (bluetoothQuery.containsMatchIn(query)) add(bluetoothContext(context, pairedQuery.containsMatchIn(query)))
         if (timeQuery.containsMatchIn(query)) {
             val date = Date(now)
-            add("Current local date and time: ${DateFormat.getLongDateFormat(context).format(date)}, ${DateFormat.getTimeFormat(context).format(date)} (${java.util.TimeZone.getDefault().id})")
+            val localTime = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
+            add("Current device local time: ${DateFormat.getLongDateFormat(context).format(date)}, ${DateFormat.getTimeFormat(context).format(date)}; time zone: ${localTime.zone.id}, UTC${localTime.format(DateTimeFormatter.ofPattern("xxx"))}.")
         }
         if (calendarQuery.containsMatchIn(query)) add(calendarContext(context, now))
         if (weatherQuery.containsMatchIn(query)) add(weatherContext(context))

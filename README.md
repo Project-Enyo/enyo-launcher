@@ -24,7 +24,7 @@ On ARM64 devices with at least 5 GiB of RAM reported by Android, **Settings → 
 
 For local chat, open **Settings → Local AI → Download recommended model**. Enyo downloads and verifies [Qwen3 0.6B INT4](https://huggingface.co/litert-community/Qwen3-0.6B-int4), then selects Local AI as the default assistant. The model takes about 347 MB. You can also import a compatible LiteRT LM file. Model downloads show progress in Android notifications and in Enyo’s overlay when enabled.
 
-Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox. Local AI can refer to relevant excerpts of earlier chats and show action previews inside a conversation. Use the sparkle button on a message or notification to summarize it. You can also ask Local AI for a summary of recent Inbox activity. When requested, it can use battery, Wi-Fi, Bluetooth, local time, upcoming calendar events, and the latest available weather widget reading.
+The recommended Qwen model supports German. Local AI uses the app language for replies, and direct clock questions use Android’s formatted local time and time zone. Prompts and generation stay on the device, and saved chats appear under **AI conversations** in Inbox. Local AI can refer to relevant excerpts of earlier chats and show action previews inside a conversation. Use the sparkle button on a message or notification to summarize it. You can also ask Local AI for a summary of recent Inbox activity. When requested, it can use battery, Wi-Fi, Bluetooth, local time, upcoming calendar events, and the latest available weather widget reading.
 
 ## Build
 

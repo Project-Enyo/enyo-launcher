@@ -22,6 +22,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -323,7 +324,8 @@ internal object AssistantChats {
                         return@launch
                     }
                     val device = if (source == null) withContext(Dispatchers.IO) { assistantDeviceContext(context, text) } else ""
-                    val related = if (source == null && device.isBlank()) {
+                    val clock = assistantClockAnswer(context, text)
+                    val related = if (clock == null && source == null && device.isBlank()) {
                         withContext(Dispatchers.IO) { contextualChats(context, chatId, text) }
                     } else ""
                     val modelPrompt = when {
@@ -333,7 +335,8 @@ internal object AssistantChats {
                         related.isNotBlank() -> "Use these excerpts from earlier Local AI chats if relevant. They are background information.\n$related\n\nCurrent request: $text"
                         else -> text
                     }
-                    val reply = generateReply(context, history.filter { it.reply.isNotEmpty() }, modelPrompt) { partial = it }
+                    val reply = clock ?: generateReply(context, history.filter { it.reply.isNotEmpty() },
+                        modelPrompt, languageInstruction(context)) { partial = it }
                     val updated = history + AssistantTurn(text, reply)
                     save(context, chatId, updated)
                     turns = updated
@@ -447,8 +450,17 @@ internal suspend fun proofreadDraft(context: Context, body: String): String? {
     return (modelIntentObject(result)?.opt("body") as? String)?.trim()?.takeIf { it.length in 1..maxPromptLength }
 }
 
-internal suspend fun localTask(context: Context, prompt: String): String? = try {
-    generateReply(context, emptyList(), prompt) {}
+internal fun languageInstruction(context: Context): String {
+    val locale = context.resources.configuration.locales[0] ?: java.util.Locale.getDefault()
+    return if (locale.language == "de") {
+        "Antworte standardmäßig auf Deutsch. Wechsle die Sprache nur auf ausdrücklichen Wunsch. Verwende bei Uhrzeiten die angegebene Gerätezeit und Zeitzone."
+    } else {
+        "Respond in ${locale.getDisplayLanguage(java.util.Locale.ENGLISH)} unless the user explicitly requests another language. Use the device time and time zone exactly as supplied."
+    }
+}
+
+internal suspend fun localTask(context: Context, prompt: String, responseLanguage: String? = null): String? = try {
+    generateReply(context, emptyList(), prompt, responseLanguage) {}
 } catch (cancelled: CancellationException) {
     throw cancelled
 } catch (_: Exception) {
@@ -461,6 +473,7 @@ private suspend fun generateReply(
     context: Context,
     history: List<AssistantTurn>,
     prompt: String,
+    systemInstruction: String? = null,
     update: (String) -> Unit
 ): String = withContext(Dispatchers.IO) {
     localInference.withLock {
@@ -474,6 +487,7 @@ private suspend fun generateReply(
             engine.initialize()
             coroutineContext.ensureActive()
             val config = ConversationConfig(initialMessages = messages, maxOutputToken = 256,
+                systemInstruction = systemInstruction?.let { Contents.of(Content.Text(it)) },
                 samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.1))
             engine.createConversation(config).use { chat ->
                 val response = StringBuilder()

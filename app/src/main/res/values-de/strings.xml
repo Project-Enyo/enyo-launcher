@@ -399,4 +399,5 @@
     <string name="search_proofread">Rechtschreibung und Grammatik prüfen</string>
     <string name="search_original_wording">Ursprünglichen Text verwenden</string>
     <string name="search_ai_summarize">Mit lokaler KI zusammenfassen</string>
+    <string name="local_ai_clock_answer">Es ist %2$s Uhr am %1$s (%3$s, UTC%4$s).</string>
 </resources>
