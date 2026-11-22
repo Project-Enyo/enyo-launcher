@@ -86,7 +86,7 @@ private fun renderTodayWidget(
     val locale = context.resources.configuration.locales[0]
     val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     val views = RemoteViews(context.packageName, if (kind == TodayWidget.Clock) R.layout.today_widget_clock else R.layout.today_widget)
-    val tokens = Tokens(dark, CardSize.CompactHeight, systemAccent(context, dark))
+    val tokens = Tokens(dark, CardSize.CompactHeight, systemPalette(context, dark))
     views.setColorStateList(R.id.widget_content, "setBackgroundTintList", ColorStateList.valueOf(tokens.widgetSurface.toArgb()))
     views.setTextColor(R.id.widget_value, tokens.onAccentContainer.toArgb())
     if (kind != TodayWidget.Clock) {

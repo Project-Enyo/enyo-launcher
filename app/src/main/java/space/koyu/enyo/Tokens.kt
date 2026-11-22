@@ -37,17 +37,27 @@ internal fun resolveCardSize(width: Dp, height: Dp): CardSize = when {
     else -> CardSize.Tiny
 }
 
-internal data class AccentPalette(
+/** Colors from the system dynamic scheme, so Enyo follows the wallpaper derived system tint. */
+internal data class SystemPalette(
     val accent: Color,
     val container: Color,
     val onAccent: Color,
-    val onContainer: Color
+    val onContainer: Color,
+    val background: Color,
+    val surface: Color,
+    val quiet: Color,
+    val ink: Color
 )
 
-internal fun systemAccent(context: Context, dark: Boolean): AccentPalette? = runCatching {
+internal fun systemPalette(context: Context, dark: Boolean): SystemPalette? = runCatching {
     val colors = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    AccentPalette(colors.primary, colors.primaryContainer, colors.onPrimary, colors.onPrimaryContainer)
-        .takeIf { it.accent.isSpecified && it.container.isSpecified && it.accent.alpha > 0f && it.container.alpha > 0f }
+    SystemPalette(
+        colors.primary, colors.primaryContainer, colors.onPrimary, colors.onPrimaryContainer,
+        colors.background, colors.surfaceContainerHigh, colors.onSurfaceVariant, colors.onSurface
+    ).takeIf { palette ->
+        listOf(palette.accent, palette.container, palette.background, palette.surface)
+            .all { it.isSpecified && it.alpha > 0f }
+    }
 }.getOrNull()
 
 @Composable
@@ -63,19 +73,20 @@ internal fun rememberTokens(dark: Boolean, size: CardSize): Tokens {
         val listening = runCatching { wallpaper.addOnColorsChangedListener(listener, Handler(Looper.getMainLooper())) }.isSuccess
         onDispose { if (listening) runCatching { wallpaper.removeOnColorsChangedListener(listener) } }
     }
-    val palette = remember(context, configuration, dark, wallpaperRevision) { systemAccent(context, dark) }
+    val palette = remember(context, configuration, dark, wallpaperRevision) { systemPalette(context, dark) }
     return remember(dark, size, palette) { Tokens(dark, size, palette) }
 }
 
-internal class Tokens(private val dark: Boolean, val size: CardSize, palette: AccentPalette? = null) {
+internal class Tokens(private val dark: Boolean, val size: CardSize, palette: SystemPalette? = null) {
     private fun tone(light: Long, night: Long) = Color(if (dark) night else light)
     private fun dimension(expanded: Int, medium: Int, compact: Int, tiny: Int = compact) =
         listOf(expanded, medium, compact, tiny)[size.ordinal]
 
-    val background = tone(0xFFF6F3E9, 0xFF161711)
-    val surface = tone(0xFFEEE9DB, 0xFF28291F)
-    val quiet = tone(0xFF5B5749, 0xFFBEB8A5)
-    val ink = tone(0xFF29271D, 0xFFF7F1E0)
+    // The fixed warm tones only apply when the system provides no dynamic scheme.
+    val background = palette?.background ?: tone(0xFFF6F3E9, 0xFF161711)
+    val surface = palette?.surface ?: tone(0xFFEEE9DB, 0xFF28291F)
+    val quiet = palette?.quiet ?: tone(0xFF5B5749, 0xFFBEB8A5)
+    val ink = palette?.ink ?: tone(0xFF29271D, 0xFFF7F1E0)
     val accent = palette?.accent ?: tone(0xFF3F6338, 0xFFAACD97)
     val accentContainer = palette?.container ?: tone(0xFFDCE8CA, 0xFF34482C)
     val onAccent = palette?.onAccent ?: background
