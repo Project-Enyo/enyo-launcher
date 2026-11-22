@@ -55,8 +55,8 @@ private enum class Backdrop(
     ),
     TidalFlats(R.string.wallpaper_tidal_flats, R.drawable.wallpaper_tidal_flats),
     Kiel(
-        R.string.wallpaper_kiel, R.drawable.wallpaper_kiel, "JøMa",
-        "https://commons.wikimedia.org/wiki/File:Leuchtturm_Friedrichsort_in_der_Kieler_F%C3%B6rde.jpg"
+        R.string.wallpaper_kiel, R.drawable.wallpaper_kiel, "Diego Delso, delso.photo",
+        "https://commons.wikimedia.org/wiki/File:Ayuntamiento,_Kiel,_Alemania,_2019-09-10,_DD_51-53_HDR.jpg"
     ),
     Castle(R.string.wallpaper_castle, R.drawable.wallpaper_castle),
     Bastei(R.string.wallpaper_bastei, R.drawable.wallpaper_bastei),
