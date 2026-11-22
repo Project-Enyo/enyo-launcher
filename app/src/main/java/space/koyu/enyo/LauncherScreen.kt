@@ -2,6 +2,7 @@ package space.koyu.enyo
 
 import android.Manifest
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.net.Uri
@@ -237,16 +238,30 @@ internal fun LauncherScreen(
         onDispose { setTyping(null) }
     }
     val recentStore = remember(context) { RecentStore.get(context) }
+    fun launchForCards(component: ComponentName, launch: () -> Boolean): Boolean {
+        recentStore.prepare(component)
+        val launched = launch()
+        if (launched) recentStore.launched(component)
+        else recentStore.capture = null
+        return launched
+    }
     fun openApp(app: LauncherActivityInfo) {
         if (app.user != Process.myUserHandle()) return
-        recentStore.prepare(app.componentName)
-        val launched = runCatching { launcher.startMainActivity(app.componentName, app.user, null, null) }.isSuccess ||
-            context.launchSafely(Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LAUNCHER)
-                .setComponent(app.componentName)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        if (launched) recentStore.launched(app.componentName)
-        else recentStore.capture = null
+        launchForCards(app.componentName) {
+            runCatching { launcher.startMainActivity(app.componentName, app.user, null, null) }.isSuccess ||
+                context.launchSafely(Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(app.componentName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+    fun openSearchIntent(intent: Intent): Boolean {
+        val target = intent.resolveActivity(context.packageManager)
+        // Cards are keyed by launcher entries, while actions can open other activities in the app.
+        val card = apps.firstOrNull { it.componentName == target }?.componentName
+            ?: apps.firstOrNull { it.componentName.packageName == target?.packageName }?.componentName
+        return if (card == null) context.launchSafely(intent)
+        else launchForCards(card) { context.launchSafely(intent) }
     }
     // One stable action, so recomposing the launcher never hands every page and tile a new callback.
     val currentOpenApp by rememberUpdatedState<(LauncherActivityInfo) -> Unit>(::openApp)
@@ -409,7 +424,8 @@ internal fun LauncherScreen(
                 SearchScreen(
                     query, { query = it }, library, openAppAction, { surface = 0 }, { surface = 2 },
                     packageCycle, transit, { transitPicker = true }, { messagesPicker = true }, searchVisible,
-                    openInbox = { surface = 0; scope.launch { pager.scrollToPage(3) } }
+                    openInbox = { surface = 0; scope.launch { pager.scrollToPage(3) } },
+                    openIntent = ::openSearchIntent
                 )
             }
         }

@@ -222,7 +222,8 @@ internal fun SearchScreen(
     openTransit: () -> Unit,
     openMessages: () -> Unit,
     active: Boolean,
-    openInbox: () -> Unit
+    openInbox: () -> Unit,
+    openIntent: (Intent) -> Boolean
 ) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
@@ -328,7 +329,7 @@ internal fun SearchScreen(
     DisposableEffect(active) { onDispose { if (active) keyboard?.hide() } }
 
     fun open(intent: Intent) {
-        if (!context.launchSafely(intent)) status = R.string.action_unavailable
+        if (!openIntent(intent)) status = R.string.action_unavailable
     }
     // Opens the dialer or a message draft directly; neither places a call or sends anything by itself.
     fun reachContact(contact: Contact, message: Boolean) {
@@ -535,7 +536,7 @@ internal fun SearchScreen(
                                 Modifier.appPress({
                                     record(input)
                                     val recipient = assistant.textShare
-                                    val shared = recipient != null && context.launchSafely(
+                                    val shared = recipient != null && openIntent(
                                         assistantTextShare().setComponent(recipient).putExtra(Intent.EXTRA_TEXT, input)
                                     )
                                     if (!shared) {
