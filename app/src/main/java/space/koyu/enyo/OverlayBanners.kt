@@ -160,7 +160,7 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
                 val dark = isSystemInDarkTheme()
                 val tokens = rememberTokens(dark, size)
                 CompositionLocalProvider(LocalTokens provides tokens) {
-                    OverlayCard(entry, close = ::dismiss) {
+                    OverlayCard(entry, close = ::dismiss, startReply = { startReply(params) }) {
                         if (!keyguard.isKeyguardLocked) {
                             // The notification's own target first, then its app, and Enyo only when neither opens.
                             val opened = entry.openFromForeground(context) || context.launchNotifyingApp(entry.packageName)
@@ -184,6 +184,16 @@ internal class OverlayBanners(private val context: Context) : AutoCloseable {
             delay(bannerLifetimeMillis)
             dismiss()
         }
+    }
+
+    /** Lets the banner take the keyboard while the person types a reply, and keeps it until they finish. */
+    private fun startReply(params: WindowManager.LayoutParams) {
+        expiration?.cancel()
+        expiration = null
+        val banner = view ?: return
+        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        runCatching { windowManager?.updateViewLayout(banner, params) }
     }
 
     private fun dismiss() {
@@ -219,9 +229,11 @@ private class BannerOwner : SavedStateRegistryOwner {
 }
 
 @Composable
-private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, open: () -> Unit) {
+private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, startReply: () -> Unit, open: () -> Unit) {
     val context = LocalContext.current
     val tokens = LocalTokens.current
+    val action = remember(entry) { if (entry.isMessagingNotice()) entry.notification.replyAction() else null }
+    var replying by remember { mutableStateOf(false) }
     val group = entry.noticeGroup()
     val title = if (group.messaging) stringResource(R.string.messages) else sourceLabel(context, entry.packageName)
     val text = entry.noticePayload()
@@ -231,8 +243,9 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, open: (
         shape = RoundedCornerShape(tokens.sheetRadius),
         shadowElevation = tokens.elevation[2]
     ) {
+        Column(Modifier.fillMaxWidth().padding(tokens.padding), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
         Row(
-            Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.padding(tokens.padding),
+            Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
             horizontalArrangement = Arrangement.spacedBy(tokens.gap),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -247,6 +260,14 @@ private fun OverlayCard(entry: StatusBarNotification, close: () -> Unit, open: (
                 Modifier.size(tokens.touch).appPress(close).semantics { contentDescription = label },
                 contentAlignment = Alignment.Center
             ) { EnyoGlyph(Glyph.Close) }
+        }
+        if (action != null && !replying) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            PillButton(stringResource(R.string.message_reply), filled = true) { replying = true; startReply() }
+        }
+        if (action != null && replying) ReplyComposer(
+            stringResource(R.string.thread_reply_hint, sourceLabel(context, entry.packageName)),
+            action.replyChoices(), autofocus = true
+        ) { reply -> sendReply(context, entry, action, reply).also { if (it) close() } }
         }
     }
 }

@@ -35,6 +35,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 
 /** Archive queries that follow every write, run off the main thread. */
 @Composable
@@ -142,88 +145,92 @@ internal fun ThreadScreen(
     }
     val replies = live.mapNotNull { entry -> entry.notification.replyAction()?.let { entry to it } }
     var replyVia by remember(replies.map { it.first.packageName }) { mutableStateOf(replies.firstOrNull()?.first?.packageName) }
-    var draft by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val label = { pkg: String -> launchers[pkg]?.label?.toString() ?: sourceLabel(context, pkg) }
+
+    var accounts by remember { mutableStateOf(false) }
+    val list = rememberLazyListState()
+    // The list is laid out from the newest message up, so the newest stays in view as messages arrive.
+    LaunchedEffect(messages.lastOrNull()?.id) { if (messages.isNotEmpty()) list.scrollToItem(0) }
 
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(tokens.settingsBackground).safeDrawingPadding().imePadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = tokens.gap, vertical = tokens.gap),
-                horizontalArrangement = Arrangement.spacedBy(tokens.gap),
+                horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val backLabel = stringResource(R.string.back)
-                Box(Modifier.size(tokens.touch).clip(CircleShape).appPress(close).semantics { contentDescription = backLabel },
-                    contentAlignment = Alignment.Center) { EnyoGlyph(Glyph.Back) }
+                ThreadIconButton(Glyph.Back, stringResource(R.string.back), run = close)
                 PersonAvatar(summary, tokens.listAvatar)
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).padding(start = tokens.gap / 2)) {
                     Text(summary?.name.orEmpty(), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(summary?.packages.orEmpty().joinToString(" · ") { label(it) }, style = tokens.rowSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(summary?.packages.orEmpty().joinToString(" · ") { label(it) }, style = tokens.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                if (personId != null) {
+                    ThreadIconButton(Glyph.Contact, stringResource(R.string.thread_link_contact)) {
+                        runCatching { picker.launch(null) }.onFailure { failed = true }
+                    }
+                    ThreadIconButton(Glyph.People, stringResource(R.string.thread_merge)) { merging = true }
+                }
+                ThreadIconButton(Glyph.More, stringResource(R.string.thread_options)) { accounts = true }
             }
-            LazyColumn(
-                Modifier.weight(1f).fillMaxWidth(),
-                state = rememberLazyListState(),
-                contentPadding = PaddingValues(horizontal = tokens.margin, vertical = tokens.gap),
-                verticalArrangement = Arrangement.spacedBy(tokens.gap),
-                reverseLayout = true
+            // Questions about this thread stay above the messages until they are answered.
+            if (proposals.isNotEmpty() || suggestions.isNotEmpty() || failed) Column(
+                Modifier.fillMaxWidth().padding(horizontal = tokens.margin).padding(bottom = tokens.gap),
+                verticalArrangement = Arrangement.spacedBy(tokens.gap)
             ) {
-                items(messages.asReversed(), key = { it.id }) { message ->
-                    MessageBubble(message, label(message.packageName), thread is ThreadRef.Group) { deletingMessage = message }
+                proposals.firstOrNull()?.let { proposal ->
+                    ListCard {
+                        ListRow(
+                            stringResource(R.string.duplicate_question, label(proposal.providerPackage)),
+                            summary = proposal.text, summaryLines = 2,
+                            leading = { EnyoGlyph(Glyph.Messages, color = tokens.accent) }
+                        )
+                        Row(Modifier.padding(start = tokens.padding, end = tokens.padding, bottom = tokens.gap), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                            PillButton(stringResource(R.string.duplicate_keep)) { ArchiveData.keepBothDuplicates(context, proposal) }
+                            PillButton(stringResource(R.string.duplicate_merge), filled = true) { ArchiveData.confirmDuplicate(context, proposal) }
+                        }
+                    }
                 }
-                item(key = "header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-                        proposals.forEach { proposal ->
-                            ListCard {
-                                ListRow(
-                                    stringResource(R.string.duplicate_question, label(proposal.providerPackage)),
-                                    summary = proposal.text, summaryLines = 2,
-                                    leading = { EnyoGlyph(Glyph.Messages, color = tokens.accent) },
-                                    trailing = {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
-                                            PillButton(stringResource(R.string.duplicate_keep)) { ArchiveData.keepBothDuplicates(context, proposal) }
-                                            PillButton(stringResource(R.string.duplicate_merge), filled = true) { ArchiveData.confirmDuplicate(context, proposal) }
-                                        }
-                                    }
-                                )
+                suggestions.firstOrNull()?.let { suggestion ->
+                    ListCard {
+                        ListRow(
+                            stringResource(R.string.thread_suggestion, suggestion.contactName ?: "?"),
+                            summary = label(suggestion.packageName),
+                            leading = { EnyoGlyph(Glyph.Contact, color = tokens.accent) }
+                        )
+                        Row(Modifier.padding(start = tokens.padding, end = tokens.padding, bottom = tokens.gap), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                            PillButton(stringResource(R.string.thread_suggestion_no)) { ArchiveData.dismissSuggestion(context, suggestion) }
+                            PillButton(stringResource(R.string.thread_suggestion_link), filled = true) {
+                                ArchiveData.linkToContact(context, suggestion.identityId, suggestion.lookup, suggestion.contactName)
                             }
                         }
-                        suggestions.forEach { suggestion ->
-                            ListCard {
-                                ListRow(
-                                    stringResource(R.string.thread_suggestion, suggestion.contactName ?: "?"),
-                                    summary = label(suggestion.packageName),
-                                    leading = { EnyoGlyph(Glyph.Message, color = tokens.accent) },
-                                    trailing = {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
-                                            PillButton(stringResource(R.string.thread_suggestion_no)) { ArchiveData.dismissSuggestion(context, suggestion) }
-                                            PillButton(stringResource(R.string.thread_suggestion_link), filled = true) {
-                                                ArchiveData.linkToContact(context, suggestion.identityId, suggestion.lookup, suggestion.contactName)
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        if (personId != null) SettingsPanel(stringResource(R.string.thread_people_section)) {
-                            identities.forEach { identity ->
-                                ListRow(
-                                    identity.name ?: label(identity.packageName),
-                                    summary = label(identity.packageName),
-                                    leading = { launchers[identity.packageName]?.let { AppIcon(it, displaySize = tokens.listAvatar) } },
-                                    trailing = if (identities.size > 1) ({
-                                        PillButton(stringResource(R.string.thread_split)) { ArchiveData.split(context, identity.id) }
-                                    }) else null
-                                )
-                            }
-                            SettingsAction(stringResource(R.string.thread_link_contact), Glyph.Phone) { runCatching { picker.launch(null) }.onFailure { failed = true } }
-                            SettingsAction(stringResource(R.string.thread_merge), Glyph.Messages) { merging = true }
-                        }
-                        ListCard {
-                            SettingsAction(stringResource(R.string.thread_delete), Glyph.Trash) { confirmDelete = true }
-                            ListNote(stringResource(R.string.archive_note))
-                        }
-                        if (failed) ListCard { ListNote(stringResource(R.string.action_unavailable)) }
+                    }
+                }
+                if (failed) ListCard { ListNote(stringResource(R.string.action_unavailable)) }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    state = list,
+                    contentPadding = PaddingValues(horizontal = tokens.margin, vertical = tokens.gap),
+                    verticalArrangement = Arrangement.spacedBy(tokens.gap),
+                    reverseLayout = true
+                ) {
+                    items(messages.asReversed(), key = { it.id }) { message ->
+                        MessageBubble(message, label(message.packageName), thread is ThreadRef.Group) { deletingMessage = message }
+                    }
+                    item(key = "note") {
+                        Text(
+                            stringResource(R.string.archive_note), Modifier.fillMaxWidth().padding(vertical = tokens.gap),
+                            style = tokens.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                val behind by remember { derivedStateOf { list.firstVisibleItemIndex > 2 } }
+                if (behind) Box(Modifier.align(Alignment.BottomEnd).padding(tokens.margin)) {
+                    ThreadIconButton(Glyph.Down, stringResource(R.string.thread_latest), filled = true) {
+                        scope.launch { list.animateScrollToItem(0) }
                     }
                 }
             }
@@ -237,26 +244,19 @@ internal fun ThreadScreen(
                     }
                 }
                 val selected = replies.firstOrNull { it.first.packageName == replyVia }
-                if (selected != null) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap), verticalAlignment = Alignment.CenterVertically) {
-                    BasicTextField(
-                        draft, { draft = it },
-                        Modifier.weight(1f).clip(RoundedCornerShape(tokens.radius)).background(tokens.widgetSurface)
-                            .padding(horizontal = tokens.padding, vertical = tokens.gap * 1.5f),
-                        textStyle = tokens.rowTitle,
-                        cursorBrush = SolidColor(tokens.accent),
-                        decorationBox = { field ->
-                            if (draft.isEmpty()) Text(stringResource(R.string.thread_reply_hint, label(selected.first.packageName)), style = tokens.rowSummary)
-                            field()
-                        }
-                    )
-                    PillButton(stringResource(R.string.message_send), filled = true, enabled = draft.isNotBlank()) {
+                if (selected != null) key(selected.first.key) {
+                    ReplyComposer(
+                        stringResource(R.string.thread_reply_hint, label(selected.first.packageName)),
+                        selected.second.replyChoices(), autofocus = false
+                    ) { text ->
                         val (entry, action) = selected
-                        failed = !sendReply(context, action, draft)
-                        if (!failed) draft = ""
-                        if (failed) entry.openFromForeground(context)
+                        sendReply(context, entry, action, text).also { sent ->
+                            if (!sent) entry.openFromForeground(context)
+                            else scope.launch { list.animateScrollToItem(0) }
+                        }
                     }
-                } else ListNote(stringResource(R.string.thread_no_reply))
-                Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                } else Text(stringResource(R.string.thread_no_reply), style = tokens.caption)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
                     val openable = (live.map { it.packageName } + summary?.packages.orEmpty()).distinct()
                     openable.take(3).forEach { pkg ->
                         PillButton(stringResource(R.string.thread_open_in, label(pkg))) {
@@ -267,6 +267,28 @@ internal fun ThreadScreen(
                     }
                 }
             }
+        }
+    }
+    if (accounts) EnyoSheet(stringResource(R.string.thread_options), { accounts = false }) {
+        if (personId != null) SettingsPanel(stringResource(R.string.thread_people_section)) {
+            identities.forEach { identity ->
+                ListRow(
+                    identity.name ?: label(identity.packageName),
+                    summary = label(identity.packageName),
+                    leading = { launchers[identity.packageName]?.let { AppIcon(it, displaySize = tokens.listAvatar) } },
+                    trailing = if (identities.size > 1) ({
+                        PillButton(stringResource(R.string.thread_split)) { ArchiveData.split(context, identity.id) }
+                    }) else null
+                )
+            }
+            SettingsAction(stringResource(R.string.thread_link_contact), Glyph.Contact) {
+                accounts = false
+                runCatching { picker.launch(null) }.onFailure { failed = true }
+            }
+            SettingsAction(stringResource(R.string.thread_merge), Glyph.People) { accounts = false; merging = true }
+        }
+        ListCard {
+            SettingsAction(stringResource(R.string.thread_delete), Glyph.Trash) { accounts = false; confirmDelete = true }
         }
     }
     if (confirmDelete) EnyoSheet(stringResource(R.string.thread_delete), { confirmDelete = false }) {
@@ -339,11 +361,13 @@ private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boo
     }
 }
 
-/** Sends a reply through the notification's own RemoteInput action, only after the person submits it. */
-private fun sendReply(context: android.content.Context, action: Notification.Action, text: String): Boolean = runCatching {
-    val input = action.remoteInputs.first { it.allowFreeFormInput }
-    val intent = Intent()
-    RemoteInput.addResultsToIntent(arrayOf(input), intent, Bundle().apply { putCharSequence(input.resultKey, text) })
-    action.actionIntent.send(context, 0, intent)
-    true
-}.getOrDefault(false)
+/** A round icon action in the thread bar. */
+@Composable
+private fun ThreadIconButton(glyph: Glyph, label: String, filled: Boolean = false, run: () -> Unit) {
+    val tokens = LocalTokens.current
+    Box(
+        Modifier.size(tokens.touch).clip(CircleShape).then(if (filled) Modifier.background(tokens.accent) else Modifier)
+            .appPress(run).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) { EnyoGlyph(glyph, color = if (filled) tokens.onAccent else tokens.onAccentContainer) }
+}

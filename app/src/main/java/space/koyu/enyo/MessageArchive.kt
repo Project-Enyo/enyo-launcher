@@ -70,6 +70,35 @@ internal class MessageArchive private constructor(private val context: Context) 
         }
     }
 
+    /**
+     * Keeps a reply the person sent through a notification. Apps often echo the reply in their next
+     * notification; that copy then replaces this one instead of appearing twice.
+     */
+    fun recordReply(entry: StatusBarNotification, text: String) {
+        val notice = runCatching { CapturedNotice.from(context, entry) }.getOrNull() ?: return
+        val now = System.currentTimeMillis()
+        writes.launch {
+            runCatching {
+                db.beginTransaction()
+                try {
+                    val conversation = upsertConversation(notice)
+                    db.insert("messages", CONFLICT_IGNORE, ContentValues().apply {
+                        put("conversation_id", conversation)
+                        put("package", notice.packageName)
+                        put("text", text)
+                        put("posted_at", now)
+                        put("outgoing", 1)
+                        put("fingerprint", "${notice.packageName}|${notice.conversationKey}|$localReply$now")
+                        put("notification_key", notice.key)
+                    })
+                    db.execSQL("UPDATE conversations SET last_at = MAX(last_at, ?), read_at = MAX(read_at, ?) WHERE id = ?", arrayOf(now, now, conversation))
+                    db.setTransactionSuccessful()
+                } finally { db.endTransaction() }
+            }
+            revision.value = System.nanoTime()
+        }
+    }
+
     fun write(block: (SupportSQLiteDatabase) -> Unit) {
         writes.launch {
             runCatching { db.beginTransaction(); try { block(db); db.setTransactionSuccessful() } finally { db.endTransaction() } }
@@ -86,6 +115,7 @@ internal class MessageArchive private constructor(private val context: Context) 
             var fresh = 0
             var duplicates = 0
             for (message in notice.messages) {
+                if (message.sender == null && adoptLocalReply(conversation, message, notice)) continue
                 val identity = message.sender?.let { upsertIdentity(notice.packageName, it) }
                 val values = ContentValues().apply {
                     put("conversation_id", conversation)
@@ -119,6 +149,17 @@ internal class MessageArchive private constructor(private val context: Context) 
         } finally {
             db.endTransaction()
         }
+    }
+
+    /** Gives a locally kept reply the identity of the app's own copy of it, when the app echoes it. */
+    private fun adoptLocalReply(conversation: Long, message: CapturedMessage, notice: CapturedNotice): Boolean {
+        val local = db.query(
+            """SELECT id FROM messages WHERE conversation_id = ? AND outgoing = 1 AND text = ? AND fingerprint LIKE ?
+               AND ABS(posted_at - ?) < ? LIMIT 1""",
+            arrayOf(conversation, message.text, "%|$localReply%", message.postedAt, replyEchoWindow)
+        ).use { if (it.moveToFirst()) it.getLong(0) else null } ?: return false
+        db.execSQL("UPDATE messages SET fingerprint = ?, posted_at = ? WHERE id = ?", arrayOf(message.fingerprint(notice), message.postedAt, local))
+        return true
     }
 
     private fun upsertConversation(notice: CapturedNotice): Long {
@@ -206,6 +247,8 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val tagBits = 128
         private const val databaseKeyLength = 32
         const val schemaVersion = 3
+        private const val localReply = "local:"
+        private const val replyEchoWindow = 10 * 60_000L
 
         @Volatile private var instance: MessageArchive? = null
         fun get(context: Context): MessageArchive =

@@ -251,4 +251,8 @@
     <string name="backup_category_links">Personenverknüpfungen</string>
     <string name="backup_category_settings">Einstellungen</string>
     <string name="backup_category_layout">Launcher Anordnung</string>
+    <string name="thread_options">Optionen für den Verlauf</string>
+    <string name="thread_latest">Zur neuesten Nachricht</string>
+    <string name="reply_sent">Gesendet</string>
+    <string name="reply_failed">Die App hat die Antwort nicht angenommen. Öffne sie, um dort zu antworten.</string>
 </resources>

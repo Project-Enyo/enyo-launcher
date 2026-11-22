@@ -251,4 +251,8 @@
     <string name="backup_category_links">Person links</string>
     <string name="backup_category_settings">Settings</string>
     <string name="backup_category_layout">Launcher layout</string>
+    <string name="thread_options">Thread options</string>
+    <string name="thread_latest">Jump to the newest message</string>
+    <string name="reply_sent">Sent</string>
+    <string name="reply_failed">The app didn\'t take the reply. Open it to answer there.</string>
 </resources>

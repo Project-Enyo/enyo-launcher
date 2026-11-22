@@ -74,7 +74,6 @@ internal fun InboxPage(
     val entries by EnyoNotificationService.entries.collectAsState()
     var expanded by remember(group) { mutableStateOf(group?.messaging == true) }
     var draftEntry by remember { mutableStateOf<String?>(null) }
-    var draft by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
     val labels = remember(apps) { apps.associate { it.componentName.packageName to it.label.toString() } }
     val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
@@ -175,7 +174,7 @@ internal fun InboxPage(
                         NoticeItem(
                             entry, labels[entry.packageName] ?: sourceLabel(context, entry.packageName),
                             open = { open(entry) },
-                            reply = { draft = ""; draftEntry = entry.key },
+                            reply = { draftEntry = entry.key },
                             dismiss = { dismiss(entry) },
                             runAction = { failed = !it.actionIntent.sendFromForeground(context) }
                         )
@@ -207,31 +206,14 @@ internal fun InboxPage(
             }
         }
     }
-    val replying = messages.firstOrNull { it.key == draftEntry }
-    val reply = replying?.notification?.replyAction()
-    if (replying != null && reply != null) EnyoSheet(
-        stringResource(R.string.message_reply), { draftEntry = null; draft = "" }
-    ) {
-        val title = replying.notification.extras.getCharSequence(Notification.EXTRA_TITLE)
-        if (!title.isNullOrBlank()) Text(title.toString(), style = tokens.secondary)
-        OutlinedTextField(draft, { draft = it }, label = { Text(stringResource(R.string.message_reply)) })
-        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
-            PillButton(stringResource(R.string.message_open)) { draftEntry = null; draft = ""; open(replying) }
-            PillButton(stringResource(R.string.message_send), filled = true, enabled = draft.isNotBlank()) {
-                val input = reply.remoteInputs.first { it.allowFreeFormInput }
-                runCatching {
-                    val intent = Intent()
-                    RemoteInput.addResultsToIntent(arrayOf(input), intent, Bundle().apply { putCharSequence(input.resultKey, draft) })
-                    reply.actionIntent.send(context, 0, intent)
-                }.onSuccess {
-                    draftEntry = null
-                    draft = ""
-                }.onFailure { failed = true }
-            }
-        }
-    }
+    val replying = messages.firstOrNull { it.key == draftEntry && it.notification.replyAction() != null }
+    if (replying != null) NotificationReplySheet(
+        replying, labels[replying.packageName] ?: sourceLabel(context, replying.packageName),
+        close = { draftEntry = null },
+        openApp = { open(replying) }
+    )
     LaunchedEffect(replying) {
-        if (replying == null) { draftEntry = null; draft = "" }
+        if (replying == null) draftEntry = null
     }
 }
 
@@ -311,9 +293,6 @@ private fun NoticeItem(
         }
     }
 }
-
-internal fun Notification.replyAction(): Notification.Action? =
-    actions.orEmpty().firstOrNull { it.actionIntent != null && it.remoteInputs.orEmpty().any(RemoteInput::getAllowFreeFormInput) }
 
 internal fun sourceLabel(context: Context, packageName: String): String =
     runCatching { context.packageManager.getApplicationInfo(packageName, 0).loadLabel(context.packageManager).toString() }
