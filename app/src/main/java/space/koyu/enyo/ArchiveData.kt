@@ -211,6 +211,23 @@ internal object ArchiveData {
     fun dismissSuggestion(context: Context, suggestion: LinkSuggestion) =
         MessageArchive.get(context).write { db -> PeopleResolver.dismissSuggestion(db, suggestion.identityId, suggestion.lookup) }
 
+    fun duplicateProposals(context: Context, messages: List<ArchivedMessage>): List<DuplicateProposal> =
+        MessageArchive.get(context).read { db -> BeeperDuplicates.proposals(db, messages.map { it.id }) }.orEmpty()
+
+    /** Confirms a Beeper duplicate; the Beeper account also joins the person of the app account. */
+    fun confirmDuplicate(context: Context, proposal: DuplicateProposal) = MessageArchive.get(context).write { db ->
+        BeeperDuplicates.confirm(db, proposal)
+        val identities = db.query(
+            "SELECT b.identity_id, i.person_id FROM messages b, messages p JOIN identities i ON i.id = p.identity_id WHERE b.id = ? AND p.id = ?",
+            arrayOf(proposal.beeperMessage, proposal.providerMessage)
+        ).use { if (it.moveToFirst()) it.longOrNull(0) to it.longOrNull(1) else null }
+        val (beeperIdentity, person) = identities ?: return@write
+        if (beeperIdentity != null && person != null) PeopleResolver.linkToPerson(db, beeperIdentity, person)
+    }
+
+    fun keepBothDuplicates(context: Context, proposal: DuplicateProposal) =
+        MessageArchive.get(context).write { db -> BeeperDuplicates.keepBoth(db, proposal) }
+
     fun resolveAll(context: Context) = MessageArchive.get(context).write { db -> PeopleResolver.resolveAll(context, db) }
 
     /** The contact photo when the person is in the address book, otherwise the avatar the app supplied. */

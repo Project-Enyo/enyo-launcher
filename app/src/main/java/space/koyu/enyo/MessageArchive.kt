@@ -46,7 +46,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(databaseName)
             .callback(object : SupportSQLiteOpenHelper.Callback(schemaVersion) {
-                override fun onCreate(db: SupportSQLiteDatabase) = createSchema(db)
+                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db) }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = migrate(db, oldVersion)
                 override fun onConfigure(db: SupportSQLiteDatabase) { db.execSQL("PRAGMA foreign_keys = ON") }
             })
@@ -55,13 +55,18 @@ internal class MessageArchive private constructor(private val context: Context) 
     }
 
     /** Stores the messages of one messaging notification. */
-    fun capture(entry: StatusBarNotification) {
-        if (entry.user != Process.myUserHandle() || Messenger.of(entry.packageName) == null) return
-        if (entry.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val captured = runCatching { CapturedNotice.from(context, entry) }.getOrNull() ?: return
+    /**
+     * Stores the messages of one messaging notification. [stored] receives true when every message
+     * in it is a confident duplicate of a Beeper message, so its Enyo banner can be skipped.
+     */
+    fun capture(entry: StatusBarNotification, stored: (Boolean) -> Unit = {}) {
+        if (entry.user != Process.myUserHandle() || Messenger.of(entry.packageName) == null) { stored(false); return }
+        if (entry.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) { stored(false); return }
+        val captured = runCatching { CapturedNotice.from(context, entry) }.getOrNull() ?: run { stored(false); return }
         writes.launch {
-            runCatching { store(captured) }
+            val duplicate = runCatching { store(captured) }.getOrDefault(false)
             revision.value = System.nanoTime()
+            stored(duplicate)
         }
     }
 
@@ -74,10 +79,12 @@ internal class MessageArchive private constructor(private val context: Context) 
 
     fun <T> read(block: (SupportSQLiteDatabase) -> T): T? = runCatching { block(db) }.getOrNull()
 
-    private fun store(notice: CapturedNotice) {
+    private fun store(notice: CapturedNotice): Boolean {
         db.beginTransaction()
         try {
             val conversation = upsertConversation(notice)
+            var fresh = 0
+            var duplicates = 0
             for (message in notice.messages) {
                 val identity = message.sender?.let { upsertIdentity(notice.packageName, it) }
                 val values = ContentValues().apply {
@@ -92,6 +99,10 @@ internal class MessageArchive private constructor(private val context: Context) 
                     put("notification_key", notice.key)
                 }
                 val inserted = db.insert("messages", CONFLICT_IGNORE, values)
+                if (inserted != -1L && message.sender != null) {
+                    fresh++
+                    if (BeeperDuplicates.check(db, inserted)) duplicates++
+                }
                 if (inserted == -1L) {
                     // The same message again: an app edit replaces the stored text, anything else is a repost.
                     db.execSQL(
@@ -104,6 +115,7 @@ internal class MessageArchive private constructor(private val context: Context) 
                 db.execSQL("UPDATE conversations SET last_at = MAX(last_at, ?) WHERE id = ?", arrayOf(it, conversation))
             }
             db.setTransactionSuccessful()
+            return fresh > 0 && duplicates == fresh
         } finally {
             db.endTransaction()
         }
@@ -193,7 +205,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 1
+        const val schemaVersion = 2
 
         @Volatile private var instance: MessageArchive? = null
         fun get(context: Context): MessageArchive =
@@ -270,6 +282,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         /** Each schema step runs once, in order, inside the open transaction. */
         private fun migrate(db: SupportSQLiteDatabase, from: Int) {
             if (from < 1) createSchema(db)
+            if (from < 2) BeeperDuplicates.createSchema(db)
         }
     }
 }

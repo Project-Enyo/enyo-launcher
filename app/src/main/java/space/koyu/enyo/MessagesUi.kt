@@ -124,6 +124,7 @@ internal fun ThreadScreen(
     val personId = (thread as? ThreadRef.Person)?.id
     val identities = rememberArchive(emptyList<ThreadIdentity>(), personId) { if (personId == null) emptyList() else ArchiveData.identities(it, personId) }
     val suggestions = rememberArchive(emptyList<LinkSuggestion>(), personId) { if (personId == null) emptyList() else ArchiveData.suggestions(it, personId) }
+    val proposals = rememberArchive(emptyList<DuplicateProposal>(), messages) { ArchiveData.duplicateProposals(it, messages) }
     val active by EnyoNotificationService.entries.collectAsState()
     LaunchedEffect(thread, messages.size) { ArchiveData.markRead(context, thread) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -172,6 +173,21 @@ internal fun ThreadScreen(
                 }
                 item(key = "header") {
                     Column(verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                        proposals.forEach { proposal ->
+                            ListCard {
+                                ListRow(
+                                    stringResource(R.string.duplicate_question, label(proposal.providerPackage)),
+                                    summary = proposal.text, summaryLines = 2,
+                                    leading = { EnyoGlyph(Glyph.Messages, color = tokens.accent) },
+                                    trailing = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
+                                            PillButton(stringResource(R.string.duplicate_keep)) { ArchiveData.keepBothDuplicates(context, proposal) }
+                                            PillButton(stringResource(R.string.duplicate_merge), filled = true) { ArchiveData.confirmDuplicate(context, proposal) }
+                                        }
+                                    }
+                                )
+                            }
+                        }
                         suggestions.forEach { suggestion ->
                             ListCard {
                                 ListRow(

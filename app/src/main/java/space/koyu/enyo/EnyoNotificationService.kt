@@ -25,12 +25,22 @@ class EnyoNotificationService : NotificationListenerService() {
     }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val previous = entries.value.firstOrNull { it.key == sbn.key }
-        if (sbn.packageName in messagingPackages) MessageArchive.get(this).capture(sbn)
         refresh()
-        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
-        val current = entries.value.firstOrNull { it.key == sbn.key } ?: return
-        if (current.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        if (previous == null || previous.noticePayload() != current.noticePayload()) arrivals.tryEmit(current)
+        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
+            if (sbn.packageName in messagingPackages) MessageArchive.get(this).capture(sbn)
+            return
+        }
+        val current = entries.value.firstOrNull { it.key == sbn.key }
+        val announce = current != null && current.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
+            (previous == null || previous.noticePayload() != current.noticePayload())
+        if (sbn.packageName !in messagingPackages) {
+            if (announce) arrivals.tryEmit(current!!)
+            return
+        }
+        // A message Beeper already announced is archived but gets no second Enyo banner.
+        MessageArchive.get(this).capture(sbn) { duplicate ->
+            if (announce && !duplicate) arrivals.tryEmit(current!!)
+        }
     }
     override fun onNotificationRemoved(sbn: StatusBarNotification) = refresh()
     override fun onListenerDisconnected() {

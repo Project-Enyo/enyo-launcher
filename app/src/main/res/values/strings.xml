@@ -244,4 +244,7 @@
     <string name="settings_history_summary">Enyo keeps messages from authorized notifications in an encrypted database on this device until you delete them. Uninstalling Enyo, clearing its data, resetting the phone, or removing this profile also deletes them.</string>
     <string name="settings_history_clear">Delete all saved messages</string>
     <string name="settings_history_clear_message">Delete every saved message, person link, and suggestion in this profile? Notifications in Android stay as they are.</string>
+    <string name="duplicate_question">Same message through Beeper and %1$s?</string>
+    <string name="duplicate_keep">Keep both</string>
+    <string name="duplicate_merge">Merge</string>
 </resources>
