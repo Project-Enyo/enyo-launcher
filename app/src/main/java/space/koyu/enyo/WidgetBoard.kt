@@ -40,11 +40,12 @@ import org.json.JSONObject
 import kotlin.math.ceil
 
 internal enum class TodayWidget(val title: Int, val provider: Class<out TodayProvider>, val startsWide: Boolean = false, val startRows: Int = 1) {
+    // The order is the default layout: the clock, next event and internet, weather and battery, then the news.
     Clock(R.string.widget_clock, ClockWidget::class.java, true),
-    Calendar(R.string.widget_calendar, CalendarWidget::class.java, true),
+    Calendar(R.string.widget_calendar, CalendarWidget::class.java),
+    Network(R.string.wireless, InternetWidget::class.java),
     Weather(R.string.widget_weather, WeatherAppWidget::class.java),
     Battery(R.string.widget_battery, BatteryWidget::class.java),
-    Network(R.string.wireless, InternetWidget::class.java),
     News(R.string.widget_news, NewsWidget::class.java, true, 3);
 
     fun component(context: Context) = ComponentName(context, provider)

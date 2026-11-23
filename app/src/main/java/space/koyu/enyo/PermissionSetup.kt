@@ -28,8 +28,27 @@ private data class SetupStep(val title: Int, val detail: Int, val enabled: Boole
 
 @Composable
 internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
-    val context = LocalContext.current
+    // The first setup is its own guided flow, with an intro and sound.
+    if (firstRun) {
+        FirstRunSetup(close)
+        return
+    }
     val tokens = LocalTokens.current
+    SettingsScreen { padding ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            item { SettingsHeading(stringResource(R.string.setup_title), close) }
+            item { ListCard { ListNote(stringResource(R.string.setup_intro)) } }
+            item { SetupPermissions() }
+            item { OverlayPreference(recommended = true) }
+            item { ListCard { ListNote(stringResource(R.string.battery_discovery)) } }
+        }
+    }
+}
+
+/** The access Enyo asks for, each with its reason and whether it is granted. */
+@Composable
+internal fun SetupPermissions() {
+    val context = LocalContext.current
     val foreground = foregroundCycle()
     var permissionResult by remember { mutableIntStateOf(0) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permissionResult++ }
@@ -77,29 +96,12 @@ internal fun PermissionSetup(firstRun: Boolean, close: () -> Unit) {
             )
         }
     }
-    SettingsScreen(footer = if (firstRun) {
-        {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                PillButton(stringResource(R.string.setup_finish), filled = true, onClick = close)
+    Column(verticalArrangement = Arrangement.spacedBy(LocalTokens.current.gap)) {
+        SettingsPanel(stringResource(R.string.setup_permissions)) {
+            steps.forEach { step ->
+                PermissionRow(stringResource(step.title), stringResource(step.detail), step.enabled, step.request)
             }
         }
-    } else null) { padding ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(tokens.gap)) {
-            item {
-                SettingsHeading(stringResource(if (firstRun) R.string.setup_welcome else R.string.setup_title),
-                    if (firstRun) null else close)
-            }
-            item { ListCard { ListNote(stringResource(R.string.setup_intro)) } }
-            item {
-                SettingsPanel(stringResource(R.string.setup_permissions)) {
-                    steps.forEach { step ->
-                        PermissionRow(stringResource(step.title), stringResource(step.detail), step.enabled, step.request)
-                    }
-                }
-            }
-            item { OverlayPreference(recommended = true) }
-            item { ListCard { ListNote(stringResource(R.string.battery_discovery)) } }
-            if (failed) item { ListNote(stringResource(R.string.action_unavailable)) }
-        }
+        if (failed) ListNote(stringResource(R.string.action_unavailable))
     }
 }

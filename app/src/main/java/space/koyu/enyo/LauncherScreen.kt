@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -450,14 +452,17 @@ internal fun LauncherScreen(
         transitionSpec = {
             val motion = tween<IntOffset>(tokens.settingsTransitionMillis)
             val forward = targetState != 0
-            slideInHorizontally(motion) { width -> if (forward) width else 0 }
+            // The first setup is a scene of its own: it fades in and out instead of sliding like a page.
+            if (setupComplete == false && (targetState == 4 || initialState == 4)) fadeIn(tween(400)).togetherWith(fadeOut(tween(400))).using(null)
+            else slideInHorizontally(motion) { width -> if (forward) width else 0 }
                 .togetherWith(slideOutHorizontally(motion) { width -> if (forward) 0 else width })
                 .using(null)
         }
     ) { target ->
         if (target != 0) Box(Modifier.fillMaxSize().blockPointersBelow()) {
             if (target == 3) AppearanceScreen { surface = 2 } else {
-                BackHandler { closeSetup() }
+                // The first setup ends only by finishing it; Back steps through it instead.
+                BackHandler { if (setupComplete != false) closeSetup() }
                 PermissionSetup(setupComplete == false, ::closeSetup)
             }
         }

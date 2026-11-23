@@ -10,6 +10,12 @@ Install Enyo with [Obtainium](https://github.com/ImranR98/Obtainium) to get upda
 
 Turn on notification access to add supported conversations to Inbox. Messaging apps can also connect directly through [UnifiedInbox](https://github.com/Project-Enyo/UnifiedInbox). Apps that support it share everything their chats hold: formatting, photos, videos, GIFs, stickers, voice messages, files, link previews, music, places and live locations, reactions and quotes. Photos, videos and GIFs open in Enyo, voice messages play inline, and other files open in a matching app. Long-press a message to react, reply to it or copy it, and send files or your location from the chat. They also share profile pictures. Inbox hides group chats unless **Show groups** is on in the UnifiedInbox settings; shown groups carry a group icon. Enyo can act as a UnifiedPush distributor using an ntfy server.
 
+## Getting started
+
+The first setup walks you through permissions and offers an in-app guide that explains Enyo chapter by chapter, from what a launcher is to stacking cards and search. Find the guide later under **Settings → System → Guide**, or run the first setup again there.
+
+**Settings → System → Backups** writes encrypted backups of messages, links, notes, Local AI chats and memory, settings and layout to a folder you choose, by hand or every hour. Share that folder with [Syncthing](https://github.com/researchxxl/syncthing-android) to keep copies on your other devices; any device restores a backup with its password. **Settings → About** shows what is new, device details for bug reports, storage use and open source licenses.
+
 ## Inbox
 
 When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Links you make are saved to the contact as chat accounts, so they come back on their own after a reinstall or on another synced device. The thread's options can also save older links, unlink the contact, or unmerge accounts again. Replies in a merged thread go through the conversation selected in the composer. Chat messages and Local AI replies render Markdown.

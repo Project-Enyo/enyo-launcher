@@ -33,17 +33,27 @@ internal fun restartLauncher(context: Context) {
 @Composable
 internal fun RestartPreference() {
     val context = LocalContext.current
+    HoldAction(stringResource(R.string.restart_title), Glyph.Bomb, danger = true) { restartLauncher(context) }
+}
+
+/**
+ * A setting that acts only after it is held for three seconds, counting down with a tick each
+ * second, so it never happens by accident. Accessibility services can run it directly.
+ */
+@Composable
+internal fun HoldAction(title: String, glyph: Glyph, danger: Boolean = false, run: () -> Unit) {
     val view = LocalView.current
     val tokens = LocalTokens.current
     val scope = rememberCoroutineScope()
+    val action by rememberUpdatedState(run)
     var remaining by remember { mutableStateOf<Int?>(null) }
     val seconds = remaining ?: restartHoldSeconds
-    val restartLabel = stringResource(R.string.restart_title)
+    val color = if (danger) tokens.danger else tokens.accent
     ListRow(
-        restartLabel,
+        title,
         Modifier
-            .semantics { onClick(restartLabel) { restartLauncher(context); true } }
-            .pointerInput(context, view) {
+            .semantics { onClick(title) { action(); true } }
+            .pointerInput(view) {
                 awaitEachGesture {
                     awaitFirstDown()
                     remaining = restartHoldSeconds
@@ -54,7 +64,8 @@ internal fun RestartPreference() {
                             delay(1_000)
                         }
                         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                        restartLauncher(context)
+                        remaining = null
+                        action()
                     }
                     try {
                         waitForUpOrCancellation()
@@ -65,8 +76,8 @@ internal fun RestartPreference() {
                 }
             },
         summary = pluralStringResource(R.plurals.restart_summary, seconds, seconds),
-        leading = { EnyoGlyph(Glyph.Bomb, color = tokens.danger) },
-        foreground = if (remaining != null) tokens.danger else Color.Unspecified
+        leading = { EnyoGlyph(glyph, color = color) },
+        foreground = if (remaining != null) color else Color.Unspecified
     )
 }
 

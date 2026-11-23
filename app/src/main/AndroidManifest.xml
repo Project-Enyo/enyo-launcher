@@ -38,6 +38,7 @@
         <package android:name="com.kagi.assistant" />
         <package android:name="com.google.android.apps.bard" />
         <package android:name="com.github.catfriend1.syncthingandroid" />
+        <package android:name="com.github.catfriend1.syncthingfork" />
         <intent>
             <action android:name="org.unifiedpush.android.connector.RAISE_TO_FOREGROUND" />
         </intent>

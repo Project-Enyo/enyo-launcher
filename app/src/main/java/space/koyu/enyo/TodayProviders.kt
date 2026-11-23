@@ -173,7 +173,8 @@ private fun renderTodayWidget(
                     views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 12f)
                     value(context.getString(if (hasAccess) latestWeatherStatus else R.string.weather_location_prompt))
                 } else {
-                    views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 28f)
+                    // With the conditions below it, the temperature still fits a one row widget.
+                    views.setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, 26f)
                     value(context.getString(R.string.weather_celsius, reading.celsius))
                     detail(context.getString(if (reading.estimated) R.string.weather_estimated_conditions else reading.conditions.label))
                 }

@@ -51,7 +51,8 @@ internal enum class BackupCategory(val id: String, val label: Int) {
     Links("links", R.string.backup_category_links),
     Settings("settings", R.string.backup_category_settings),
     Layout("layout", R.string.backup_category_layout),
-    Notes("notes", R.string.backup_category_notes)
+    Notes("notes", R.string.backup_category_notes),
+    Assistant("assistant", R.string.backup_category_assistant)
 }
 
 internal data class BackupPreview(
@@ -84,7 +85,14 @@ internal object Backups {
     private const val manualPrefix = "enyo-"
     const val extension = ".enyobackup"
     private const val automaticKept = 3
-    const val syncthingPackage = "com.github.catfriend1.syncthingandroid"
+    /** Syncthing-Fork: the Google Play build, and the F-Droid and Obtainium build under its own name. */
+    const val syncthingPlay = "com.github.catfriend1.syncthingandroid"
+    const val syncthingFork = "com.github.catfriend1.syncthingfork"
+    val syncthingPackages = listOf(syncthingFork, syncthingPlay)
+
+    /** The installed Syncthing-Fork, if any. */
+    fun syncthingInstalled(context: Context): String? =
+        syncthingPackages.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }
     private const val workName = "enyo_backup"
 
     private fun prefs(context: Context) = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
@@ -250,7 +258,7 @@ internal object Backups {
     }
 
     fun syncthingStatus(context: Context): String? {
-        val notice = EnyoNotificationService.entries.value.filter { it.packageName == syncthingPackage }.maxByOrNull { it.postTime } ?: return null
+        val notice = EnyoNotificationService.entries.value.filter { it.packageName in syncthingPackages }.maxByOrNull { it.postTime } ?: return null
         val extras = notice.notification.extras
         return listOfNotNull(
             extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString(),
@@ -303,6 +311,12 @@ internal object BackupContent {
         if (BackupCategory.Notes in categories) archive.read { db ->
             json.put("notes", rows(db.query("SELECT uid, kind, text, done, pinned, position, created_at, updated_at FROM notes")))
         }
+        if (BackupCategory.Assistant in categories) archive.read { db ->
+            json.put("assistant", JSONObject().apply {
+                put("chats", rows(db.query("SELECT id, title, transcript, updated_at FROM assistant_chats")))
+                put("memories", rows(db.query("SELECT text, created_at FROM assistant_memories")))
+            })
+        }
         if (BackupCategory.Settings in categories) json.put("settings", JSONObject().apply {
             put("appearance", preferences(context.appearancePreferences.data.first(), exclude = layoutKeys))
             put("search", preferences(context.searchPreferences.data.first(), exclude = emptySet()))
@@ -332,6 +346,23 @@ internal object BackupContent {
                            position = excluded.position, updated_at = excluded.updated_at WHERE excluded.updated_at > notes.updated_at""",
                         arrayOf(r.str(0), r.str(1), r.str(2), r.long(3), r.long(4), r.long(5), r.long(6), r.long(7))
                     )
+                }
+            }
+        }
+        if (BackupCategory.Assistant in categories) json.optJSONObject("assistant")?.let { assistant ->
+            archive.write { db ->
+                // The newer version of a chat wins; a memory is added once.
+                assistant.optJSONArray("chats")?.forEachRow { r ->
+                    db.execSQL(
+                        """INSERT INTO assistant_chats(id, title, transcript, updated_at) VALUES (?, ?, ?, ?)
+                           ON CONFLICT(id) DO UPDATE SET title = excluded.title, transcript = excluded.transcript, updated_at = excluded.updated_at
+                           WHERE excluded.updated_at > assistant_chats.updated_at""",
+                        arrayOf(r.str(0), r.str(1), r.str(2), r.long(3))
+                    )
+                }
+                assistant.optJSONArray("memories")?.forEachRow { r ->
+                    db.execSQL("INSERT INTO assistant_memories(text, created_at) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM assistant_memories WHERE text = ?)",
+                        arrayOf(r.str(0), r.long(1), r.str(0)))
                 }
             }
         }

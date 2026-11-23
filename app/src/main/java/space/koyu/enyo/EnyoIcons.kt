@@ -106,6 +106,8 @@ internal enum class Glyph(val drawable: Int) {
     Check(R.drawable.tabler_check),
     Checks(R.drawable.tabler_checks),
     Alert(R.drawable.tabler_alert_circle),
+    Sound(R.drawable.tabler_volume),
+    SoundOff(R.drawable.tabler_volume_off),
 }
 
 private data class IconKey(

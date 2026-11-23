@@ -288,11 +288,17 @@ internal fun UpdateSheet(release: Release, close: () -> Unit) {
 /** Settings: the installed version and a manual check. */
 @Composable
 internal fun UpdatePreference() {
+    SettingsPanel(stringResource(R.string.update_title)) { UpdateCheckRow() }
+}
+
+/** Checks GitHub for a newer release; a newer one opens the update sheet. */
+@Composable
+internal fun UpdateCheckRow() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
-    SettingsPanel(stringResource(R.string.update_title)) {
+    run {
         val summary = status ?: stringResource(R.string.update_version, Updates.version(context))
         if (!Updates.enabled(context)) ListRow(stringResource(R.string.update_check), summary = stringResource(R.string.update_debug), enabled = false,
             leading = { EnyoGlyph(Glyph.Refresh, color = LocalTokens.current.onAccentContainer) })

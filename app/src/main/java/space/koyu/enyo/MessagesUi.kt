@@ -61,32 +61,18 @@ private fun rememberAvatar(summary: ThreadSummary?): ImageBitmap? {
     return image
 }
 
-/**
- * A round avatar: the contact photo, the app's picture, or an initial. Groups show their picture
- * with a small group badge, or a group icon when they have none.
- */
+/** A round avatar: the contact photo, the app's picture, or an initial; groups without a picture show a group icon. */
 @Composable
-internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.unit.Dp, name: String = summary?.name.orEmpty(), groupBadge: Boolean = true) {
+internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.unit.Dp, name: String = summary?.name.orEmpty()) {
     val tokens = LocalTokens.current
     val group = summary?.ref is ThreadRef.Group
     val image = rememberAvatar(summary)
-    Box(Modifier.size(size)) {
-        Box(Modifier.fillMaxSize().clip(CircleShape).background(tokens.accentContainer), contentAlignment = Alignment.Center) {
-            if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else if (group) EnyoGlyph(Glyph.People, color = tokens.onAccentContainer)
-            else {
-                val initial = name.codePoints().filter { Character.isLetterOrDigit(it) }.findFirst().orElse('?'.code)
-                Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
-            }
-        }
-        // The badge sits on the opposite corner from the app badge of thread rows.
-        if (group && groupBadge && image != null) Box(
-            Modifier.align(Alignment.BottomStart).size(maxOf(tokens.threadAppIcon, size * 0.3f) + tokens.focusStroke * 2)
-                .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke)
-                .clip(CircleShape).background(tokens.accentContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            EnyoGlyph(Glyph.People, Modifier.fillMaxSize(0.7f), color = tokens.onAccentContainer)
+    Box(Modifier.size(size).clip(CircleShape).background(tokens.accentContainer), contentAlignment = Alignment.Center) {
+        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else if (group) EnyoGlyph(Glyph.People, color = tokens.onAccentContainer)
+        else {
+            val initial = name.codePoints().filter { Character.isLetterOrDigit(it) }.findFirst().orElse('?'.code)
+            Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
         }
     }
 }
@@ -118,8 +104,7 @@ internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.co
         leading = {
             val personLabel = stringResource(R.string.contact_details_of, summary.name)
             Box(Modifier.size(tokens.listAvatar).appPress(person).semantics { contentDescription = personLabel }) {
-                // The row marks groups next to the time instead.
-                PersonAvatar(summary, tokens.listAvatar, groupBadge = false)
+                PersonAvatar(summary, tokens.listAvatar)
                 summary.packages.singleOrNull()?.let { pkg ->
                     Box(Modifier.align(Alignment.BottomEnd).size(tokens.threadAppIcon + tokens.focusStroke * 2)
                         .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke).clip(CircleShape)) {
@@ -303,7 +288,14 @@ internal fun ThreadScreen(
                     PersonAvatar(summary, tokens.listAvatar)
                 }
                 Column(Modifier.weight(1f).padding(start = tokens.gap / 2)) {
-                    Text(summary?.name.orEmpty(), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Groups carry a people icon next to their name, not on their picture.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
+                        Text(summary?.name.orEmpty(), Modifier.weight(1f, fill = false), style = tokens.rowTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (thread is ThreadRef.Group) {
+                            val groupLabel = stringResource(R.string.inbox_group_chat)
+                            EnyoGlyph(Glyph.People, Modifier.size(tokens.threadAppIcon).semantics { contentDescription = groupLabel }, color = tokens.quiet)
+                        }
+                    }
                     Text(summary?.packages.orEmpty().joinToString(" · ") { label(it) }, style = tokens.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (personId != null) {

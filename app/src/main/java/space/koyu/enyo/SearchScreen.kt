@@ -476,6 +476,8 @@ internal fun SearchScreen(
     // One action hands the query to the default assistant; the choice itself lives in Settings.
     val useLocalAssistant = active && draft == null && localReady && preferred == localAssistantId
     val assistant = defaultOption?.takeIf { active && draft == null && !useLocalAssistant }
+    // With another assistant chosen, Local AI is still offered, below it.
+    val offerLocalAssistant = active && draft == null && localReady && !useLocalAssistant
     fun launchResult(app: LauncherActivityInfo) {
         record(input)
         if (app.componentName.packageName == transitPackage) openTransit() else openApp(app)
@@ -733,7 +735,7 @@ internal fun SearchScreen(
                         SettingsAction(stringResource(R.string.calendar_prepare), Glyph.Calendar, summary = term) { prepareEvent() }
                     }
                 }
-                if (useLocalAssistant || assistant != null || web) item {
+                if (useLocalAssistant || assistant != null || offerLocalAssistant || web) item {
                     SettingsPanel(stringResource(R.string.search_web_section)) {
                         if (useLocalAssistant) SettingsAction(stringResource(R.string.local_ai), Glyph.Sparkles,
                             summary = input) { localPrompt = input }
@@ -753,6 +755,8 @@ internal fun SearchScreen(
                                 trailing = { EnyoGlyph(Glyph.Sparkles, color = tokens.accent) }
                             )
                         }
+                        if (offerLocalAssistant) SettingsAction(stringResource(R.string.local_ai), Glyph.Sparkles,
+                            summary = input) { record(input); localPrompt = input }
                         if (web) SettingsAction(stringResource(R.string.web_search), Glyph.World, summary = term) { searchWeb() }
                     }
                 }
@@ -822,6 +826,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
     val historyOn by remember(store) { store.data.map { it[searchHistoryEnabled] == true } }.collectAsState(false)
     val hasHistory by remember(store) { store.data.map { !it[searchHistory].isNullOrBlank() } }.collectAsState(false)
     var confirmClearHistory by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf<SettingsPage?>(null) }
     var confirmClearMessages by remember { mutableStateOf(false) }
     if (confirmClearMessages) EnyoSheet(stringResource(R.string.settings_history_clear), { confirmClearMessages = false }) {
         Text(stringResource(R.string.settings_history_clear_message), style = tokens.secondary)
@@ -889,15 +894,32 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
                 SettingsToggle(stringResource(R.string.ai_features), aiOn, summary = stringResource(R.string.ai_features_summary), glyph = Glyph.Sparkles) { on ->
                     scope.launch { setAiFeatures(context, on) }
                 }
+                SettingsLink(stringResource(R.string.guide), stringResource(R.string.guide_summary), Glyph.Note) { page = SettingsPage.Guide }
+                SettingsLink(stringResource(R.string.backups), stringResource(R.string.backup_summary), Glyph.Push) { page = SettingsPage.Backups }
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
                     Glyph.Settings, setup)
                 SettingsLink(stringResource(R.string.android_settings), glyph = Glyph.Quick) {
                     context.launchSafely(Intent(Settings.ACTION_SETTINGS))
                 }
+                HoldAction(stringResource(R.string.setup_again), Glyph.Refresh) {
+                    // The first setup comes back over the launcher, with its intro.
+                    scope.launch { context.searchPreferences.edit { it[setupSeen] = false } }
+                }
                 RestartPreference()
             }
         }
+        item {
+            SettingsPanel(stringResource(R.string.about)) {
+                SettingsLink(stringResource(R.string.about_enyo), stringResource(R.string.update_version, Updates.version(context)), Glyph.Sparkles) { page = SettingsPage.About }
+            }
+        }
     } }
+    when (page) {
+        SettingsPage.Guide -> GuidePage { page = null }
+        SettingsPage.Backups -> BackupsPage { page = null }
+        SettingsPage.About -> AboutPage { page = null }
+        null -> {}
+    }
     if (confirmClearHistory) {
         EnyoSheet(stringResource(R.string.search_history_clear), { confirmClearHistory = false }) {
             Text(stringResource(R.string.search_history_clear_message), style = tokens.secondary)
@@ -967,3 +989,6 @@ private fun AssistantRadio(selected: Boolean) {
     RadioButton(selected = selected, onClick = null,
         colors = RadioButtonDefaults.colors(selectedColor = tokens.accent, unselectedColor = tokens.quiet))
 }
+
+/** Pages that open over the settings. */
+private enum class SettingsPage { Guide, Backups, About }
