@@ -258,7 +258,9 @@ internal object Backups {
     }
 
     fun syncthingStatus(context: Context): String? {
-        val notice = EnyoNotificationService.entries.value.filter { it.packageName in syncthingPackages }.maxByOrNull { it.postTime } ?: return null
+        // Its ongoing notice carries the sync state; otherwise the newest one.
+        val notices = EnyoNotificationService.syncthing.value
+        val notice = notices.filter { it.isOngoing }.maxByOrNull { it.postTime } ?: notices.maxByOrNull { it.postTime } ?: return null
         val extras = notice.notification.extras
         return listOfNotNull(
             extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString(),

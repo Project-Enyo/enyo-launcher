@@ -49,6 +49,7 @@ class EnyoNotificationService : NotificationListenerService() {
         overlays?.close()
         overlays = null
         entries.value = emptyList()
+        syncthing.value = emptyList()
         brandIcons.value = emptyMap()
     }
     override fun onDestroy() {
@@ -56,6 +57,7 @@ class EnyoNotificationService : NotificationListenerService() {
         overlays?.close()
         overlays = null
         entries.value = emptyList()
+        syncthing.value = emptyList()
         brandIcons.value = emptyMap()
         super.onDestroy()
     }
@@ -67,6 +69,8 @@ class EnyoNotificationService : NotificationListenerService() {
                 val icon = entry.notification.smallIcon
                 if (entry.packageName in brandedNotificationApps && icon != null) entry.packageName to icon else null
             }.toMap()
+            // Syncthing's notices are kept apart: they only feed the backup status.
+            syncthing.value = local.filter { it.packageName in Backups.syncthingPackages }
             val visible = local.filterNot { it.isBackgroundNotice(packageName) }
             visible
         }.getOrDefault(emptyList())
@@ -84,12 +88,16 @@ class EnyoNotificationService : NotificationListenerService() {
         internal val brandIcons = MutableStateFlow<Map<String, android.graphics.drawable.Icon>>(emptyMap())
         internal val arrivals = MutableSharedFlow<StatusBarNotification>(extraBufferCapacity = 8)
         internal val entries = MutableStateFlow<List<StatusBarNotification>>(emptyList())
+        /** Syncthing-Fork's notifications, never shown by Enyo, read for the status on the Backups page. */
+        internal val syncthing = MutableStateFlow<List<StatusBarNotification>>(emptyList())
         /** Whether notification access is active, so new messages are being archived. */
         internal val listening = MutableStateFlow(false)
     }
 }
 
 private fun StatusBarNotification.isBackgroundNotice(ownPackage: String): Boolean {
+    // Syncthing-Fork reports its sync state all the time; none of it belongs in Inbox or banners.
+    if (packageName in Backups.syncthingPackages) return true
     if (packageName == ownPackage && (notification.channelId == "push" ||
         notification.flags and Notification.FLAG_GROUP_SUMMARY != 0)
     ) return true
