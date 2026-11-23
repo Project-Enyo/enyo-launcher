@@ -89,6 +89,8 @@ internal fun ReplyComposer(
     choices: List<String>,
     autofocus: Boolean,
     modifier: Modifier = Modifier,
+    /** Whether to say "sent" below; chats show where each message is on the message instead. */
+    confirm: Boolean = true,
     send: (String) -> Boolean
 ) {
     val tokens = LocalTokens.current
@@ -104,7 +106,7 @@ internal fun ReplyComposer(
         if (text.isBlank()) return
         if (send(text.trim())) {
             draft = ""
-            status = R.string.reply_sent
+            status = if (confirm) R.string.reply_sent else null
         } else status = R.string.reply_failed
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(tokens.gap)) {

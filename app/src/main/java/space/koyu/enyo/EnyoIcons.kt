@@ -97,6 +97,15 @@ internal enum class Glyph(val drawable: Int) {
     Unlink(R.drawable.tabler_unlink),
     More(R.drawable.tabler_dots),
     Down(R.drawable.tabler_arrow_down),
+    Attach(R.drawable.tabler_paperclip),
+    File(R.drawable.tabler_file),
+    Microphone(R.drawable.tabler_microphone),
+    Reply(R.drawable.tabler_arrow_back_up),
+    Hidden(R.drawable.tabler_eye_off),
+    Video(R.drawable.tabler_movie),
+    Check(R.drawable.tabler_check),
+    Checks(R.drawable.tabler_checks),
+    Alert(R.drawable.tabler_alert_circle),
 }
 
 private data class IconKey(

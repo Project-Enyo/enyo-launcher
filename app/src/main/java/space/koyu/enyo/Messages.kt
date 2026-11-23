@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LinearProgressIndicator
@@ -122,9 +123,12 @@ internal fun InboxPage(
     if (!locked) openThread?.let { thread ->
         key(thread) { ThreadScreen(thread, launchers, openApp) { openThread = null } }
     }
-    val visibleThreads = if (group == null && !locked) threads else emptyList()
+    val groupsShown by remember(context) { InboxHost.groupsShown(context) }.collectAsState()
+    val visibleThreads = if (group == null && !locked) threads.filter { groupsShown || it.ref !is ThreadRef.Group } else emptyList()
+    val list = rememberLazyListState()
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().edgeFade(top = { list.canScrollBackward }, bottom = { list.canScrollForward }),
+        state = list,
         contentPadding = PaddingValues(start = tokens.margin, end = tokens.margin, bottom = tokens.margin, top = if (group == null) tokens.gap else 0.dp),
         verticalArrangement = Arrangement.spacedBy(tokens.gap)
     ) {
@@ -161,6 +165,8 @@ internal fun InboxPage(
                     shown.forEach { summary -> key(summary.ref.toString()) { ThreadRow(summary, launchers, person = { personFlyout = summary }) { openThread = summary.ref } } }
                     if (!allThreads && visibleThreads.size > shown.size) {
                         SettingsAction(stringResource(R.string.inbox_show_all, visibleThreads.size), Glyph.Messages) { allThreads = true }
+                    } else if (allThreads && visibleThreads.size > tokens.inboxThreadPreview) {
+                        SettingsAction(stringResource(R.string.inbox_show_less), Glyph.Messages) { allThreads = false }
                     }
                 }
             } else if (listening && !locked) item(key = "no_threads") { ListCard { ListNote(stringResource(R.string.inbox_no_messages)) } }
@@ -171,7 +177,7 @@ internal fun InboxPage(
                 item(key = "assistant_chats") { AssistantChats.Section() }
             }
             item(key = "notifications_heading") { InboxHeading(stringResource(R.string.inbox_notifications_heading)) }
-            if (others.isEmpty()) item(key = "no_notifications") { ListCard { ListNote(stringResource(R.string.inbox_no_notifications)) } }
+            if (others.isEmpty()) item(key = "no_notifications") { ListCard { EmptyState(Glyph.Bell, stringResource(R.string.inbox_no_notifications), stringResource(R.string.inbox_no_notifications_summary)) } }
         }
             // The unified list already holds messaging notifications, so their own card stays in the banner tray only.
             if (group != null && messages.isNotEmpty()) item(key = "messages") {

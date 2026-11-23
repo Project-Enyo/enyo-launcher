@@ -60,11 +60,12 @@ internal suspend fun installSemanticModels(context: Context, progress: suspend (
 @Composable
 internal fun semanticSearchEnabled(): Boolean {
     val store = LocalContext.current.searchPreferences
-    return remember(store) { store.data.map { it[semanticEnabled] == true } }.collectAsState(false).value
+    return aiFeaturesEnabled() && remember(store) { store.data.map { it[semanticEnabled] == true } }.collectAsState(false).value
 }
 
 @Composable
 internal fun SemanticSearchPreference() {
+    if (!aiFeaturesEnabled()) return
     val context = LocalContext.current
     if (!remember(context) { supportsLocalAssistant(context) }) return
     val source = fileSearchSource()
@@ -124,7 +125,7 @@ class SemanticFileIndexWorker(context: Context, parameters: WorkerParameters) : 
         val context = applicationContext
         val store = context.searchPreferences
         val preferences = store.data.first()
-        if (preferences[semanticEnabled] != true) return@withContext Result.success()
+        if (preferences[semanticEnabled] != true || !aiFeaturesOn(context)) return@withContext Result.success()
         val source = currentSearchSource(context, preferences[searchFolder]) ?: return@withContext Result.success()
         if (!canRunLocalModels(context)) return@withContext Result.retry()
         val archive = MessageArchive.get(context)

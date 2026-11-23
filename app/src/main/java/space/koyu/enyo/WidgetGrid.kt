@@ -123,8 +123,12 @@ internal fun WidgetGrid(
         val shown = (drag?.preview ?: resizePreview ?: committed).filter { it.placed && !hidden(it) }
         maxOf(grid.visibleRows, (shown.maxOfOrNull { it.y + it.rows } ?: 0) + 1)
     } ?: 0
+    // Once the widgets reach past one screen, the edges fade like the app grid.
+    val overflowing = spec != null &&
+        (committed.filter { it.placed && !hidden(it) }.maxOfOrNull { it.y + it.rows } ?: 0) > spec.visibleRows
     Box(
         Modifier.fillMaxWidth()
+            .edgeFade(top = { overflowing && scroll.value > 0 }, bottom = { overflowing && scroll.canScrollForward })
             .verticalScroll(scroll, enabled = drag == null && resizing == null)
             .height(with(density) { (contentRows * (spec?.cellHeight ?: 0)).toDp() }.coerceAtLeast(with(density) { size.height.toDp() }))
             .pointerInput(spec, handleReach, removeZone) {

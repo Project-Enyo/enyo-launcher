@@ -46,7 +46,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(databaseName)
             .callback(object : SupportSQLiteOpenHelper.Callback(schemaVersion) {
-                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db); createInboxSchema(db); AssistantChats.createSchema(db); SemanticFiles.createSchema(db) }
+                override fun onCreate(db: SupportSQLiteDatabase) { createSchema(db); BeeperDuplicates.createSchema(db); Notes.createSchema(db); createInboxSchema(db); AssistantChats.createSchema(db); SemanticFiles.createSchema(db); addAvatarRefs(db); addGroupAvatars(db); AssistantMemory.createSchema(db); addRichMessages(db); addReceipts(db) }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = migrate(db, oldVersion)
                 override fun onConfigure(db: SupportSQLiteDatabase) { db.execSQL("PRAGMA foreign_keys = ON") }
             })
@@ -195,27 +195,84 @@ internal class MessageArchive private constructor(private val context: Context) 
      * Applies UnifiedInbox events from a registered connector, in order. Messages are keyed by the
      * connector's own ids, so sending the same message again changes nothing and an edit replaces its text.
      */
-    fun applyInboxEvents(packageName: String, events: org.json.JSONArray, replyFailed: (String, String?) -> Unit) {
+    /**
+     * Applies a connector's events. With [images], [fetchImage] receives each image id that is new
+     * or still missing once the events are stored.
+     */
+    fun applyInboxEvents(
+        packageName: String,
+        events: org.json.JSONArray,
+        images: Boolean,
+        fetchImage: (String) -> Unit,
+        arrived: (conversation: String, request: String?, time: Long) -> Unit,
+        replyFailed: (String, String?) -> Unit
+    ) {
         writes.launch {
+            val fetch = linkedSetOf<String>()
+            val sent = mutableListOf<Triple<String, String?, Long>>()
             runCatching {
                 db.beginTransaction()
                 try {
                     for (index in 0 until events.length()) {
                         val event = events.optJSONObject(index) ?: continue
-                        runCatching { applyInboxEvent(packageName, event, replyFailed) }
+                        runCatching { applyInboxEvent(packageName, event, images, fetch, replyFailed) }
+                        // The person's own messages end what Enyo still shows as sending.
+                        if (event.optString("type") == "message" && event.optBoolean("outgoing")) {
+                            val conversation = event.optString("conversation").takeIf { it.isNotEmpty() }
+                            if (conversation != null) sent += Triple(conversation, event.optString("request").ifEmpty { null }, event.optLong("time"))
+                        }
                     }
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }
-            }
+            }.onFailure { fetch.clear() }
             revision.value = System.nanoTime()
+            fetch.forEach(fetchImage)
+            sent.forEach { (conversation, request, time) -> arrived(conversation, request, time) }
         }
     }
+
+    /**
+     * Records the picture id a connector named for a person ([table] identities) or a group
+     * ([table] conversations); a changed or missing picture is fetched.
+     */
+    private fun syncAvatar(table: String, packageName: String, key: String, ref: String?, fetch: MutableSet<String>) {
+        val (stored, hasImage) = db.query("SELECT avatar_ref, avatar IS NOT NULL FROM $table WHERE package = ? AND key = ?", arrayOf(packageName, key))
+            .use { if (it.moveToFirst()) it.stringOrNull(0) to (it.getInt(1) == 1) else return }
+        if (ref == null) {
+            if (stored != null) db.execSQL("UPDATE $table SET avatar_ref = NULL, avatar = NULL WHERE package = ? AND key = ?", arrayOf(packageName, key))
+            return
+        }
+        if (ref != stored) db.execSQL("UPDATE $table SET avatar_ref = ? WHERE package = ? AND key = ?", arrayOf(ref, packageName, key))
+        if (ref != stored || !hasImage) fetch += ref
+    }
+
+    /** Remembers an image id a message shows; a missing image is fetched. */
+    private fun wantImage(packageName: String, id: String, fetch: MutableSet<String>) {
+        db.execSQL("INSERT OR IGNORE INTO inbox_images(package, id) VALUES (?, ?)", arrayOf(packageName, id))
+        val missing = db.query("SELECT data IS NULL FROM inbox_images WHERE package = ? AND id = ?", arrayOf(packageName, id))
+            .use { it.moveToFirst() && it.getInt(0) == 1 }
+        if (missing) fetch += id
+    }
+
+    private fun messageId(fingerprint: String): Long? =
+        db.query("SELECT id FROM messages WHERE fingerprint = ?", arrayOf(fingerprint)).use { if (it.moveToFirst()) it.getLong(0) else null }
+
+    private fun storedContent(fingerprint: String): MessageContent =
+        db.query("SELECT content FROM messages WHERE fingerprint = ?", arrayOf(fingerprint))
+            .use { if (it.moveToFirst()) MessageContent.stored(it.stringOrNull(0)) else null } ?: MessageContent()
 
     private fun inboxKey(packageName: String, id: String): String =
         db.query("SELECT key FROM inbox_conversations WHERE package = ? AND id = ?", arrayOf(packageName, id))
             .use { if (it.moveToFirst()) it.getString(0) else null } ?: "inbox:$id"
 
-    private fun applyInboxEvent(packageName: String, event: org.json.JSONObject, replyFailed: (String, String?) -> Unit) {
+    private fun applyInboxEvent(
+        packageName: String,
+        event: org.json.JSONObject,
+        images: Boolean,
+        fetch: MutableSet<String>,
+        replyFailed: (String, String?) -> Unit
+    ) {
+        val avatars = images
         fun str(name: String) = event.optString(name).takeIf { event.has(name) && !event.isNull(name) && it.isNotEmpty() }
         when (event.optString("type")) {
             "conversation" -> {
@@ -230,6 +287,9 @@ internal class MessageArchive private constructor(private val context: Context) 
                         member.optString("phone").ifEmpty { null }, null)
                 }
                 upsertConversation(CapturedNotice("inbox", packageName, key, str("title") ?: counterpart?.name, group, counterpart, emptyList()))
+                fun avatarOf(member: org.json.JSONObject) = member.optString("avatar").takeIf { member.has("avatar") && !member.isNull("avatar") && it.isNotEmpty() }
+                if (avatars && counterpart != null) syncAvatar("identities", packageName, counterpart.key, avatarOf(members!!.getJSONObject(0)), fetch)
+                if (avatars && group) syncAvatar("conversations", packageName, key, avatarOf(event), fetch)
                 db.execSQL("UPDATE conversations SET is_group = ? WHERE package = ? AND key = ?", arrayOf(if (group) 1 else 0, packageName, key))
                 // Members of groups are known people too, so their messages carry their numbers.
                 if (group) for (index in 0 until (members?.length() ?: 0)) {
@@ -237,12 +297,15 @@ internal class MessageArchive private constructor(private val context: Context) 
                     val memberId = member.optString("id").takeIf { it.isNotEmpty() } ?: continue
                     upsertIdentity(packageName, CapturedSender(memberId, member.optString("name").ifEmpty { null },
                         member.optString("uri").ifEmpty { null }, member.optString("phone").ifEmpty { null }, null))
+                    if (avatars) syncAvatar("identities", packageName, memberId, avatarOf(member), fetch)
                 }
             }
             "message" -> {
                 val conversation = str("conversation") ?: return
                 val id = str("id") ?: return
-                val text = str("text") ?: return
+                val content = MessageContent.parse(event)
+                // A view once message never keeps its content here, only that it exists.
+                val text = (if (content.once) str("text") else str("markdown") ?: str("text")) ?: return
                 val key = inboxKey(packageName, conversation)
                 val group = db.query("SELECT is_group FROM conversations WHERE package = ? AND key = ?", arrayOf(packageName, key))
                     .use { it.moveToFirst() && it.getInt(0) == 1 }
@@ -252,14 +315,51 @@ internal class MessageArchive private constructor(private val context: Context) 
                 val time = event.optLong("time").takeIf { it > 0 } ?: System.currentTimeMillis()
                 storeInTransaction(CapturedNotice("inbox", packageName, key, null, group, null,
                     listOf(CapturedMessage(sender, text, time, apiId = id))))
+                val fingerprint = "$packageName|$key|api:$id"
+                db.execSQL("UPDATE messages SET content = ?, reply_to = ? WHERE fingerprint = ?",
+                    arrayOf(content.takeUnless { it.empty }?.toJson(), str("replyTo")?.take(256), fingerprint))
+                if (images) content.images.forEach { wantImage(packageName, it, fetch) }
             }
             "edit" -> {
                 val key = inboxKey(packageName, str("conversation") ?: return)
-                db.execSQL("UPDATE messages SET text = ? WHERE fingerprint = ?", arrayOf(str("text") ?: return, "$packageName|$key|api:${str("id") ?: return}"))
+                val fingerprint = "$packageName|$key|api:${str("id") ?: return}"
+                val text = str("markdown") ?: str("text")
+                if (text != null) db.execSQL("UPDATE messages SET text = ? WHERE fingerprint = ?", arrayOf(text, fingerprint))
+                if (event.has("previews")) {
+                    val previews = MessageContent.previews(event.optJSONArray("previews"))
+                    val content = storedContent(fingerprint).copy(previews = previews)
+                    db.execSQL("UPDATE messages SET content = ? WHERE fingerprint = ?", arrayOf(content.takeUnless { it.empty }?.toJson(), fingerprint))
+                    if (images) previews.mapNotNull { it.image }.forEach { wantImage(packageName, it, fetch) }
+                }
+            }
+            "reaction" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                val message = messageId("$packageName|$key|api:${str("message") ?: return}") ?: return
+                val emoji = str("emoji")?.takeIf { it.length <= 32 } ?: return
+                val sender = str("sender")?.take(256).orEmpty()
+                if (event.optBoolean("remove")) db.execSQL("DELETE FROM inbox_reactions WHERE message_id = ? AND sender = ? AND emoji = ?", arrayOf(message, sender, emoji))
+                else db.execSQL("INSERT OR IGNORE INTO inbox_reactions(message_id, sender, emoji) VALUES (?, ?, ?)", arrayOf(message, sender, emoji))
+            }
+            "location_update" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                val fingerprint = "$packageName|$key|api:${str("message") ?: return}"
+                val content = storedContent(fingerprint)
+                val place = content.location ?: return
+                val moved = MessageContent.location(event)
+                val next = place.copy(lat = moved?.lat ?: place.lat, lng = moved?.lng ?: place.lng,
+                    accuracy = moved?.accuracy ?: place.accuracy, live = place.live && !event.optBoolean("stop"))
+                db.execSQL("UPDATE messages SET content = ? WHERE fingerprint = ?", arrayOf(content.copy(location = next).toJson(), fingerprint))
             }
             "delete" -> {
                 val key = inboxKey(packageName, str("conversation") ?: return)
                 db.execSQL("DELETE FROM messages WHERE fingerprint = ?", arrayOf("$packageName|$key|api:${str("id") ?: return}"))
+            }
+            "receipts" -> {
+                val key = inboxKey(packageName, str("conversation") ?: return)
+                val delivered = event.optLong("delivered").coerceAtLeast(0)
+                val read = event.optLong("read").coerceAtLeast(0)
+                db.execSQL("UPDATE conversations SET receipt_delivered = MAX(receipt_delivered, ?, ?), receipt_read = MAX(receipt_read, ?) WHERE package = ? AND key = ?",
+                    arrayOf(delivered, read, read, packageName, key))
             }
             "read" -> {
                 val key = inboxKey(packageName, str("conversation") ?: return)
@@ -272,6 +372,15 @@ internal class MessageArchive private constructor(private val context: Context) 
                 db.execSQL("UPDATE conversations SET last_at = 0 WHERE package = ? AND key = ?", arrayOf(packageName, key))
                 db.execSQL("DELETE FROM inbox_conversations WHERE package = ? AND id = ?", arrayOf(packageName, id))
             }
+            "image" -> {
+                val id = str("id") ?: return
+                val bytes = CapturedNotice.sharedImage(str("data") ?: return) ?: return
+                CapturedNotice.avatarFromImage(bytes)?.let { avatar ->
+                    db.execSQL("UPDATE identities SET avatar = ? WHERE package = ? AND avatar_ref = ?", arrayOf(avatar, packageName, id))
+                    db.execSQL("UPDATE conversations SET avatar = ? WHERE package = ? AND avatar_ref = ?", arrayOf(avatar, packageName, id))
+                }
+                db.execSQL("UPDATE inbox_images SET data = ? WHERE package = ? AND id = ?", arrayOf(bytes, packageName, id))
+            }
             "reply_failed" -> replyFailed(str("request") ?: return, str("reason"))
         }
     }
@@ -280,6 +389,7 @@ internal class MessageArchive private constructor(private val context: Context) 
     fun forgetConnector(packageName: String) = write { db ->
         db.execSQL("DELETE FROM messages WHERE package = ? AND fingerprint LIKE ?", arrayOf(packageName, "%|api:%"))
         db.execSQL("DELETE FROM inbox_conversations WHERE package = ?", arrayOf(packageName))
+        db.execSQL("DELETE FROM inbox_images WHERE package = ?", arrayOf(packageName))
         db.execSQL("UPDATE conversations SET last_at = COALESCE((SELECT MAX(posted_at) FROM messages WHERE conversation_id = conversations.id), 0) WHERE package = ?", arrayOf(packageName))
     }
 
@@ -378,7 +488,7 @@ internal class MessageArchive private constructor(private val context: Context) 
         private const val ivLength = 12
         private const val tagBits = 128
         private const val databaseKeyLength = 32
-        const val schemaVersion = 8
+        const val schemaVersion = 13
         private const val sourceEchoWindow = 3 * 60_000L
         private const val localReply = "local:"
         private const val replyEchoWindow = 10 * 60_000L
@@ -482,6 +592,42 @@ internal class MessageArchive private constructor(private val context: Context) 
             if (from < 6) AssistantChats.createSchema(db)
             if (from < 7) SemanticFiles.createSchema(db)
             if (from < 8) createNotificationIndex(db)
+            if (from < 9) addAvatarRefs(db)
+            if (from < 10) addGroupAvatars(db)
+            if (from < 11) AssistantMemory.createSchema(db)
+            if (from < 12) addRichMessages(db)
+            if (from < 13) addReceipts(db)
+        }
+
+        /**
+         * What UnifiedInbox apps share beyond text: each message's files, previews, music and place,
+         * the message it quotes, reactions, and the small images those name.
+         */
+        private fun addRichMessages(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN content TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN reply_to TEXT")
+            db.execSQL("""CREATE TABLE inbox_reactions (
+                message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                sender TEXT NOT NULL, emoji TEXT NOT NULL, PRIMARY KEY (message_id, sender, emoji)
+            )""")
+            db.execSQL("CREATE TABLE inbox_images (package TEXT NOT NULL, id TEXT NOT NULL, data BLOB, PRIMARY KEY (package, id))")
+        }
+
+        /** How far the person's own messages got in each chat of a UnifiedInbox app: received and read up to these times. */
+        private fun addReceipts(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE conversations ADD COLUMN receipt_delivered INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE conversations ADD COLUMN receipt_read INTEGER NOT NULL DEFAULT 0")
+        }
+
+        /** Group pictures that UnifiedInbox apps share, and the id of each, like those of people. */
+        private fun addGroupAvatars(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE conversations ADD COLUMN avatar_ref TEXT")
+            db.execSQL("ALTER TABLE conversations ADD COLUMN avatar BLOB")
+        }
+
+        /** The id of the picture a UnifiedInbox app named for each person, so a new picture is fetched once. */
+        private fun addAvatarRefs(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE identities ADD COLUMN avatar_ref TEXT")
         }
 
         /**
@@ -581,6 +727,27 @@ internal data class CapturedNotice(
             ByteArrayOutputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, avatarQuality, out); out.toByteArray() }
         }.getOrNull()
 
+        /** An image a UnifiedInbox app sent, as Base64, kept only when it decodes within the spec's limits. */
+        fun sharedImage(base64: String): ByteArray? = runCatching {
+            val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+            if (bytes.size > maxSharedImageBytes) return null
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth !in 1..maxSharedImagePixels || bounds.outHeight !in 1..maxSharedImagePixels) return null
+            bytes
+        }.getOrNull()
+
+        /** A shared image as a person's or group's picture: the middle square, stored like notification avatars. */
+        fun avatarFromImage(bytes: ByteArray): ByteArray? = runCatching {
+            val decoded = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+            val side = minOf(decoded.width, decoded.height)
+            val square = Bitmap.createBitmap(decoded, (decoded.width - side) / 2, (decoded.height - side) / 2, side, side)
+            val bitmap = Bitmap.createScaledBitmap(square, avatarPixels, avatarPixels, true)
+            ByteArrayOutputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, avatarQuality, out); out.toByteArray() }
+        }.getOrNull()
+
+        private const val maxSharedImageBytes = 96 * 1024
+        private const val maxSharedImagePixels = 512
         private const val avatarPixels = 160
         private const val avatarQuality = 85
     }

@@ -41,8 +41,19 @@ private val directClockQuery = Regex(
     RegexOption.IGNORE_CASE
 )
 
+internal fun isDirectClockQuery(query: String): Boolean = directClockQuery.matches(query.trim())
+
+private val deviceDetail = Regex(
+    """\b(?:my|our|current|local|right now|today|tomorrow|upcoming|connected|paired|remaining|meine?\w*|unser\w*|aktuell\w*|heute|morgen|nächste\w*|gerade|verbunden\w*|gekoppelt\w*)\b""",
+    RegexOption.IGNORE_CASE
+)
+private val directDeviceQuestion = Regex(
+    """^(?:(?:how much battery|how full is (?:the )?battery|is (?:the )?(?:wi[ -]?fi|bluetooth) (?:on|connected)|(?:wie|ist|welche)\b.*(?:akku|batterie|wetter|wlan|bluetooth|termin)\w*)[^\n]*|(?:what(?:'s| is) (?:the )?)?(?:weather(?: forecast)?|battery(?: status| level)?|wi[ -]?fi(?: status)?|bluetooth(?: status)?|calendar|wetter|akku|wlan|kalender)[.!?]*)$""",
+    RegexOption.IGNORE_CASE
+)
+
 internal fun assistantClockAnswer(context: Context, query: String, now: Long = System.currentTimeMillis()): String? {
-    if (!directClockQuery.matches(query.trim())) return null
+    if (!isDirectClockQuery(query)) return null
     val date = Date(now)
     val localTime = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
     val offset = localTime.format(DateTimeFormatter.ofPattern("xxx"))
@@ -52,22 +63,26 @@ internal fun assistantClockAnswer(context: Context, query: String, now: Long = S
 
 internal fun assistantDeviceContext(context: Context, query: String): String {
     if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return ""
+    val reportTime = timeQuery.containsMatchIn(query) && (isDirectClockQuery(query) ||
+        !query.contains(Regex("""\b(?:write|story|poem|explain|schreib\w*|geschichte|gedicht|erklär\w*)\b""", RegexOption.IGNORE_CASE)))
+    val reportDevice = deviceDetail.containsMatchIn(query) || directDeviceQuestion.matches(query.trim())
+    if (!reportDevice && !reportTime) return ""
     val now = System.currentTimeMillis()
     return buildList {
-        if (batteryQuery.containsMatchIn(query)) {
+        if (reportDevice && batteryQuery.containsMatchIn(query)) {
             val reading = readBattery(context)
             add(if (reading == null) "Battery: unavailable" else
                 "Battery: ${(reading.level * 100).roundToInt()}%, ${if (reading.charging) "charging or full" else "not charging"}")
         }
-        if (wifiQuery.containsMatchIn(query)) add(wifiContext(context))
-        if (bluetoothQuery.containsMatchIn(query)) add(bluetoothContext(context, pairedQuery.containsMatchIn(query)))
-        if (timeQuery.containsMatchIn(query)) {
+        if (reportDevice && wifiQuery.containsMatchIn(query)) add(wifiContext(context))
+        if (reportDevice && bluetoothQuery.containsMatchIn(query)) add(bluetoothContext(context, pairedQuery.containsMatchIn(query)))
+        if (reportTime) {
             val date = Date(now)
             val localTime = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
             add("Current device local time: ${DateFormat.getLongDateFormat(context).format(date)}, ${DateFormat.getTimeFormat(context).format(date)}; time zone: ${localTime.zone.id}, UTC${localTime.format(DateTimeFormatter.ofPattern("xxx"))}.")
         }
-        if (calendarQuery.containsMatchIn(query)) add(calendarContext(context, now))
-        if (weatherQuery.containsMatchIn(query)) add(weatherContext(context))
+        if (reportDevice && calendarQuery.containsMatchIn(query)) add(calendarContext(context, now))
+        if (reportDevice && weatherQuery.containsMatchIn(query)) add(weatherContext(context))
     }.joinToString("\n").take(1500)
 }
 
@@ -140,4 +155,85 @@ private fun weatherContext(context: Context): String {
     val age = TimeUnit.MILLISECONDS.toMinutes((SystemClock.elapsedRealtime() - reading.fetchedAt).coerceAtLeast(0))
     return "Weather widget reading: ${reading.celsius} °C, ${context.getString(reading.conditions.label)}, recorded $age minutes ago" +
         if (reading.estimated) ", estimated location" else ""
+}
+
+private val messagesWith = Regex("""\b(?:messages?|chats?|texts?|wrote|said|sagte|schrieb|geschrieben|nachrichten?)\b""", RegexOption.IGNORE_CASE)
+
+/**
+ * Phone data for models with a larger context: the local time always, readings whose topic the
+ * request mentions, and recent messages with people it names. Nothing private while the phone is locked.
+ */
+internal fun assistantPhoneContext(context: Context, query: String, now: Long = System.currentTimeMillis()): String {
+    val date = Date(now)
+    val localTime = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
+    val clock = "Current device local time: ${DateFormat.getLongDateFormat(context).format(date)}, ${DateFormat.getTimeFormat(context).format(date)}; " +
+        "time zone: ${localTime.zone.id}, UTC${localTime.format(DateTimeFormatter.ofPattern("xxx"))}."
+    if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return clock
+    return buildList {
+        add(clock)
+        if (batteryQuery.containsMatchIn(query)) {
+            val reading = readBattery(context)
+            add(if (reading == null) "Battery: unavailable" else
+                "Battery: ${(reading.level * 100).roundToInt()}%, ${if (reading.charging) "charging or full" else "not charging"}")
+        }
+        if (wifiQuery.containsMatchIn(query)) add(wifiContext(context))
+        if (bluetoothQuery.containsMatchIn(query)) add(bluetoothContext(context, pairedQuery.containsMatchIn(query)))
+        if (calendarQuery.containsMatchIn(query)) add(calendarContext(context, now))
+        if (weatherQuery.containsMatchIn(query)) add(weatherContext(context))
+        add(conversationContext(context, query))
+    }.filter { it.isNotBlank() }.joinToString("\n").take(2400)
+}
+
+/** The latest messages of up to two chats whose person or group the request names. */
+/** Up to two chats whose person or group the request names. */
+internal fun mentionedThreads(context: Context, query: String): List<ThreadSummary> {
+    val lower = query.lowercase()
+    fun mentions(name: String) = name.length >= 3 && Regex("""(?<![\p{L}\p{N}])${Regex.escape(name.lowercase())}(?![\p{L}\p{N}])""").containsMatchIn(lower)
+    return runCatching { ArchiveData.threads(context, 60) }.getOrDefault(emptyList()).filter { thread ->
+        mentions(thread.name) || mentions(thread.name.substringBefore(' '))
+    }.take(2)
+}
+
+private fun conversationContext(context: Context, query: String): String {
+    val named = mentionedThreads(context, query)
+    if (named.isEmpty()) return ""
+    val time = DateFormat.getTimeFormat(context)
+    val day = DateFormat.getDateFormat(context)
+    val wanted = if (messagesWith.containsMatchIn(query)) 10 else 6
+    return named.joinToString("\n") { thread ->
+        val lines = runCatching { ArchiveData.messages(context, thread.ref) }.getOrDefault(emptyList()).takeLast(wanted).joinToString("\n") { message ->
+            val who = if (message.outgoing) "Me" else message.sender?.take(60) ?: thread.name.take(60)
+            "- ${day.format(Date(message.postedAt))} ${time.format(Date(message.postedAt))}, $who: ${message.text.take(200)}"
+        }
+        if (lines.isBlank()) "" else "Recent messages in the chat \"${thread.name.take(60)}\":\n$lines"
+    }
+}
+
+/** The phone data behind an answer, as cards under it; the same topics and limits as the context. */
+internal fun assistantCards(context: Context, query: String, rich: Boolean, now: Long = System.currentTimeMillis()): List<AssistantCard> {
+    val clock = isDirectClockQuery(query) || timeQuery.containsMatchIn(query)
+    val time = if (clock) AssistantCard.Clock(DateFormat.getLongDateFormat(context).format(Date(now)), DateFormat.getTimeFormat(context).format(Date(now)),
+        ZoneId.systemDefault().id) else null
+    if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return listOfNotNull(time)
+    val topical = rich || deviceDetail.containsMatchIn(query) || directDeviceQuestion.matches(query.trim())
+    return buildList {
+        time?.let(::add)
+        if (topical && weatherQuery.containsMatchIn(query)) latestWeather.takeIf { context.weatherAccess() != WeatherAccess.None }?.let { reading ->
+            add(AssistantCard.Weather(reading.celsius, context.getString(reading.conditions.label)))
+        }
+        if (topical && batteryQuery.containsMatchIn(query)) readBattery(context)?.let { add(AssistantCard.Battery((it.level * 100).roundToInt(), it.charging)) }
+        if (topical && calendarQuery.containsMatchIn(query) &&
+            context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            val events = calendarContext(context, now).lines().drop(1).filter { it.contains(": ") }.take(4)
+            add(AssistantCard.Calendar(events))
+        }
+        val network = listOfNotNull(
+            wifiContext(context).takeIf { topical && wifiQuery.containsMatchIn(query) },
+            bluetoothContext(context, pairedQuery.containsMatchIn(query)).takeIf { topical && bluetoothQuery.containsMatchIn(query) }
+        )
+        if (network.isNotEmpty()) add(AssistantCard.Network(network))
+        if (rich) mentionedThreads(context, query).forEach { thread ->
+            add(AssistantCard.Chat(thread.ref, thread.name.take(80), thread.preview?.take(160)))
+        }
+    }
 }

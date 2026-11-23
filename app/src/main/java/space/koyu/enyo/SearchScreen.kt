@@ -866,6 +866,7 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
             }
         }
         item { LocalAssistantPreference() }
+        item { AssistantMemoryPreference() }
         if (installed.isNotEmpty() || localReady) item {
             DefaultAssistantCard(installed, preferred, localReady) { assistant ->
                 scope.launch { store.edit { it[defaultAssistant] = assistant } }
@@ -884,6 +885,10 @@ internal fun PreferencesScreen(back: () -> Unit, packageCycle: Int, wallpaper: (
         item { UpdatePreference() }
         item {
             SettingsPanel(stringResource(R.string.settings_system)) {
+                val aiOn = aiFeaturesEnabled()
+                SettingsToggle(stringResource(R.string.ai_features), aiOn, summary = stringResource(R.string.ai_features_summary), glyph = Glyph.Sparkles) { on ->
+                    scope.launch { setAiFeatures(context, on) }
+                }
                 SettingsLink(stringResource(R.string.setup_title), stringResource(R.string.setup_settings_summary),
                     Glyph.Settings, setup)
                 SettingsLink(stringResource(R.string.android_settings), glyph = Glyph.Quick) {

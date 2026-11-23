@@ -121,6 +121,23 @@ internal fun PermissionRow(title: String, summary: String, granted: Boolean, con
     )
 }
 
+/** A card's empty state: an icon in a tinted circle, a short title, and what will appear here. */
+@Composable
+internal fun EmptyState(glyph: Glyph, title: String, summary: String) {
+    val tokens = LocalTokens.current
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = tokens.padding, vertical = tokens.padding * 1.5f),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(tokens.listRowPadding)
+    ) {
+        Box(Modifier.size(tokens.iconSize).clip(CircleShape).background(tokens.accentContainer), contentAlignment = Alignment.Center) {
+            EnyoGlyph(glyph, color = tokens.onAccentContainer)
+        }
+        Text(title, style = tokens.rowTitle, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(summary, style = tokens.rowSummary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
 /** Plain explanatory text inside a card, aligned with row titles. */
 @Composable
 internal fun ListNote(text: String) {

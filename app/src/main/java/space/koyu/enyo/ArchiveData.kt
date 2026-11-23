@@ -35,8 +35,21 @@ internal data class ArchivedMessage(
     val postedAt: Long,
     val outgoing: Boolean,
     val conversationId: Long,
-    val notificationKey: String?
+    val notificationKey: String?,
+    /** What a UnifiedInbox app shared beyond the text. */
+    val content: MessageContent? = null,
+    /** The app's id of the message this one quotes. */
+    val replyTo: String? = null,
+    val reactions: List<MessageReaction> = emptyList(),
+    /** The app's ids of the message and its chat, for messages a UnifiedInbox app shared. */
+    val apiId: String? = null,
+    val inboxConversation: String? = null,
+    /** For the person's own messages: how far it got, as far as the app reports. */
+    val status: MessageStatus? = null
 )
+
+/** Where one of the person's messages is, like the ticks of chat apps. */
+internal enum class MessageStatus { Sending, Failed, Sent, Received, Read }
 
 internal data class ThreadIdentity(val id: Long, val packageName: String, val name: String?, val linkSource: String?)
 
@@ -64,7 +77,7 @@ internal object ArchiveData {
         GROUP BY p.id HAVING MAX(c.last_at) > 0"""
 
     private const val groupSummary = """
-        SELECT c.id, COALESCE(c.title, c.key), NULL, NULL,
+        SELECT c.id, COALESCE(c.title, c.key), NULL, c.avatar,
             (SELECT m2.text FROM messages m2 WHERE m2.conversation_id = c.id AND m2.duplicate_of IS NULL ORDER BY m2.posted_at DESC, m2.id DESC LIMIT 1),
             c.last_at,
             (SELECT COUNT(*) FROM messages m3 WHERE m3.conversation_id = c.id AND m3.outgoing = 0 AND m3.duplicate_of IS NULL AND m3.posted_at > c.read_at),
@@ -86,7 +99,7 @@ internal object ArchiveData {
             val groups = db.query("$groupSummary ORDER BY c.last_at DESC LIMIT $limit").use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) add(ThreadSummary(
-                        ThreadRef.Group(cursor.getLong(0)), cursor.stringOrNull(1) ?: "?", null, null,
+                        ThreadRef.Group(cursor.getLong(0)), cursor.stringOrNull(1) ?: "?", null, cursor.getBlobOrNull(3),
                         cursor.stringOrNull(4), cursor.getLong(5), cursor.getInt(6), listOfNotNull(cursor.stringOrNull(7))
                     ))
                 }
@@ -101,14 +114,27 @@ internal object ArchiveData {
 
     fun messages(context: Context, thread: ThreadRef): List<ArchivedMessage> = MessageArchive.get(context).read { db ->
         val (sql, args) = when (thread) {
-            is ThreadRef.Person -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
+            is ThreadRef.Person -> """SELECT $richMessage
                 FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN identities i ON i.id = c.identity_id
                 WHERE i.person_id = ? AND c.is_group = 0 AND m.duplicate_of IS NULL ORDER BY m.posted_at, m.id""" to arrayOf<Any>(thread.id)
-            is ThreadRef.Group -> """SELECT m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key
-                FROM messages m WHERE m.conversation_id = ? AND m.duplicate_of IS NULL ORDER BY m.posted_at, m.id""" to arrayOf<Any>(thread.conversationId)
+            is ThreadRef.Group -> """SELECT $richMessage
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.conversation_id = ? AND m.duplicate_of IS NULL ORDER BY m.posted_at, m.id""" to arrayOf<Any>(thread.conversationId)
         }
-        db.query(sql, args).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.message()) } }
+        db.query(sql, args).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.message(rich = true)) } }
     }.orEmpty()
+
+    /** A message's columns with what UnifiedInbox apps add: content, quote, the app's ids and reactions. */
+    private const val richMessage = """m.id, m.package, m.sender_name, m.text, m.posted_at, m.outgoing, m.conversation_id, m.notification_key,
+        m.content, m.reply_to, m.fingerprint,
+        (SELECT ic.id FROM inbox_conversations ic WHERE ic.package = m.package AND ic.key = c.key),
+        (SELECT GROUP_CONCAT(r.emoji || char(31) || r.sender, char(30)) FROM inbox_reactions r WHERE r.message_id = m.id),
+        c.receipt_delivered, c.receipt_read"""
+
+    /** An image a UnifiedInbox app shared, by its image id, once it arrived. */
+    fun inboxImage(context: Context, packageName: String, id: String): ByteArray? = MessageArchive.get(context).read { db ->
+        db.query("SELECT data FROM inbox_images WHERE package = ? AND id = ?", arrayOf(packageName, id))
+            .use { if (it.moveToFirst() && !it.isNull(0)) it.getBlob(0) else null }
+    }
 
     fun summary(context: Context, thread: ThreadRef): ThreadSummary? = MessageArchive.get(context).read { db ->
         val (sql, arg) = when (thread) {
@@ -342,8 +368,20 @@ internal object ArchiveData {
         }.getOrNull()
     }
 
-    private fun android.database.Cursor.message() = ArchivedMessage(
-        getLong(0), getString(1), stringOrNull(2), getString(3), getLong(4), getInt(5) == 1, getLong(6), stringOrNull(7)
+    private fun android.database.Cursor.message(rich: Boolean = false) = ArchivedMessage(
+        getLong(0), getString(1), stringOrNull(2), getString(3), getLong(4), getInt(5) == 1, getLong(6), stringOrNull(7),
+        content = if (rich) MessageContent.stored(stringOrNull(8)) else null,
+        replyTo = if (rich) stringOrNull(9) else null,
+        apiId = if (rich) stringOrNull(10)?.substringAfter("|api:", "")?.ifEmpty { null } else null,
+        inboxConversation = if (rich) stringOrNull(11) else null,
+        reactions = if (!rich) emptyList() else stringOrNull(12)?.split('\u001e').orEmpty().mapNotNull { pair ->
+            pair.split('\u001f', limit = 2).takeIf { it.size == 2 }?.let { MessageReaction(it[0], it[1]) }
+        },
+        status = if (!rich || getInt(5) != 1) null else when {
+            getLong(4) <= getLong(14) -> MessageStatus.Read
+            getLong(4) <= getLong(13) -> MessageStatus.Received
+            else -> MessageStatus.Sent
+        }
     )
 
     private fun android.database.Cursor.getBlobOrNull(index: Int): ByteArray? = if (isNull(index)) null else getBlob(index)

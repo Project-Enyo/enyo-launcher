@@ -500,9 +500,12 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
             }
             val cardWidth = minOf(maxWidth * tokens.recentWidthFraction, maxHeight * tokens.recentHeightFraction)
             val availableHeight = maxHeight
+            // Cards without a preview take the screen's shape, which the preview will have when it arrives.
+            val window = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
+            val screenAspect = if (window.width > 0 && window.height > 0) window.width.toFloat() / window.height else tokens.recentDefaultAspect
             val sidePadding = (maxWidth - cardWidth) / 2
             SideEffect { store.setTargetWidth(with(density) { cardWidth.roundToPx() }) }
-            if (groups.isEmpty()) WorkspaceEmptyState(R.string.cards_empty) else LazyRow(
+            if (groups.isEmpty()) WorkspaceEmptyState(R.string.cards_empty_title, Glyph.Cards, R.string.cards_empty) else LazyRow(
                 modifier = Modifier.fillMaxSize().onGloballyPositioned { carouselBounds = it.boundsInRoot() },
                 state = scroll,
                 userScrollEnabled = canScroll && lifted == null,
@@ -543,7 +546,7 @@ internal fun CardsPage(apps: List<LauncherActivityInfo>, open: (LauncherActivity
                             val depth = cluster.lastIndex - paintIndex
                             val entry = card.entry
                             key(entry.component) {
-                                val ratio = entry.aspect ?: tokens.recentDefaultAspect
+                                val ratio = entry.aspect ?: screenAspect
                                 val wide = ((ratio - tokens.recentTallAspect) /
                                     (tokens.recentSquareAspect - tokens.recentTallAspect)).coerceIn(0f, 1f)
                                 val fanDepth = minOf(depth, tokens.recentVisible - 1)

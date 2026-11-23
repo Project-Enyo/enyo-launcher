@@ -33,20 +33,68 @@ internal object InboxHost {
     private const val actionReply = "$P.connector.REPLY"
     private const val actionMarkRead = "$P.connector.MARK_READ"
     private const val actionOpen = "$P.connector.OPEN"
+    private const val actionReact = "$P.connector.REACT"
+    private const val actionFetchImage = "$P.connector.FETCH_IMAGE"
+    private const val actionFetchFile = "$P.connector.FETCH_FILE"
     const val featureReply = "reply"
     const val featureMarkRead = "mark_read"
     const val featureOpen = "open"
-    private const val version = 1
+    const val featureImages = "images"
+    const val featureFiles = "files"
+    const val featureReact = "react"
+    const val featureReceipts = "receipts"
+    const val featureReplyTo = "reply_to"
+    const val featureSendAttachments = "send_attachments"
+    const val featureSendLocation = "send_location"
+    private const val version = 2
     private const val preferences = "unified_inbox_host"
 
     val connectors = MutableStateFlow<List<InboxConnector>>(emptyList())
     /** Replies a connector could not send, by request id, with its reason. */
     val failedReplies = MutableStateFlow<Map<String, String?>>(emptyMap())
+
+    /** What the person sent through an app that has not come back as a message yet, shown as sending. */
+    data class PendingSend(
+        val request: String,
+        val packageName: String,
+        val conversation: String,
+        val text: String,
+        val files: Int,
+        val place: Boolean,
+        val time: Long
+    )
+    val pending = MutableStateFlow<List<PendingSend>>(emptyList())
+
+    private fun track(request: String, packageName: String, conversation: String, text: String, files: Int = 0, place: Boolean = false) {
+        pending.value = pending.value + PendingSend(request, packageName, conversation, text, files, place, System.currentTimeMillis())
+    }
+
+    /** One of the person's messages arrived from the app: it answers its request, or the oldest send of that chat. */
+    private fun arrived(packageName: String, conversation: String, request: String?, time: Long) {
+        val current = pending.value
+        val match = current.firstOrNull { it.request == request }
+            ?: current.filter { it.packageName == packageName && it.conversation == conversation && it.time - sendSlackMillis <= time }.minByOrNull { it.time }
+        if (match != null) pending.value = current - match
+    }
+
+    private const val sendSlackMillis = 60_000L
     @Volatile private var loaded = false
 
     private fun store(context: Context) = context.getSharedPreferences(preferences, Context.MODE_PRIVATE)
 
     fun enabled(context: Context) = store(context).getBoolean("enabled", true)
+
+    @Volatile private var groups: MutableStateFlow<Boolean>? = null
+
+    /** Whether Inbox lists group chats, from every app. Off by default. */
+    @Synchronized
+    fun groupsShown(context: Context): MutableStateFlow<Boolean> =
+        groups ?: MutableStateFlow(store(context).getBoolean("show_groups", false)).also { groups = it }
+
+    fun setGroupsShown(context: Context, shown: Boolean) {
+        store(context).edit().putBoolean("show_groups", shown).apply()
+        groupsShown(context).value = shown
+    }
 
     @Synchronized
     fun load(context: Context): List<InboxConnector> {
@@ -107,11 +155,128 @@ internal object InboxHost {
     }
 
     fun events(context: Context, packageName: String, token: String, json: String) {
-        if (connector(context, packageName)?.token != token) return
-        val events = runCatching { JSONArray(json) }.getOrNull() ?: return
-        MessageArchive.get(context).applyInboxEvents(packageName, events) { request, reason ->
+        val entry = connector(context, packageName)?.takeIf { it.token == token } ?: return
+        val all = runCatching { JSONArray(json) }.getOrNull() ?: return
+        // Files answer a request of this process; everything else is stored.
+        val events = JSONArray()
+        for (index in 0 until all.length()) {
+            val event = all.optJSONObject(index) ?: continue
+            if (event.optString("type") == "file") fileArrived(packageName, event) else events.put(event)
+        }
+        MessageArchive.get(context).applyInboxEvents(packageName, events, featureImages in entry.features,
+            fetchImage = { image -> fetchImage(context, packageName, image) },
+            arrived = { conversation, request, time -> arrived(packageName, conversation, request, time) }) { request, reason ->
             failedReplies.value = failedReplies.value + (request to reason)
         }
+    }
+
+    /** Image ids already asked for in this process, so an image the app cannot send is not asked for on every message. */
+    private val requestedImages = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** Asks the app for the image [image] names; it answers with an image event. */
+    private fun fetchImage(context: Context, packageName: String, image: String) {
+        val entry = connector(context, packageName)?.takeIf { featureImages in it.features } ?: return
+        if (!requestedImages.add("$packageName|$image")) return
+        send(context, packageName, Intent(actionFetchImage).putExtra("token", entry.token).putExtra("image", image))
+    }
+
+    private val pendingFiles = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<org.json.JSONObject>>()
+    private val fileLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    private fun fileArrived(packageName: String, event: org.json.JSONObject) {
+        val request = event.optString("request").takeIf { it.isNotEmpty() } ?: return
+        // Only the app a request went to may answer it.
+        if (request.substringBefore('|') == packageName) pendingFiles.remove(request)?.complete(event)
+    }
+
+    /**
+     * A message's attachment as a local file: asked from the app once, copied into Enyo's cache and
+     * kept there for later views. Null when the app cannot provide it in time.
+     */
+    suspend fun file(context: Context, packageName: String, conversation: String, message: String, attachment: InboxAttachmentInfo): java.io.File? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val entry = connector(context, packageName)?.takeIf { featureFiles in it.features } ?: return@withContext null
+            val name = java.security.MessageDigest.getInstance("SHA-256").digest("$packageName|$conversation|$message|${attachment.id}".toByteArray())
+                .take(16).joinToString("") { "%02x".format(it) }
+            val extension = attachment.name?.substringAfterLast('.', "")?.filter { it.isLetterOrDigit() }?.take(8)?.ifEmpty { null }
+                ?: attachment.mime?.let { android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it) } ?: "bin"
+            val target = java.io.File(context.cacheDir, "inbox_files").apply { mkdirs() }.resolve("$name.$extension")
+            fileLocks.getOrPut(name) { kotlinx.coroutines.sync.Mutex() }.lock()
+            try {
+                if (target.isFile && target.length() > 0) return@withContext target
+                val request = "$packageName|${java.util.UUID.randomUUID()}"
+                val answer = kotlinx.coroutines.CompletableDeferred<org.json.JSONObject>()
+                pendingFiles[request] = answer
+                send(context, packageName, Intent(actionFetchFile).putExtra("token", entry.token).putExtra("conversation", conversation)
+                    .putExtra("message", message).putExtra("attachment", attachment.id).putExtra("request", request))
+                val event = kotlinx.coroutines.withTimeoutOrNull(fileTimeoutMillis) { answer.await() }
+                pendingFiles.remove(request)
+                val uri = event?.optString("uri")?.takeIf { it.startsWith("content://") }?.let(android.net.Uri::parse) ?: return@withContext null
+                // The app's own provider must serve it, so another app's files cannot be passed off as this one's.
+                val provider = context.packageManager.resolveContentProvider(uri.authority ?: return@withContext null, 0)
+                if (provider?.packageName != packageName) return@withContext null
+                val partial = java.io.File(target.path + ".part")
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        partial.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0L
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                total += read
+                                check(total <= maxFileBytes)
+                                output.write(buffer, 0, read)
+                            }
+                        }
+                    } ?: error("unavailable")
+                    check(partial.renameTo(target))
+                }.onFailure { partial.delete() }.getOrNull() ?: return@withContext null
+                target
+            } finally {
+                fileLocks[name]?.unlock()
+            }
+        }
+
+    private const val fileTimeoutMillis = 120_000L
+    private const val maxFileBytes = 1_000_000_000L
+
+    /** Adds or takes back the person's reaction through the app. */
+    fun react(context: Context, packageName: String, conversation: String, message: String, emoji: String, remove: Boolean): Boolean {
+        val entry = connector(context, packageName)?.takeIf { featureReact in it.features } ?: return false
+        send(context, packageName, Intent(actionReact).putExtra("token", entry.token).putExtra("conversation", conversation)
+            .putExtra("message", message).putExtra("emoji", emoji).putExtra("remove", remove))
+        return true
+    }
+
+    /**
+     * Sends files or a place through the app, optionally quoting [replyTo], with [text] as caption.
+     * Returns the request id, or null when the app cannot send this.
+     */
+    fun sendRich(
+        context: Context,
+        packageName: String,
+        conversation: String,
+        text: String,
+        replyTo: String? = null,
+        attachments: List<android.net.Uri> = emptyList(),
+        location: InboxLocationInfo? = null
+    ): String? {
+        val entry = connector(context, packageName) ?: return null
+        if (attachments.isNotEmpty() && featureSendAttachments !in entry.features) return null
+        if (location != null && featureSendLocation !in entry.features) return null
+        if (attachments.isEmpty() && location == null && featureReply !in entry.features) return null
+        val request = java.util.UUID.randomUUID().toString()
+        attachments.forEach { uri -> runCatching { context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        track(request, packageName, conversation, text, attachments.size, location != null)
+        send(context, packageName, Intent(actionReply).putExtra("token", entry.token).putExtra("conversation", conversation)
+            .putExtra("text", text).putExtra("request", request)
+            .apply {
+                if (replyTo != null && featureReplyTo in entry.features) putExtra("replyTo", replyTo)
+                if (attachments.isNotEmpty()) putParcelableArrayListExtra("attachments", ArrayList(attachments))
+                location?.let { putExtra("location", JSONObject().put("lat", it.lat).put("lng", it.lng).putOpt("name", it.name).toString()) }
+            })
+        return request
     }
 
     fun setEnabled(context: Context, on: Boolean) {
@@ -123,6 +288,7 @@ internal object InboxHost {
     fun reply(context: Context, packageName: String, conversation: String, text: String): String? {
         val entry = connector(context, packageName)?.takeIf { featureReply in it.features } ?: return null
         val request = java.util.UUID.randomUUID().toString()
+        track(request, packageName, conversation, text)
         send(context, packageName, Intent(actionReply).putExtra("token", entry.token)
             .putExtra("conversation", conversation).putExtra("text", text).putExtra("request", request))
         return request
@@ -176,11 +342,15 @@ internal fun InboxHostPreference() {
     val tokens = LocalTokens.current
     var enabled by remember { mutableStateOf(InboxHost.enabled(context)) }
     val connectors by InboxHost.connectors.collectAsState()
+    val groupsShown by remember(context) { InboxHost.groupsShown(context) }.collectAsState()
     LaunchedEffect(Unit) { InboxHost.load(context) }
     SettingsPanel(stringResource(R.string.inbox_host_title)) {
         SettingsToggle(stringResource(R.string.inbox_host_enable), enabled, summary = stringResource(R.string.inbox_host_summary), glyph = Glyph.Messages) {
             enabled = it
             InboxHost.setEnabled(context, it)
+        }
+        SettingsToggle(stringResource(R.string.inbox_groups), groupsShown, summary = stringResource(R.string.inbox_groups_summary), glyph = Glyph.People) {
+            InboxHost.setGroupsShown(context, it)
         }
         if (enabled) {
             if (connectors.isEmpty()) ListNote(stringResource(R.string.inbox_host_none))

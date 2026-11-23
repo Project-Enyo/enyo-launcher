@@ -4,7 +4,16 @@ import android.app.KeyguardManager
 import android.app.Notification
 import android.content.pm.LauncherActivityInfo
 import android.service.notification.StatusBarNotification
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -17,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -84,69 +94,81 @@ internal fun NotificationBanners(apps: List<LauncherActivityInfo>, open: (Launch
     val shown = current
     var exiting by remember { mutableStateOf<StatusBarNotification?>(null) }
     SideEffect { if (shown != null) exiting = shown }
-    if (expanded == null) AnimatedVisibility(
-        visible = shown != null,
+    // The tray grows out of the banner in the same card; when it closes with no banner waiting, it leaves as a tray.
+    var lastGroup by remember { mutableStateOf<NoticeGroup?>(null) }
+    SideEffect { if (expanded != null) lastGroup = expanded }
+    val target = expanded ?: if (shown == null) lastGroup else null
+    val elevation by animateDpAsState(if (expanded != null) tokens.elevation[2] else tokens.elevation[1],
+        tween(tokens.settingsTransitionMillis), label = "bannerElevation")
+    AnimatedVisibility(
+        visible = shown != null || expanded != null,
         enter = slideInVertically { it } + fadeIn(),
         exit = slideOutVertically { it } + fadeOut()
     ) {
-        (shown ?: exiting)?.let { initial ->
-            val entry = if (initial.isModelDownload(context.packageName)) {
-                active.firstOrNull { it.key == initial.key } ?: initial
-            } else initial
-            val group = entry.noticeGroup()
-            val label = if (group.messaging) stringResource(R.string.messages) else
-                apps.firstOrNull { it.componentName.packageName == entry.packageName }?.label?.toString()
-                    ?: sourceLabel(context, entry.packageName)
-            val payload = entry.noticePayload()
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
-                color = tokens.widgetSurface,
-                contentColor = tokens.onAccentContainer,
-                shape = RoundedCornerShape(tokens.sheetRadius),
-                shadowElevation = tokens.elevation[1]
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = tokens.touch).appPress({ expanded = group; current = null })
-                        .padding(tokens.padding),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(tokens.gap)
-                ) {
-                    EnyoGlyph(if (group.messaging) Glyph.Messages else Glyph.Inbox, color = tokens.accent)
-                    Column(Modifier.weight(1f)) {
-                        Text(label, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        payload.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        payload.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                        entry.modelDownloadProgress(context.packageName)?.let { progress ->
-                            LinearProgressIndicator(progress = { progress },
-                                modifier = Modifier.fillMaxWidth().padding(top = tokens.gap / 2),
-                                color = tokens.accent, trackColor = tokens.widgetTrack)
-                        }
-                    }
-                    EnyoGlyph(Glyph.Forward, color = tokens.quiet)
-                }
-            }
-        }
-    }
-    expanded?.let { group ->
-        val title = if (group.messaging) stringResource(R.string.messages) else stringResource(R.string.inbox)
         Surface(
             modifier = Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
             color = tokens.widgetSurface,
             contentColor = tokens.onAccentContainer,
             shape = RoundedCornerShape(tokens.sheetRadius),
-            shadowElevation = tokens.elevation[2]
+            shadowElevation = elevation
         ) {
-            Column {
-                Row(Modifier.fillMaxWidth().padding(start = tokens.padding), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = tokens.state, color = tokens.onAccentContainer)
-                    val label = stringResource(R.string.back)
-                    Box(Modifier.size(tokens.touch).appPress({ expanded = null })
-                        .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-                        EnyoGlyph(Glyph.Close)
+            AnimatedContent(
+                targetState = target,
+                transitionSpec = {
+                    val opening = targetState != null
+                    val fadeIn = fadeIn(tween(tokens.sheetArrivalMillis, delayMillis = tokens.sheetArrivalMillis / 3)) +
+                        scaleIn(tween(tokens.sheetArrivalMillis, delayMillis = tokens.sheetArrivalMillis / 3), initialScale = if (opening) 0.96f else 1.02f)
+                    (fadeIn togetherWith fadeOut(tween(tokens.sheetArrivalMillis / 3)))
+                        .using(SizeTransform(clip = true) { _, _ -> spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow) })
+                },
+                contentAlignment = Alignment.BottomCenter,
+                label = "bannerTray"
+            ) { group ->
+                if (group == null) (shown ?: exiting)?.let { initial ->
+                    val entry = if (initial.isModelDownload(context.packageName)) {
+                        active.firstOrNull { it.key == initial.key } ?: initial
+                    } else initial
+                    val bannerGroup = entry.noticeGroup()
+                    val label = if (bannerGroup.messaging) stringResource(R.string.messages) else
+                        apps.firstOrNull { it.componentName.packageName == entry.packageName }?.label?.toString()
+                            ?: sourceLabel(context, entry.packageName)
+                    val payload = entry.noticePayload()
+                    // The chevron turns to point down as the banner opens into the tray.
+                    val turn by animateFloatAsState(if (expanded != null) 90f else 0f, tween(tokens.sheetArrivalMillis), label = "bannerChevron")
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = tokens.touch).appPress({ expanded = bannerGroup; current = null })
+                            .padding(tokens.padding),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(tokens.gap)
+                    ) {
+                        EnyoGlyph(if (bannerGroup.messaging) Glyph.Messages else Glyph.Inbox, color = tokens.accent)
+                        Column(Modifier.weight(1f)) {
+                            Text(label, style = tokens.state, color = tokens.onAccentContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            payload.sender?.let { Text(it, style = tokens.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            payload.body?.let { Text(it, style = tokens.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            entry.modelDownloadProgress(context.packageName)?.let { progress ->
+                                LinearProgressIndicator(progress = { progress },
+                                    modifier = Modifier.fillMaxWidth().padding(top = tokens.gap / 2),
+                                    color = tokens.accent, trackColor = tokens.widgetTrack)
+                            }
+                        }
+                        EnyoGlyph(Glyph.Forward, Modifier.graphicsLayer { rotationZ = turn }, color = tokens.quiet)
                     }
-                }
-                Box(Modifier.fillMaxWidth().height(tokens.notificationTrayHeight)) {
-                    InboxPage(apps, open, group)
+                } else {
+                    val title = if (group.messaging) stringResource(R.string.messages) else stringResource(R.string.inbox)
+                    Column {
+                        Row(Modifier.fillMaxWidth().padding(start = tokens.padding), verticalAlignment = Alignment.CenterVertically) {
+                            Text(title, Modifier.weight(1f), style = tokens.state, color = tokens.onAccentContainer)
+                            val label = stringResource(R.string.back)
+                            Box(Modifier.size(tokens.touch).appPress({ expanded = null })
+                                .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+                                EnyoGlyph(Glyph.Close)
+                            }
+                        }
+                        Box(Modifier.fillMaxWidth().height(tokens.notificationTrayHeight)) {
+                            InboxPage(apps, open, group)
+                        }
+                    }
                 }
             }
         }

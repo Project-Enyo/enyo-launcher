@@ -47,10 +47,11 @@ internal enum class ModelDownloadKind(val notificationId: Int, val title: Int) {
     val workName get() = "download_model_${name.lowercase()}"
 }
 
-internal data class ModelAsset(val repository: String, val path: String, val name: String, val bytes: Int, val sha256: String)
+internal data class ModelAsset(val repository: String, val path: String, val name: String, val bytes: Long, val sha256: String)
 private val downloadLocks = ModelDownloadKind.entries.associateWith { Mutex() }
 private const val downloadChannel = "model_download"
 private const val modelKind = "model_kind"
+private const val modelOption = "model_option"
 private const val progressKey = "download_progress"
 private const val progressMax = 10_000
 private const val progressIntervalMillis = 2_000L
@@ -72,6 +73,7 @@ internal class ModelDownloadState(
     val failed: Boolean,
     val progress: Int?,
     val start: () -> Unit,
+    val startOption: (String) -> Unit,
     val cancel: () -> Unit
 )
 
@@ -84,18 +86,22 @@ internal fun modelDownloadState(kind: ModelDownloadKind): ModelDownloadState {
     val active = current?.state?.isFinished == false
     val failed = current?.state == WorkInfo.State.FAILED
     val progress = current?.progress?.getInt(progressKey, -1)?.takeIf { it >= 0 }
+    var option by remember(kind) { mutableStateOf<String?>(null) }
     val enqueue: () -> Unit = {
         manager.enqueueUniqueWork(kind.workName, ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setInputData(workDataOf(modelKind to kind.name)).build())
+                .setInputData(workDataOf(modelKind to kind.name, modelOption to option)).build())
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { enqueue() }
-    return ModelDownloadState(active, failed, progress, start = {
+    val start: (String?) -> Unit = { selected ->
+        option = selected
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) permission.launch(Manifest.permission.POST_NOTIFICATIONS) else enqueue()
-    }, cancel = { manager.cancelUniqueWork(kind.workName) })
+    }
+    return ModelDownloadState(active, failed, progress, start = { start(null) }, startOption = { start(it) },
+        cancel = { manager.cancelUniqueWork(kind.workName) })
 }
 
 @Composable
@@ -152,7 +158,7 @@ class ModelDownloadWorker(context: Context, parameters: WorkerParameters) : Coro
             }
             progress(0)
             when (kind) {
-                ModelDownloadKind.Chat -> installRecommendedAssistant(context, progress)
+                ModelDownloadKind.Chat -> installAssistant(context, inputData.getString(modelOption), progress)
                 ModelDownloadKind.Search -> installSemanticModels(context, progress)
             }
             Result.success()
@@ -169,12 +175,12 @@ class ModelDownloadWorker(context: Context, parameters: WorkerParameters) : Coro
 internal suspend fun downloadModels(folder: File, assets: List<ModelAsset>, report: suspend (Int) -> Unit) =
     withContext(Dispatchers.IO) {
         check(folder.isDirectory || folder.mkdirs())
-        val total = assets.sumOf { it.bytes.toLong() }
+        val total = assets.sumOf { it.bytes }
         var completed = 0L
         for (asset in assets) {
             ensureActive()
             val file = File(folder, asset.name)
-            if (file.length() != asset.bytes.toLong()) {
+            if (file.length() != asset.bytes) {
                 val atomic = AtomicFile(file)
                 val connection = URI("https://huggingface.co/${asset.repository}${asset.path}").toURL()
                     .openConnection() as HttpURLConnection
@@ -186,7 +192,7 @@ internal suspend fun downloadModels(folder: File, assets: List<ModelAsset>, repo
                         val output = atomic.startWrite()
                         try {
                             val buffer = ByteArray(256 * 1024)
-                            var size = 0
+                            var size = 0L
                             while (true) {
                                 ensureActive()
                                 val count = input.read(buffer)

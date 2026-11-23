@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,16 +61,32 @@ private fun rememberAvatar(summary: ThreadSummary?): ImageBitmap? {
     return image
 }
 
-/** A round person avatar: contact photo, the app's avatar, or an initial. */
+/**
+ * A round avatar: the contact photo, the app's picture, or an initial. Groups show their picture
+ * with a small group badge, or a group icon when they have none.
+ */
 @Composable
-internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.unit.Dp, name: String = summary?.name.orEmpty()) {
+internal fun PersonAvatar(summary: ThreadSummary?, size: androidx.compose.ui.unit.Dp, name: String = summary?.name.orEmpty(), groupBadge: Boolean = true) {
     val tokens = LocalTokens.current
+    val group = summary?.ref is ThreadRef.Group
     val image = rememberAvatar(summary)
-    Box(Modifier.size(size).clip(CircleShape).background(tokens.accentContainer), contentAlignment = Alignment.Center) {
-        if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else {
-            val initial = name.codePoints().filter { Character.isLetterOrDigit(it) }.findFirst().orElse('?'.code)
-            Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
+    Box(Modifier.size(size)) {
+        Box(Modifier.fillMaxSize().clip(CircleShape).background(tokens.accentContainer), contentAlignment = Alignment.Center) {
+            if (image != null) Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else if (group) EnyoGlyph(Glyph.People, color = tokens.onAccentContainer)
+            else {
+                val initial = name.codePoints().filter { Character.isLetterOrDigit(it) }.findFirst().orElse('?'.code)
+                Text(String(Character.toChars(initial)).uppercase(), style = tokens.state, color = tokens.onAccentContainer)
+            }
+        }
+        // The badge sits on the opposite corner from the app badge of thread rows.
+        if (group && groupBadge && image != null) Box(
+            Modifier.align(Alignment.BottomStart).size(maxOf(tokens.threadAppIcon, size * 0.3f) + tokens.focusStroke * 2)
+                .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke)
+                .clip(CircleShape).background(tokens.accentContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            EnyoGlyph(Glyph.People, Modifier.fillMaxSize(0.7f), color = tokens.onAccentContainer)
         }
     }
 }
@@ -100,10 +118,11 @@ internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.co
         leading = {
             val personLabel = stringResource(R.string.contact_details_of, summary.name)
             Box(Modifier.size(tokens.listAvatar).appPress(person).semantics { contentDescription = personLabel }) {
-                PersonAvatar(summary, tokens.listAvatar)
+                // The row marks groups next to the time instead.
+                PersonAvatar(summary, tokens.listAvatar, groupBadge = false)
                 summary.packages.singleOrNull()?.let { pkg ->
                     Box(Modifier.align(Alignment.BottomEnd).size(tokens.threadAppIcon + tokens.focusStroke * 2)
-                        .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke)) {
+                        .clip(CircleShape).background(tokens.widgetSurface).padding(tokens.focusStroke).clip(CircleShape)) {
                         ChatPlatformIcon(pkg, launchers[pkg])
                     }
                 }
@@ -112,6 +131,10 @@ internal fun ThreadRow(summary: ThreadSummary, launchers: Map<String, android.co
         trailing = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(tokens.gap / 2)) {
                 Text(time, style = tokens.rowSummary, maxLines = 1)
+                if (summary.ref is ThreadRef.Group) {
+                    val groupLabel = stringResource(R.string.inbox_group_chat)
+                    EnyoGlyph(Glyph.People, Modifier.size(tokens.threadAppIcon), color = tokens.quiet, description = groupLabel)
+                }
                 if (summary.unread > 0) Box(
                     Modifier.clip(CircleShape).background(tokens.accent).padding(horizontal = tokens.gap / 2),
                     contentAlignment = Alignment.Center
@@ -176,6 +199,12 @@ internal fun ThreadScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
     var deletingMessage by remember { mutableStateOf<ArchivedMessage?>(null) }
+    var acting by remember { mutableStateOf<ArchivedMessage?>(null) }
+    var quoting by remember(thread) { mutableStateOf<ArchivedMessage?>(null) }
+    var viewing by remember { mutableStateOf<Pair<ArchivedMessage, InboxAttachmentInfo>?>(null) }
+    var sendingFiles by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    var sendingPlace by remember { mutableStateOf<InboxLocationInfo?>(null) }
+    val byApiId = remember(messages) { messages.filter { it.apiId != null }.associateBy { it.packageName to it.apiId } }
     var failed by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
         val contact = uri?.let { ArchiveData.contactOf(context, it) } ?: return@rememberLauncherForActivityResult
@@ -183,6 +212,13 @@ internal fun ThreadScreen(
             ArchiveData.linkToContact(context, identities.map { it.id }, contact.lookup, contact.name)
             close()
         }
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) sendingFiles = uris.take(10)
+    }
+    val placeScope = rememberCoroutineScope()
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.any { it }) placeScope.launch { sendingPlace = currentPlace(context); if (sendingPlace == null) failed = true }
     }
     val archivedKeys = remember(messages) { messages.mapNotNull { it.notificationKey }.toSet() }
     val activeKeys = remember(active, archivedKeys) { active.mapNotNull { it.key.takeIf(archivedKeys::contains) }.toSet() }
@@ -223,7 +259,9 @@ internal fun ThreadScreen(
     }
     var pendingReplies by remember { mutableStateOf(setOf<String>()) }
     val failures by InboxHost.failedReplies.collectAsState()
-    val replyFailure = failures.filterKeys { it in pendingReplies }.entries.lastOrNull()
+    val sending by InboxHost.pending.collectAsState()
+    val inboxRoutes = remember(routes) { routes.mapNotNull { route -> route.inboxId?.let { route.packageName to it } }.toSet() }
+    val ownSending = sending.filter { (it.packageName to it.conversation) in inboxRoutes }
     var replyVia by remember { mutableStateOf<Long?>(null) }
     val selected = if (replyVia == null) targets.firstOrNull()
     else targets.firstOrNull { it.route.conversationId == replyVia }
@@ -302,8 +340,16 @@ internal fun ThreadScreen(
                     verticalArrangement = Arrangement.spacedBy(tokens.gap),
                     reverseLayout = true
                 ) {
+                    items(ownSending.asReversed(), key = { "sending:" + it.request }) { send ->
+                        PendingBubble(send, label(send.packageName), failures[send.request] ?: if (send.request in failures) "" else null) {
+                            InboxHost.pending.value = InboxHost.pending.value - send
+                        }
+                    }
                     items(messages.asReversed(), key = { it.id }) { message ->
-                        MessageBubble(message, label(message.packageName), thread is ThreadRef.Group) { deletingMessage = message }
+                        val quoted = message.replyTo?.let { byApiId[message.packageName to it] }
+                        val react = reactAction(context, message)
+                        MessageBubble(message, label(message.packageName), thread is ThreadRef.Group, quoted, react,
+                            open = { attachment -> viewing = message to attachment }) { acting = message }
                     }
                     item(key = "note") {
                         Text(
@@ -323,9 +369,6 @@ internal fun ThreadScreen(
                 Modifier.fillMaxWidth().padding(horizontal = tokens.margin, vertical = tokens.gap),
                 verticalArrangement = Arrangement.spacedBy(tokens.gap)
             ) {
-                replyFailure?.let { (_, reason) ->
-                    Text(listOfNotNull(stringResource(R.string.reply_failed_app), reason).joinToString(" "), style = tokens.caption)
-                }
                 if (targets.size > 1 || (selected == null && targets.isNotEmpty())) Row(
                     Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(tokens.gap)
                 ) {
@@ -333,15 +376,52 @@ internal fun ThreadScreen(
                         PillButton(routeLabel(target.route), filled = selected == target) { replyVia = target.route.conversationId }
                     }
                 }
+                val richInbox = selected?.inboxId?.let { selected.route.packageName to it }
+                quoting?.takeIf { richInbox != null && it.packageName == richInbox.first }?.let { quote ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(tokens.radius / 2)).background(tokens.widgetSurface)
+                            .padding(horizontal = tokens.padding, vertical = tokens.gap),
+                        horizontalArrangement = Arrangement.spacedBy(tokens.gap), verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        EnyoGlyph(Glyph.Reply, color = tokens.accent)
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.inbox_replying_to, if (quote.outgoing) stringResource(R.string.inbox_you) else quote.sender.orEmpty()),
+                                style = tokens.pillLabel.copy(color = tokens.accent), maxLines = 1)
+                            Text(spoilerText(quote.text, false).replace('\n', ' '), style = tokens.rowSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        ThreadIconButton(Glyph.Close, stringResource(R.string.cancel)) { quoting = null }
+                    }
+                }
+                if (richInbox != null) {
+                    val features = connectors.firstOrNull { it.packageName == richInbox.first }?.features.orEmpty()
+                    val canAttach = InboxHost.featureSendAttachments in features
+                    val canPlace = InboxHost.featureSendLocation in features
+                    if (canAttach || canPlace) Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                        if (canAttach) ThreadIconButton(Glyph.Attach, stringResource(R.string.inbox_attach)) {
+                            runCatching { filePicker.launch(arrayOf("*/*")) }.onFailure { failed = true }
+                        }
+                        if (canPlace) ThreadIconButton(Glyph.Location, stringResource(R.string.inbox_send_location)) {
+                            if (context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                                context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) scope.launch { sendingPlace = currentPlace(context); if (sendingPlace == null) failed = true }
+                            else locationPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                        }
+                    }
+                }
                 if (selected != null) key(selected.route.conversationId, selected.notification?.first?.key) {
                     ReplyComposer(
                         stringResource(R.string.thread_reply_hint, routeLabel(selected.route)),
-                        selected.choices, autofocus = false
+                        selected.choices, autofocus = false, confirm = selected.inboxId == null
                     ) { text ->
                         val inboxId = selected.inboxId
                         val notification = selected.notification
                         val sent = when {
-                            inboxId != null -> InboxHost.reply(context, selected.route.packageName, inboxId, text)?.also { pendingReplies = pendingReplies + it } != null
+                            inboxId != null -> {
+                                val quote = quoting?.takeIf { it.packageName == selected.route.packageName }?.apiId
+                                val request = if (quote != null) InboxHost.sendRich(context, selected.route.packageName, inboxId, text, replyTo = quote)
+                                    else InboxHost.reply(context, selected.route.packageName, inboxId, text)
+                                request?.also { pendingReplies = pendingReplies + it; quoting = null } != null
+                            }
                             notification != null -> sendReply(context, notification.first, notification.second, text)
                                 .also { if (!it) notification.first.openFromForeground(context) }
                             else -> false
@@ -399,6 +479,64 @@ internal fun ThreadScreen(
             }
         }
     }
+    acting?.let { message ->
+        val react = reactAction(context, message)
+        val canQuote = message.apiId != null && message.inboxConversation != null &&
+            targets.any { it.inboxId != null && it.route.packageName == message.packageName } &&
+            InboxHost.supports(context, message.packageName, InboxHost.featureReplyTo)
+        EnyoSheet(stringResource(R.string.inbox_message_actions), { acting = null }) {
+            if (react != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                quickReactions.forEach { emoji ->
+                    val mine = message.reactions.any { it.emoji == emoji && it.sender.isEmpty() }
+                    Box(Modifier.size(tokens.listAvatar).clip(CircleShape).background(if (mine) tokens.accentContainer else tokens.widgetSurface)
+                        .appPress({ react(emoji, mine); acting = null }), contentAlignment = Alignment.Center) {
+                        Text(emoji, style = tokens.rowTitle)
+                    }
+                }
+            }
+            ListCard {
+                if (canQuote) SettingsAction(stringResource(R.string.inbox_reply_to_message), Glyph.Reply) {
+                    quoting = message
+                    replyVia = targets.firstOrNull { it.inboxId != null && it.route.packageName == message.packageName }?.route?.conversationId
+                    acting = null
+                }
+                if (message.content?.once != true) SettingsAction(stringResource(R.string.inbox_copy), Glyph.Note) {
+                    context.getSystemService(android.content.ClipboardManager::class.java)
+                        .setPrimaryClip(android.content.ClipData.newPlainText(null, spoilerText(message.text, true)))
+                    acting = null
+                }
+                SettingsAction(stringResource(R.string.thread_delete_message), Glyph.Trash) { deletingMessage = message; acting = null }
+            }
+        }
+    }
+    if (sendingFiles.isNotEmpty() || sendingPlace != null) {
+        val target = selected?.takeIf { it.inboxId != null }
+        val close = { sendingFiles = emptyList(); sendingPlace = null }
+        EnyoSheet(stringResource(if (sendingPlace != null) R.string.inbox_send_location else R.string.inbox_attach), close) {
+            if (target == null) ListNote(stringResource(R.string.thread_no_reply))
+            sendingPlace?.let { place ->
+                Text(stringResource(R.string.inbox_send_location_message, String.format(java.util.Locale.getDefault(), "%.5f, %.5f", place.lat, place.lng)), style = tokens.secondary)
+            }
+            if (sendingFiles.isNotEmpty()) Text(
+                sendingFiles.joinToString("\n") { uri -> runCatching { context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull() ?: uri.lastPathSegment.orEmpty() },
+                style = tokens.secondary, maxLines = 6, overflow = TextOverflow.Ellipsis
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+                PillButton(stringResource(R.string.cancel)) { close() }
+                PillButton(stringResource(R.string.inbox_send), filled = true, enabled = target != null) {
+                    val request = target?.let {
+                        InboxHost.sendRich(context, it.route.packageName, it.inboxId!!, "",
+                            replyTo = quoting?.takeIf { quote -> quote.packageName == it.route.packageName }?.apiId,
+                            attachments = sendingFiles, location = sendingPlace)
+                    }
+                    if (request != null) { pendingReplies = pendingReplies + request; quoting = null } else failed = true
+                    close()
+                }
+            }
+        }
+    }
+    viewing?.let { (message, attachment) -> InboxMediaViewer(message, attachment) { viewing = null } }
     deletingMessage?.let { message ->
         EnyoSheet(stringResource(R.string.thread_delete_message), { deletingMessage = null }) {
             Text(message.text, style = tokens.secondary, maxLines = 4, overflow = TextOverflow.Ellipsis)
@@ -433,31 +571,127 @@ internal fun ThreadScreen(
     }
 }
 
+/** A small mark for where one of the person's messages is, like the ticks of chat apps. */
+@Composable
+internal fun StatusMark(status: MessageStatus) {
+    val tokens = LocalTokens.current
+    val (glyph, label) = when (status) {
+        MessageStatus.Sending -> Glyph.Clock to R.string.status_sending
+        MessageStatus.Failed -> Glyph.Alert to R.string.status_failed
+        MessageStatus.Sent -> Glyph.Check to R.string.status_sent
+        MessageStatus.Received -> Glyph.Checks to R.string.status_received
+        MessageStatus.Read -> Glyph.Checks to R.string.status_read
+    }
+    val color = when (status) {
+        MessageStatus.Read -> tokens.accent
+        MessageStatus.Failed -> tokens.danger
+        else -> tokens.quiet
+    }
+    val description = stringResource(label)
+    EnyoGlyph(glyph, Modifier.size(tokens.threadAppIcon).semantics { contentDescription = description }, color = color)
+}
+
+/** Something the person sent from Enyo that the app has not confirmed yet; a failed one can be dismissed. */
+@Composable
+private fun PendingBubble(send: InboxHost.PendingSend, app: String, failure: String?, dismiss: () -> Unit) {
+    val tokens = LocalTokens.current
+    val failed = failure != null
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Column(
+            Modifier.widthIn(max = tokens.bubbleMaxWidth).clip(RoundedCornerShape(tokens.radius)).background(tokens.accentContainer)
+                .then(if (failed) Modifier.appPress(dismiss) else Modifier)
+                .padding(horizontal = tokens.padding, vertical = tokens.gap),
+            horizontalAlignment = Alignment.End
+        ) {
+            val parts = listOfNotNull(
+                send.text.takeIf { it.isNotBlank() },
+                send.files.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.status_files, it, it) },
+                if (send.place) stringResource(R.string.inbox_location) else null
+            )
+            ChatMarkdown(parts.joinToString("\n"), tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(if (failed) listOfNotNull(stringResource(R.string.reply_failed_app), failure?.ifBlank { null }).joinToString(" ") else app,
+                    Modifier.weight(1f, fill = false), style = tokens.rowSummary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                StatusMark(if (failed) MessageStatus.Failed else MessageStatus.Sending)
+            }
+        }
+    }
+}
+
+private val quickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
+
+/** Reacting to a shared message through its app, when the app supports it. */
+private fun reactAction(context: android.content.Context, message: ArchivedMessage): ((String, Boolean) -> Unit)? {
+    val conversation = message.inboxConversation ?: return null
+    val id = message.apiId ?: return null
+    if (message.content?.system == true || !InboxHost.supports(context, message.packageName, InboxHost.featureReact)) return null
+    return { emoji, remove -> InboxHost.react(context, message.packageName, conversation, id, emoji, remove) }
+}
+
+/** The phone's current place, for sending it to a chat; null without a fix within a few seconds. */
+private suspend fun currentPlace(context: android.content.Context): InboxLocationInfo? = withContext(Dispatchers.IO) {
+    val manager = context.getSystemService(android.location.LocationManager::class.java)
+    val provider = listOf(android.location.LocationManager.FUSED_PROVIDER, android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+        .firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) } ?: return@withContext null
+    val fix = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+        kotlinx.coroutines.suspendCancellableCoroutine<android.location.Location?> { done ->
+            val cancel = android.os.CancellationSignal()
+            done.invokeOnCancellation { cancel.cancel() }
+            runCatching {
+                manager.getCurrentLocation(provider, cancel, context.mainExecutor) { location -> if (done.isActive) done.resumeWith(Result.success(location)) }
+            }.onFailure { if (done.isActive) done.resumeWith(Result.success(null)) }
+        }
+    }
+    fix?.let { InboxLocationInfo(it.latitude, it.longitude, it.accuracy.toDouble(), null, false, null) }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: ArchivedMessage, app: String, showSender: Boolean, delete: () -> Unit) {
+private fun MessageBubble(
+    message: ArchivedMessage,
+    app: String,
+    showSender: Boolean,
+    quoted: ArchivedMessage?,
+    react: ((String, Boolean) -> Unit)?,
+    open: (InboxAttachmentInfo) -> Unit,
+    actions: () -> Unit
+) {
     val tokens = LocalTokens.current
     val context = LocalContext.current
     val time = remember(message.postedAt) {
         DateUtils.formatDateTime(context, message.postedAt, DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL)
     }
-    Box(Modifier.fillMaxWidth(), contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart) {
+    val content = message.content
+    // Notices such as someone joining sit in the middle of the chat, without a bubble.
+    if (content?.system == true) {
+        Text(message.text, Modifier.fillMaxWidth().combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = actions)
+            .padding(vertical = tokens.gap / 2), style = tokens.caption, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        return
+    }
+    val spoilers = remember(message.text) { hasSpoiler(message.text) }
+    var revealed by remember(message.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start) {
         Column(
             Modifier.widthIn(max = tokens.bubbleMaxWidth)
                 .clip(RoundedCornerShape(tokens.radius))
                 .background(if (message.outgoing) tokens.accentContainer else tokens.widgetSurface)
-                .combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = delete)
+                .combinedClickable(interactionSource = null, indication = null, onClick = { if (spoilers) revealed = !revealed }, onLongClick = actions)
                 .padding(horizontal = tokens.padding, vertical = tokens.gap),
             horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start
         ) {
             if (showSender && !message.outgoing && message.sender != null) Text(message.sender, style = tokens.pillLabel.copy(color = tokens.accent))
-            ChatMarkdown(message.text, tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            InboxMessageParts(message, quoted, revealed, open) {
+                val described = content != null && content.description && !content.empty
+                if (!described) ChatMarkdown(spoilerText(message.text, revealed), tokens.rowTitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("$app · $time", Modifier.weight(1f, fill = false), style = tokens.rowSummary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                AiSummaryButton(message.text)
+                message.status?.let { StatusMark(it) }
+                if (content?.once != true) AiSummaryButton(message.text)
             }
         }
+        ReactionRow(message.reactions, message.outgoing, react)
     }
 }
 
