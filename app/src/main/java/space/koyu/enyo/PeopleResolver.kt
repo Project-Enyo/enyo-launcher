@@ -12,8 +12,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /**
  * Links message identities to people. Reliable identifiers link automatically: a contact URI the
  * app attached to the sender (Signal, Molly), a phone number (Telegram tel entries), or a WhatsApp
- * chat id that carries a number. A matching address book name becomes a suggestion to confirm. Anyone else
- * starts as their own person. Manual links and splits are never overridden.
+ * chat id that carries a number, or a connection Enyo saved into the address book. A matching address
+ * book name becomes a suggestion to confirm. Anyone else starts as their own person. Manual links,
+ * unlinks and splits are never overridden.
  */
 internal object PeopleResolver {
     const val sourceContact = "contact"
@@ -98,6 +99,31 @@ internal object PeopleResolver {
         link(db, identityId, ownPerson(db, name), sourceManual, personOf(db, identityId))
     }
 
+    /**
+     * Ends a person's link to their Android contact: they keep their messages and accounts, Enyo stops
+     * linking or suggesting that contact for them, and [unlinked] receives the contact's key.
+     */
+    fun unlinkContact(db: SupportSQLiteDatabase, personId: Long): String? {
+        val lookup = db.query("SELECT contact_lookup FROM people WHERE id = ?", arrayOf(personId))
+            .use { if (it.moveToFirst()) it.stringOrNull(0) else null } ?: return null
+        db.execSQL("UPDATE people SET contact_lookup = NULL WHERE id = ?", arrayOf(personId))
+        db.execSQL("UPDATE identities SET link_source = ? WHERE person_id = ?", arrayOf(sourceManual, personId))
+        db.execSQL("""INSERT OR REPLACE INTO suggestions(identity_id, contact_lookup, contact_name, dismissed)
+                      SELECT id, ?, NULL, 1 FROM identities WHERE person_id = ?""", arrayOf(lookup, personId))
+        return lookup
+    }
+
+    /**
+     * Undoes merging: every account of a person becomes its own person again, except those the
+     * address book itself links to the contact, which stay together.
+     */
+    fun unmerge(db: SupportSQLiteDatabase, personId: Long) {
+        val accounts = db.query("SELECT id, link_source FROM identities WHERE person_id = ? ORDER BY id", arrayOf(personId))
+            .use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getLong(0) to cursor.stringOrNull(1)) } }
+        val staying = accounts.filter { it.second == sourceContact }.ifEmpty { accounts.take(1) }.map { it.first }.toSet()
+        accounts.map { it.first }.filterNot { it in staying }.forEach { split(db, it) }
+    }
+
     fun dismissSuggestion(db: SupportSQLiteDatabase, identityId: Long, lookup: String) {
         db.execSQL("UPDATE suggestions SET dismissed = 1 WHERE identity_id = ? AND contact_lookup = ?", arrayOf(identityId, lookup))
     }
@@ -158,7 +184,7 @@ internal object PeopleResolver {
                     }
             }.getOrNull()?.let { return it }
         }
-        return null
+        return ContactConnections.find(context, identity.packageName, identity.key)
     }
 
     private fun contactAt(context: Context, uri: Uri): ContactMatch? =

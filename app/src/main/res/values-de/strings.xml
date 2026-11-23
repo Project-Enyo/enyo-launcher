@@ -230,6 +230,16 @@
     <string name="inbox_show_all">Alle %1$d anzeigen</string>
     <string name="inbox_show_less">Weniger anzeigen</string>
     <string name="thread_link_contact">Mit Kontakt verknüpfen</string>
+    <string name="thread_save_contact">Im Adressbuch speichern</string>
+    <string name="thread_save_contact_summary">Die Chat-Konten dieser Person im Kontakt speichern, damit sie sich von selbst wieder verknüpfen.</string>
+    <plurals name="thread_saved_contact">
+        <item quantity="one">%1$d Konto im Kontakt gespeichert</item>
+        <item quantity="other">%1$d Konten im Kontakt gespeichert</item>
+    </plurals>
+    <string name="thread_unlink_contact">Kontakt trennen</string>
+    <string name="thread_unlink_confirm">%1$s bleibt mit allen Nachrichten in Enyo, ist aber nicht mehr mit dem Kontakt verknüpft. Die Chat-Konten, die Enyo im Kontakt gespeichert hat, werden entfernt.</string>
+    <string name="thread_unmerge">Zusammenführung aufheben</string>
+    <string name="thread_unmerge_summary">Jedes Chat-Konto wieder als eigene Person zeigen</string>
     <string name="thread_merge">Mit anderer Person zusammenführen</string>
     <string name="thread_delete">Gespeicherte Nachrichten löschen</string>
     <string name="thread_delete_message">Nachricht löschen</string>

@@ -230,6 +230,16 @@
     <string name="inbox_show_all">Show all %1$d</string>
     <string name="inbox_show_less">Show less</string>
     <string name="thread_link_contact">Link to a contact</string>
+    <string name="thread_save_contact">Save to address book</string>
+    <string name="thread_save_contact_summary">Keep this person’s chat accounts in their contact, so they link again on their own.</string>
+    <plurals name="thread_saved_contact">
+        <item quantity="one">Saved %1$d account to the contact</item>
+        <item quantity="other">Saved %1$d accounts to the contact</item>
+    </plurals>
+    <string name="thread_unlink_contact">Unlink contact</string>
+    <string name="thread_unlink_confirm">%1$s stays in Enyo with all messages, but is no longer linked to the contact. The chat accounts Enyo saved to the contact are removed.</string>
+    <string name="thread_unmerge">Unmerge</string>
+    <string name="thread_unmerge_summary">Show each chat account as its own person again</string>
     <string name="thread_merge">Merge with another person</string>
     <string name="thread_delete">Delete saved messages</string>
     <string name="thread_delete_message">Delete message</string>

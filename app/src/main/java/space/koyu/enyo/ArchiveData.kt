@@ -236,9 +236,33 @@ internal object ArchiveData {
     }
 
     fun linkToContact(context: Context, identities: List<Long>, lookup: String, name: String?) =
-        MessageArchive.get(context).writeResult({ id -> id?.let { requestedThread.value = ThreadRef.Person(it) } }) { db ->
+        MessageArchive.get(context).writeResult({ id ->
+            id?.let {
+                requestedThread.value = ThreadRef.Person(it)
+                // The link also goes into the address book, so it holds after a reinstall and on synced devices.
+                ContactConnections.save(context, it, lookup)
+            }
+        }) { db ->
             if (identities.isEmpty()) null else PeopleResolver.linkToContact(db, identities, lookup, name)
         }
+
+    /** Saves a person's chat accounts into their linked contact; [done] receives how many were added, or null. */
+    fun saveConnections(context: Context, personId: Long, done: (Int?) -> Unit) {
+        val lookup = MessageArchive.get(context).read { db ->
+            db.query("SELECT contact_lookup FROM people WHERE id = ?", arrayOf(personId)).use { if (it.moveToFirst()) it.stringOrNull(0) else null }
+        }
+        done(lookup?.let { ContactConnections.save(context, personId, it) })
+    }
+
+    /** Ends a person's link to their contact and removes the connections Enyo saved there. */
+    fun unlinkContact(context: Context, personId: Long) {
+        val connections = ContactConnections.connections(context, personId)
+        MessageArchive.get(context).writeResult({ lookup: String? -> lookup?.let { ContactConnections.remove(context, connections, it) } }) { db ->
+            PeopleResolver.unlinkContact(db, personId)
+        }
+    }
+
+    fun unmerge(context: Context, personId: Long) = MessageArchive.get(context).write { db -> PeopleResolver.unmerge(db, personId) }
 
     fun mergePeople(context: Context, from: Long, into: Long) =
         MessageArchive.get(context).writeResult({ id -> id?.let { requestedThread.value = ThreadRef.Person(it) } }) { db ->

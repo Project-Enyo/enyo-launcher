@@ -12,7 +12,7 @@ Turn on notification access to add supported conversations to Inbox. Messaging a
 
 ## Inbox
 
-When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Replies in a merged thread go through the conversation selected in the composer. Chat messages and Local AI replies render Markdown.
+When chats link to the same Android contact, Enyo combines their history and unread counts in one thread. Single platform chats show an app badge on the avatar. For chats that Enyo cannot link automatically, open the thread and use its contact or merge action. Links you make are saved to the contact as chat accounts, so they come back on their own after a reinstall or on another synced device. The thread's options can also save older links, unlink the contact, or unmerge accounts again. Replies in a merged thread go through the conversation selected in the composer. Chat messages and Local AI replies render Markdown.
 
 ## Search
 

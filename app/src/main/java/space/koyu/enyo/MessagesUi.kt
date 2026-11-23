@@ -206,11 +206,29 @@ internal fun ThreadScreen(
     var sendingPlace by remember { mutableStateOf<InboxLocationInfo?>(null) }
     val byApiId = remember(messages) { messages.filter { it.apiId != null }.associateBy { it.packageName to it.apiId } }
     var failed by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
+    var linkingSuggestion by remember { mutableStateOf<LinkSuggestion?>(null) }
+    var confirmUnlink by remember { mutableStateOf(false) }
+    var savedNote by remember { mutableStateOf<Int?>(null) }
+    val pickContact = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
         val contact = uri?.let { ArchiveData.contactOf(context, it) } ?: return@rememberLauncherForActivityResult
         if (identities.isNotEmpty()) {
             ArchiveData.linkToContact(context, identities.map { it.id }, contact.lookup, contact.name)
             close()
+        }
+    }
+    // Saving links into the address book needs write access; without it, links stay in Enyo only.
+    val contactsWrite = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        val suggestion = linkingSuggestion
+        linkingSuggestion = null
+        if (suggestion != null) {
+            ArchiveData.linkToContact(context, listOf(suggestion.identityId), suggestion.lookup, suggestion.contactName)
+            close()
+        } else runCatching { pickContact.launch(null) }.onFailure { failed = true }
+    }
+    val canWriteContacts = { ContactConnections.canWrite(context) }
+    val picker = object {
+        fun launch(@Suppress("UNUSED_PARAMETER") input: Void?) {
+            if (canWriteContacts()) pickContact.launch(null) else contactsWrite.launch(android.Manifest.permission.WRITE_CONTACTS)
         }
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -324,8 +342,13 @@ internal fun ThreadScreen(
                         Row(Modifier.padding(start = tokens.padding, end = tokens.padding, bottom = tokens.gap), horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
                             PillButton(stringResource(R.string.thread_suggestion_no)) { ArchiveData.dismissSuggestion(context, suggestion) }
                             PillButton(stringResource(R.string.thread_suggestion_link), filled = true) {
-                                ArchiveData.linkToContact(context, listOf(suggestion.identityId), suggestion.lookup, suggestion.contactName)
-                                close()
+                                if (canWriteContacts()) {
+                                    ArchiveData.linkToContact(context, listOf(suggestion.identityId), suggestion.lookup, suggestion.contactName)
+                                    close()
+                                } else {
+                                    linkingSuggestion = suggestion
+                                    contactsWrite.launch(android.Manifest.permission.WRITE_CONTACTS)
+                                }
                             }
                         }
                     }
@@ -462,10 +485,37 @@ internal fun ThreadScreen(
                 accounts = false
                 runCatching { picker.launch(null) }.onFailure { failed = true }
             }
+            if (summary?.contactLookup != null) {
+                SettingsAction(stringResource(R.string.thread_save_contact), Glyph.Contact,
+                    summary = savedNote?.let { pluralStringResource(R.plurals.thread_saved_contact, it, it) } ?: stringResource(R.string.thread_save_contact_summary)) {
+                    if (!canWriteContacts()) contactsWrite.launch(android.Manifest.permission.WRITE_CONTACTS)
+                    else scope.launch {
+                        savedNote = withContext(Dispatchers.IO) { var added: Int? = null; ArchiveData.saveConnections(context, personId) { added = it }; added }
+                        if (savedNote == null) failed = true
+                    }
+                }
+                SettingsAction(stringResource(R.string.thread_unlink_contact), Glyph.Unlink) { accounts = false; confirmUnlink = true }
+            }
             SettingsAction(stringResource(R.string.thread_merge), Glyph.People) { accounts = false; merging = true }
+            if (identities.size > 1) SettingsAction(stringResource(R.string.thread_unmerge), Glyph.Unlink,
+                summary = stringResource(R.string.thread_unmerge_summary)) {
+                accounts = false
+                ArchiveData.unmerge(context, personId)
+                close()
+            }
         }
         ListCard {
             SettingsAction(stringResource(R.string.thread_delete), Glyph.Trash) { accounts = false; confirmDelete = true }
+        }
+    }
+    if (confirmUnlink && personId != null) EnyoSheet(stringResource(R.string.thread_unlink_contact), { confirmUnlink = false }) {
+        Text(stringResource(R.string.thread_unlink_confirm, summary?.name.orEmpty()), style = tokens.secondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(tokens.gap)) {
+            PillButton(stringResource(R.string.cancel)) { confirmUnlink = false }
+            PillButton(stringResource(R.string.thread_unlink_contact), filled = true) {
+                confirmUnlink = false
+                ArchiveData.unlinkContact(context, personId)
+            }
         }
     }
     if (confirmDelete) EnyoSheet(stringResource(R.string.thread_delete), { confirmDelete = false }) {
